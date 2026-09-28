@@ -81,8 +81,6 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'attachments', from: '@open-mercato/core' },
   { id: 'catalog', from: '@open-mercato/core' },
   { id: 'sales', from: '@open-mercato/core' },
-  { id: 'warranty_claims', from: '@open-mercato/core' },
-  { id: 'wms', from: '@open-mercato/core' },
   // Availability contract, policy module, and provider registry (Phase 1+2).
   // Ships with the scaffold but stays commented out in the template until
   // standalone-harness coverage lands: no case in
@@ -99,9 +97,7 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'content', from: '@open-mercato/content' },
   { id: 'onboarding', from: '@open-mercato/onboarding' },
   { id: 'api_docs', from: '@open-mercato/core' },
-  { id: 'business_rules', from: '@open-mercato/core' },
   { id: 'feature_toggles', from: '@open-mercato/core' },
-  { id: 'workflows', from: '@open-mercato/core' },
   { id: 'search', from: '@open-mercato/search' },
   { id: 'currencies', from: '@open-mercato/core' },
   { id: 'planner', from: '@open-mercato/core' },
@@ -121,13 +117,11 @@ export const enabledModules: ModuleEntry[] = [
   // Push notification rails — `push` delivery strategy + delivery log + send-push worker.
   // Fans out to `devices` tokens and sends through the `communication_channels` hub.
   { id: 'push_notifications', from: '@open-mercato/core' },
-  { id: 'phone_calls', from: '@open-mercato/core' },
   { id: 'ai_assistant', from: '@open-mercato/ai-assistant' },
   // agent_orchestrator moved to the enterprise catalog — enabled below behind
   // OM_ENABLE_ENTERPRISE_MODULES + OM_ENABLE_ENTERPRISE_MODULES_AGENTS.
   { id: 'translations', from: '@open-mercato/core' },
   { id: 'scheduler', from: '@open-mercato/scheduler' },
-  { id: 'inbox_ops', from: '@open-mercato/core' },
   { id: 'payment_gateways', from: '@open-mercato/core' },
   { id: 'checkout', from: '@open-mercato/checkout' },
   { id: 'documents', from: '@open-mercato/documents' },
@@ -159,7 +153,6 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'sync_akeneo', from: '@open-mercato/sync-akeneo' },
   { id: 'tillio', from: '@open-mercato/tillio' },
   { id: 'shipping_carriers', from: '@open-mercato/core' },
-  { id: 'eudr', from: '@open-mercato/core' },
   { id: 'webhooks', from: '@open-mercato/webhooks' },
   { id: 'customer_accounts', from: '@open-mercato/core' },
   { id: 'portal', from: '@open-mercato/core' },

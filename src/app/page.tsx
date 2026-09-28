@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getAuthFromCookies } from '@open-mercato/shared/lib/auth/server'
 
@@ -6,9 +5,9 @@ function isAutoLoginEnabled(): boolean {
   return Boolean(process.env.OM_AUTOLOGIN_EMAIL?.trim() && process.env.OM_AUTOLOGIN_PASSWORD)
 }
 
-// The home route is a pure router: it never renders. Unless the visitor has
-// dismissed the start page, it sends them there; otherwise into the app
-// (backend when authenticated, login otherwise).
+// The home route is a pure router: it never renders. It sends visitors
+// straight into the app (backend when authenticated, login otherwise). The
+// onboarding/role-picker page remains reachable directly at /start.
 export default async function Home() {
   const auth = await getAuthFromCookies()
 
@@ -19,13 +18,6 @@ export default async function Home() {
   // credentials are invalid, so a misconfigured demo can never loop.
   if (!auth && isAutoLoginEnabled()) {
     redirect('/api/auth/autologin')
-  }
-
-  const cookieStore = await cookies()
-  const startPageDismissed = cookieStore.get('start_page_dismissed')?.value === '1'
-
-  if (!startPageDismissed) {
-    redirect('/start')
   }
 
   redirect(auth ? '/backend' : '/login')
