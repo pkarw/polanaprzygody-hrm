@@ -65,16 +65,33 @@ The existing-database CLI defaults to dry-run. Execution requires explicit `--te
 
 ### Captured catalog snapshot
 
-| SKU | Service | Regular price | Metadata |
-|---|---|---:|---|
-| `PP-DIAG-SI` | Diagnoza integracji sensorycznej | 750 PLN | 4 meetings: parent interview, two child meetings, parent review |
-| `PP-DIAG-LOG` | Diagnoza logopedyczna | 300 PLN | 2 meetings; written report surcharge 150 PLN |
-| `PP-DIAG-PSY` | Diagnoza psychologiczna | 700 PLN | Maximum 1000 PLN; depends on scope/meeting count |
-| `PP-TER-LOG` | Terapia logopedyczna | 200 PLN | — |
-| `PP-REDIAG-LOG` | Rediagnoza logopedyczna | 200 PLN | — |
-| `PP-TER-SI` | Terapia SI | 200 PLN | — |
-| `PP-TUS` | Trening Umiejętności Społecznych (TUS) | 120 PLN | 60 minutes, group session |
-| `PP-KONS-PSY` | Konsultacja psychologa | 220 PLN | — |
+| SKU | Service / category | Description | Price | Exact non-empty custom-field payload |
+|---|---|---|---:|---|
+| `PP-DIAG-SI` | Diagnoza integracji sensorycznej / Diagnozy | 4 spotkania: wywiad z rodzicem, dwa spotkania z dzieckiem, omówienie diagnozy z rodzicem | 750 PLN | `session_details` = description |
+| `PP-DIAG-LOG` | Diagnoza logopedyczna / Diagnozy | 2 spotkania: 1 z rodzicem, drugie z dzieckiem. Wariant z pisemnym raportem z diagnozy (opinia logopedyczna): dodatkowo płatny 150 zł | 300 PLN | `session_details` = first sentence; `surcharge_amount_pln` = 150; `pricing_note` = surcharge sentence |
+| `PP-DIAG-PSY` | Diagnoza psychologiczna / Diagnozy | w zależności od zakresu diagnozy i ilości spotkań | 700 PLN | `price_max_pln` = 1000; `pricing_note` = description |
+| `PP-TER-LOG` | Terapia logopedyczna / Terapie | empty | 200 PLN | none |
+| `PP-REDIAG-LOG` | Rediagnoza logopedyczna / Diagnozy | empty | 200 PLN | none |
+| `PP-TER-SI` | Terapia SI / Terapie | empty | 200 PLN | none |
+| `PP-TUS` | Trening Umiejętności Społecznych (TUS) / Zajęcia grupowe | 60 minut, zajęcia grupowe | 120 PLN | `session_details` = description |
+| `PP-KONS-PSY` | Konsultacja psychologa / Konsultacje | empty | 220 PLN | none |
+
+### Fictional customer snapshot
+
+Every row has country `PL`, city `Wrocław`, and an email under the reserved non-deliverable `example.invalid` domain.
+
+| Fixture key / email | First name | Last name | Street | Postal code |
+|---|---|---|---|---|
+| `pp-klient-01@example.invalid` | Anna | Wiosenna | Bajkowa 12/3 | 50-001 |
+| `pp-klient-02@example.invalid` | Michał | Dobrowolski | Słoneczna 8/5 | 50-002 |
+| `pp-klient-03@example.invalid` | Katarzyna | Zielińska | Przygodna 21/7 | 50-003 |
+| `pp-klient-04@example.invalid` | Tomasz | Leśny | Radosna 4/2 | 50-004 |
+| `pp-klient-05@example.invalid` | Natalia | Kwiatkowska | Wesoła 33/6 | 50-005 |
+| `pp-klient-06@example.invalid` | Piotr | Sowiński | Spacerowa 17/1 | 50-006 |
+| `pp-klient-07@example.invalid` | Joanna | Borkowska | Polankowa 9/4 | 50-007 |
+| `pp-klient-08@example.invalid` | Marcin | Lipiński | Tęczowa 26/8 | 50-008 |
+| `pp-klient-09@example.invalid` | Aleksandra | Brzozowska | Pogodna 15/9 | 50-009 |
+| `pp-klient-10@example.invalid` | Krzysztof | Majewski | Rodzinna 30/10 | 50-010 |
 
 ## Users, Permissions, and Scope
 
@@ -125,7 +142,9 @@ src/modules.ts -> page/widget overrides -> generated navigation/registries
 1. Operator runs dry-run with explicit IDs.
 2. CLI prints exact upsert/deletion counts.
 3. Operator reruns with backup path and confirmation flag.
-4. Backup succeeds before cleanup; failures leave data unchanged or produce actionable rollback evidence.
+4. CLI atomically writes and checksums the backup before opening the mutation transaction.
+5. Cleanup/bootstrap commits as one scoped transaction; an in-transaction failure rolls back.
+6. If post-commit verification fails, the operator runs `polana-bootstrap restore` with that backup to restore preimages and remove records created by the failed reconciliation.
 
 ## UI and Interaction Contracts
 
@@ -144,9 +163,27 @@ No HTTP API is added.
 | Contract | ID | Input | Success | Errors/concurrency | Requirements |
 |---|---|---|---|---|---|
 | Setup hook | `polana_bootstrap.seedExamples` | trusted scope, EM/container | Idempotent fixtures | Missing scope fails; uniqueness prevents duplicates | REQ-001/003/005 |
-| CLI | `polana-bootstrap install` | IDs, dry-run/execute, backup, confirmation | Counted JSON/text summary | Wrong scope, production, backup failure, missing confirmation fail before mutation; scoped lock prevents overlap | REQ-004/005 |
+| CLI | `polana-bootstrap install` | IDs, dry-run/execute, backup, confirmation | Counted JSON/text summary and versioned backup | Wrong scope, production, backup failure, missing confirmation fail before mutation; scoped lock prevents overlap | REQ-004/005 |
+| CLI | `polana-bootstrap restore` | tenant, organization, backup path, checksum, restore confirmation | Restored definitions/values and fixture-key preimages; created fixture IDs removed | Scope/checksum/schema mismatch fails before mutation; one scoped transaction; rerun is idempotent | REQ-004/005 |
 
 The CLI is a new stable contract and must be documented. No HTTP payload can select scope.
+
+### Backup and restore contract
+
+The UTF-8 JSON backup is written to a temporary sibling file, fsynced where supported, atomically renamed, reread, schema-validated, and SHA-256 checksummed before any database write. Its schema is:
+
+```text
+version: 1
+createdAt, sourceCommandVersion, tenantId, organizationId
+customFieldDefinitions[]: complete persisted rows for catalog product fields
+customFieldValues[]: complete persisted rows for those definitions, including record IDs
+fixturePreimages:
+  people[], addresses[], categories[], products[], variants[], prices[]
+createdIds:
+  people[], addresses[], categories[], products[], variants[], prices[], definitions[], values[]
+```
+
+Preimages include IDs, scope columns, scalar data, timestamps/version columns, and soft-delete state. The dry-run plan allocates stable UUIDs for every prospective new row, so `createdIds` and all update preimages are complete before the backup is finalized. `restore` verifies that the backup scope exactly matches CLI flags, takes the same scoped lock, removes only `createdIds`, restores all preimages with their original IDs/versions, reinstalls definitions before values, and verifies record/field counts before commit. Search/cache effects run after commit. A second restore is a no-op success with the same final state.
 
 ## Events, Jobs, Notifications, and Cross-Module Flows
 
@@ -164,12 +201,14 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 
 | Test | Level | Action | Assertions | Requirements |
 |---|---|---|---|---|
-| TEST-001 | integration | Run setup twice in empty scope A | Ten people/eight services once, exact values | REQ-001/003/005 |
-| TEST-002 | security | Seed A, inspect/operate in B | No cross-scope visibility/modification | REQ-001/003/004 |
-| TEST-003 | registry/UI | Generate and request routes | Companies/Deals/widgets absent; People/Products present | REQ-002 |
-| TEST-004 | CLI integration | Dry-run scope with fields/values | Exact counts; zero writes | REQ-004 |
-| TEST-005 | CLI integration | Execute with/without guards | Refusals no-op; confirmed backup then replacement | REQ-004/005 |
-| TEST-006 | catalog integration | Resolve/list seeded prices | Fixed/range/surcharge semantics exact | REQ-003 |
+| TEST-001 | customer integration | Run customer setup twice in empty scope A | Exact ten-person table once, including each address/email | REQ-001/005 |
+| TEST-002 | catalog integration | Run catalog setup twice in empty scope A | Exact eight-service table, four definitions, and payloads once | REQ-003/005 |
+| TEST-003 | security | Seed A then inspect/operate in B | No customer, catalog, field, or cleanup cross-scope effect | REQ-001/003/004/005 |
+| TEST-004-* | generated registry/UI parameterized cases | Generate, inspect navigation, request each exact route/widget key listed below | Each named contribution absent; People/Products present | REQ-002 |
+| TEST-005 | CLI integration | Dry-run scope with definitions/values and fixture-key collisions | Exact delete/create/update counts and preimage plan; zero writes | REQ-004 |
+| TEST-006 | CLI integration | Execute with wrong scope, production, missing flag/backup, then valid guards | Refusals no-op; valid run writes verified backup then exact replacement | REQ-004/005 |
+| TEST-007 | restore/fault integration | Inject failures before backup rename, after backup, mid-transaction, post-commit verification; restore twice | No pre-backup mutation; transaction rollback; lossless restore of definitions/values/preimages; created IDs removed; second restore no-op | REQ-004/005 |
+| TEST-008 | catalog pricing integration | Resolve/list all seeded prices | Fixed/range/surcharge semantics and exact payloads | REQ-003 |
 
 ## Implementation Phases
 
@@ -179,7 +218,7 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 - **Outcome:** Fresh installs have Wrocław people and no Companies/Deals UI.
 - **Deliverables:** module/setup, fixtures, scoped customer upserts, overrides, tests.
 - **Requirements:** REQ-001/002 and customer part of REQ-005.
-- **Tests/validation:** TEST-001 customer assertions, TEST-002/003; `yarn generate`, focused tests, `yarn typecheck`.
+- **Tests/validation:** TEST-001, customer portion of TEST-003, all TEST-004-* cases; `yarn generate`, focused tests, `yarn typecheck`.
 - **Exit gate:** Double seed yields ten people; generated routes/navigation satisfy REQ-002.
 
 ### Phase 2 — Catalog bootstrap
@@ -188,7 +227,7 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 - **Outcome:** Fresh installs have the reviewed catalog/fields.
 - **Deliverables:** typed snapshot, category/product/variant/price upserts, four fields.
 - **Requirements:** REQ-003 and fresh-install part of REQ-005.
-- **Tests/validation:** TEST-001 catalog assertions, TEST-006; focused tests/typecheck/lint.
+- **Tests/validation:** TEST-002, catalog portion of TEST-003, TEST-008; focused tests/typecheck/lint.
 - **Exit gate:** Double seed yields eight exact services.
 
 ### Phase 3 — Guarded reconciliation
@@ -197,32 +236,47 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 - **Outcome:** Local scope can be backed up, field-reset, and reseeded safely.
 - **Deliverables:** CLI, dry-run, backup, lock/transaction, docs/tests.
 - **Requirements:** REQ-004 and remaining REQ-005.
-- **Tests/validation:** TEST-004/005; broad gate and ephemeral integration test.
+- **Tests/validation:** TEST-005/006/007 and full TEST-003; broad gate and ephemeral integration test.
 - **Exit gate:** Tests and broad gate pass; operator reviews dry-run and separately approves DB execution.
 
 ## Requirement Traceability
 
 | Requirement | Journey | Contract | Phase | Tests | Acceptance |
 |---|---|---|---|---|---|
-| REQ-001 | J-001 | setup/customer records | 1 | 001/002 | AC-001 |
-| REQ-002 | J-001 | page/widget overrides | 1 | 003 | AC-002 |
-| REQ-003 | J-001 | setup/catalog/fields | 2 | 001/006 | AC-003 |
-| REQ-004 | J-002 | CLI/backup/cleanup | 3 | 004/005 | AC-004 |
-| REQ-005 | both | scope/idempotency/lock | 1–3 | 001/002/005 | AC-005 |
+| REQ-001 | J-001 | setup/customer records | 1 | 001/003 | AC-001 |
+| REQ-002 | J-001 | page/widget overrides | 1 | 004-* | AC-002 |
+| REQ-003 | J-001 | setup/catalog/fields | 2 | 002/003/008 | AC-003 |
+| REQ-004 | J-002 | CLI/backup/cleanup/restore | 3 | 003/005/006/007 | AC-004 |
+| REQ-005 | both | scope/idempotency/lock/restore | 1–3 | 001/002/003/006/007 | AC-005 |
 
 ### Extension-surface traceability
 
 | Requirement | Surface | Reference | Phase | Test | Classification |
 |---|---|---|---|---|---|
-| REQ-001/003 | app setup | `src/modules/example/setup.ts` (`module.setup`) | 1–2 | TEST-001 | emitted-example |
-| REQ-002 | unified overrides | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-003 | emitted-example |
-| REQ-004 | app CLI | `src/modules/example/cli.ts` (`module.cli`) | 3 | TEST-004/005 | emitted-example |
+| REQ-001 | `customers.overrides.setup.seedExamples` replacement | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-001 | emitted-example |
+| REQ-003 | `catalog.overrides.setup.seedExamples` replacement | same | 2 | TEST-002 | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies"]` | same | 1 | TEST-004-COMPANIES-LIST | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/create"]` | same | 1 | TEST-004-COMPANIES-CREATE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/[id]"]` | same | 1 | TEST-004-COMPANIES-DETAIL | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies-v2/[id]"]` | same | 1 | TEST-004-COMPANIES-DETAIL-V2 | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals"]` | same | 1 | TEST-004-DEALS-LIST | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/create"]` | same | 1 | TEST-004-DEALS-CREATE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/[id]"]` | same | 1 | TEST-004-DEALS-DETAIL | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/map"]` | same | 1 | TEST-004-DEALS-MAP | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/pipeline"]` | same | 1 | TEST-004-DEALS-PIPELINE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/deals"]` | same | 1 | TEST-004-DEALS-CONFIG | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/pipeline-stages"]` | same | 1 | TEST-004-STAGES-CONFIG | emitted-example |
+| REQ-002 | `overrides.widgets.dashboard["customers.dashboard.newDeals"]` | same | 1 | TEST-004-NEW-DEALS-WIDGET | emitted-example |
+| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-analyzer-trigger"]` | same | 1 | TEST-004-DEAL-ANALYZER | emitted-example |
+| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-detail-trigger"]` | same | 1 | TEST-004-DEAL-DETAIL-AI | emitted-example |
+| REQ-004 | `polana-bootstrap install` CLI | `src/modules/example/cli.ts` (`module.cli`) | 3 | TEST-006 | emitted-example |
+| REQ-004/005 | `polana-bootstrap restore` CLI | same | 3 | TEST-007 | emitted-example |
 
 ## Rollout, Migration, and Rollback
 
 No schema migration is expected. If implementation proves otherwise, run `yarn db:generate`, review scoped SQL/snapshot, and ask before application.
 
-Generate, validate, inspect local scope, run dry-run, review backup destination/counts, then request final database confirmation. Rollback restores the JSON field backup and removes/reverts only stable fixture-key records. Removing overrides restores pages after regeneration/cache refresh. Retain backup through UI verification.
+Generate, validate, inspect local scope, run dry-run, review backup destination/counts, then request final database confirmation. Rollback runs `polana-bootstrap restore` against the versioned/checksummed backup: it removes planned `createdIds`, restores fixture preimages, restores field definitions before their values, verifies counts, and is itself idempotent. Removing overrides restores pages after regeneration/cache refresh. Retain the backup through UI verification and a successful restore rehearsal in the ephemeral integration database.
 
 ## Risks and Tradeoffs
 
@@ -238,22 +292,22 @@ Generate, validate, inspect local scope, run dry-run, review backup destination/
 
 - [ ] **AC-001** — Fresh scope gets exactly ten synthetic Wrocław people; rerun adds none; other scope sees none.
 - [ ] **AC-002** — Companies and Deals pages/navigation/deal-only widgets are absent; People remains usable.
-- [ ] **AC-003** — Eight services match captured content and PLN semantics, with only four approved fields.
-- [ ] **AC-004** — Dry-run reports all scoped product fields; execute refuses without guards, then replaces all scoped fields without touching other scopes.
-- [ ] **AC-005** — Focused tests and configured gate pass; DB execution occurs only after separate confirmation.
+- [ ] **AC-003** — In a fresh scope, and in an existing scope only after confirmed Phase 3 reconciliation, eight services match captured content and PLN semantics and the product field set contains exactly the four approved definitions.
+- [ ] **AC-004** — Dry-run reports all scoped product fields; execute refuses without guards, then replaces all scoped fields without touching other scopes; `restore` losslessly reconstructs definitions, values, and overwritten fixture-key records.
+- [ ] **AC-005** — Idempotency, fault injection, double-restore, focused tests, and configured gate pass; DB execution occurs only after separate confirmation.
 
 ## Final Compliance Report
 
 | Check | Status | Evidence |
 |---|---|---|
 | Rules/guides/skills reviewed | pass | Root, routed guides/skills, module facts, exact installed contract. |
-| Models/contracts/tests consistent | pass | Reuse, TEST-001–006, traceability. |
+| Models/contracts/tests consistent | pass | Reuse, TEST-001–008, per-surface traceability, backup/restore contract. |
 | End-to-end workflows phased | pass | J-001/J-002, phases 1–3. |
 | Platform-native reuse chosen | pass | Setup hooks, overrides, installed records/fields. |
 | UI references/states covered | pass | Existing canonical surfaces retained; disabled matrix specified. |
 | Phases bounded with exit gates | pass | Phase definitions above. |
 
-Verdict: `Ready for implementation` after independent scope-cohesion review and product-owner approval.
+Verdict: `Ready for implementation` after independent re-review confirms the remediations and the product owner approves this draft.
 
 ## Open Questions
 
@@ -264,3 +318,4 @@ None. Resolved 2026-09-28: one spec; delete all product custom fields in selecte
 | Date | Change |
 |---|---|
 | 2026-09-28 | Drafted, resolved gate decisions, and completed implementation design. |
+| 2026-09-28 | Added exact fixtures/surfaces, phase-specific tests, and lossless backup/restore after independent review. |
