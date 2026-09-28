@@ -72,14 +72,22 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'dashboards', from: '@open-mercato/core' },
   { id: 'auth', from: '@open-mercato/core' },
   { id: 'directory', from: '@open-mercato/core' },
-  { id: 'customers', from: '@open-mercato/core' },
+  {
+    id: 'customers',
+    from: '@open-mercato/core',
+    overrides: { setup: { seedExamples: false } },
+  },
   { id: 'perspectives', from: '@open-mercato/core' },
   { id: 'entities', from: '@open-mercato/core' },
   { id: 'configs', from: '@open-mercato/core' },
   { id: 'query_index', from: '@open-mercato/core' },
   { id: 'audit_logs', from: '@open-mercato/core' },
   { id: 'attachments', from: '@open-mercato/core' },
-  { id: 'catalog', from: '@open-mercato/core' },
+  {
+    id: 'catalog',
+    from: '@open-mercato/core',
+    overrides: { setup: { seedExamples: false } },
+  },
   { id: 'sales', from: '@open-mercato/core' },
   // Availability contract, policy module, and provider registry (Phase 1+2).
   // Ships with the scaffold but stays commented out in the template until
@@ -102,7 +110,11 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'currencies', from: '@open-mercato/core' },
   { id: 'planner', from: '@open-mercato/core' },
   { id: 'resources', from: '@open-mercato/core' },
-  { id: 'staff', from: '@open-mercato/core' },
+  {
+    id: 'staff',
+    from: '@open-mercato/core',
+    overrides: { setup: { seedExamples: false } },
+  },
   { id: 'events', from: '@open-mercato/events' },
   { id: 'notifications', from: '@open-mercato/core' },
   { id: 'progress', from: '@open-mercato/core' },
@@ -158,6 +170,40 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'portal', from: '@open-mercato/core' },
   { id: 'ratelimit_probe', from: '@app' },
 ]
+
+enabledModules.push({
+  id: 'polana_bootstrap',
+  from: '@app',
+  overrides: {
+    routes: {
+      pages: {
+        'backend:/backend/customers/companies': null,
+        'backend:/backend/customers/companies/create': null,
+        'backend:/backend/customers/companies/[id]': null,
+        'backend:/backend/customers/companies-v2/[id]': null,
+        'backend:/backend/customers/deals': null,
+        'backend:/backend/customers/deals/create': null,
+        'backend:/backend/customers/deals/[id]': null,
+        'backend:/backend/customers/deals/map': null,
+        'backend:/backend/customers/deals/pipeline': null,
+        'backend:/backend/config/customers/deals': null,
+        'backend:/backend/config/customers/pipeline-stages': null,
+        'backend:/backend/sales/channels': null,
+        'backend:/backend/sales/channels/offers': null,
+        'backend:/backend/sales/orders': null,
+        'backend:/backend/sales/quotes': null,
+        'backend:/backend/config/sales': null,
+      },
+    },
+    widgets: {
+      dashboard: { 'customers.dashboard.newDeals': null },
+      injection: {
+        'customers.injection.ai-deal-analyzer-trigger': null,
+        'customers.injection.ai-deal-detail-trigger': null,
+      },
+    },
+  },
+})
 
 // Official modules activated via official-modules.json / official-modules.local.json
 // (managed by `yarn official-modules`; backed by the external/official-modules submodule).

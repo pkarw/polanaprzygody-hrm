@@ -1,6 +1,6 @@
 # Lessons
 
-This catalog indexes 0 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
+This catalog indexes 2 focused lessons without loading their full text. Route the task first, then read only records whose **modules**, standalone-harness **areas**, or **topics** match the work.
 
 ## How to use this catalog
 
@@ -25,3 +25,6 @@ rg -l '"<area>"|"<module>"|"<topic>"' .ai/lessons/*.md
 - Run `node scripts/check-lessons.mjs` before committing.
 
 ## Catalog
+
+- [Reconcile catalog categories against soft-deleted slugs](lessons/reconcile-catalog-categories-by-slug.md) — area:module-data,debugging; module:catalog; topic:seed-data,soft-delete,unique-constraints
+- [Notify the query index after seeded custom-field writes](lessons/notify-query-index-after-seeded-custom-fields.md) — area:debugging,module-data,umes; module:staff,entities,query_index; topic:custom-fields,query-index,seed-data

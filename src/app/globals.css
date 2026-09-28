@@ -1146,3 +1146,13 @@ body[data-demo-feedback-fab="visible"] main {
 .om-mdx-editor .cm-dropCursor {
   border-left-color: var(--foreground);
 }
+
+/* Polana services do not use physical dimensions, units of measure, or
+   PL/EU compliance classification. Scope these rules to stable catalog-product
+   field anchors so no other CrudForm surface is affected. */
+.rounded-lg.border.bg-card:has(#catalog-product-uom-base-unit),
+.rounded-lg.border.bg-card:has(#catalog-product-compliance-country),
+.rounded-lg.border.bg-card:has([data-crud-field-id="title"])
+  + .rounded-lg.border.bg-card {
+  display: none;
+}
