@@ -1,7 +1,7 @@
 # Wrocław CRM and Polana Przygody catalog bootstrap
 
 **Date**: 2026-09-28
-**Status**: Draft
+**Status**: Ready for implementation
 
 ## TLDR
 
@@ -253,24 +253,25 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 
 | Requirement | Surface | Reference | Phase | Test | Classification |
 |---|---|---|---|---|---|
+| REQ-001/003 | app-owned `polana_bootstrap/setup.ts` contribution | `src/modules/example/setup.ts` (`module.setup`) | 1–2 | TEST-001/002 | emitted-example |
 | REQ-001 | `customers.overrides.setup.seedExamples` replacement | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-001 | emitted-example |
-| REQ-003 | `catalog.overrides.setup.seedExamples` replacement | same | 2 | TEST-002 | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies"]` | same | 1 | TEST-004-COMPANIES-LIST | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/create"]` | same | 1 | TEST-004-COMPANIES-CREATE | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/[id]"]` | same | 1 | TEST-004-COMPANIES-DETAIL | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies-v2/[id]"]` | same | 1 | TEST-004-COMPANIES-DETAIL-V2 | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals"]` | same | 1 | TEST-004-DEALS-LIST | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/create"]` | same | 1 | TEST-004-DEALS-CREATE | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/[id]"]` | same | 1 | TEST-004-DEALS-DETAIL | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/map"]` | same | 1 | TEST-004-DEALS-MAP | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/pipeline"]` | same | 1 | TEST-004-DEALS-PIPELINE | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/deals"]` | same | 1 | TEST-004-DEALS-CONFIG | emitted-example |
-| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/pipeline-stages"]` | same | 1 | TEST-004-STAGES-CONFIG | emitted-example |
-| REQ-002 | `overrides.widgets.dashboard["customers.dashboard.newDeals"]` | same | 1 | TEST-004-NEW-DEALS-WIDGET | emitted-example |
-| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-analyzer-trigger"]` | same | 1 | TEST-004-DEAL-ANALYZER | emitted-example |
-| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-detail-trigger"]` | same | 1 | TEST-004-DEAL-DETAIL-AI | emitted-example |
+| REQ-003 | `catalog.overrides.setup.seedExamples` replacement | `src/modules/example/references/module-overrides.reference.ts` | 2 | TEST-002 | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-COMPANIES-LIST | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/create"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-COMPANIES-CREATE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies/[id]"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-COMPANIES-DETAIL | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/companies-v2/[id]"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-COMPANIES-DETAIL-V2 | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-LIST | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/create"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-CREATE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/[id]"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-DETAIL | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/map"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-MAP | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/customers/deals/pipeline"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-PIPELINE | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/deals"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEALS-CONFIG | emitted-example |
+| REQ-002 | `overrides.routes.pages["backend:/backend/config/customers/pipeline-stages"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-STAGES-CONFIG | emitted-example |
+| REQ-002 | `overrides.widgets.dashboard["customers.dashboard.newDeals"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-NEW-DEALS-WIDGET | emitted-example |
+| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-analyzer-trigger"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEAL-ANALYZER | emitted-example |
+| REQ-002 | `overrides.widgets.injection["customers.injection.ai-deal-detail-trigger"]` | `src/modules/example/references/module-overrides.reference.ts` | 1 | TEST-004-DEAL-DETAIL-AI | emitted-example |
 | REQ-004 | `polana-bootstrap install` CLI | `src/modules/example/cli.ts` (`module.cli`) | 3 | TEST-006 | emitted-example |
-| REQ-004/005 | `polana-bootstrap restore` CLI | same | 3 | TEST-007 | emitted-example |
+| REQ-004/005 | `polana-bootstrap restore` CLI | `src/modules/example/cli.ts` (`module.cli`) | 3 | TEST-007 | emitted-example |
 
 ## Rollout, Migration, and Rollback
 
@@ -317,5 +318,6 @@ None. Resolved 2026-09-28: one spec; delete all product custom fields in selecte
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | Approved for implementation across Phases 1–3. |
 | 2026-09-28 | Drafted, resolved gate decisions, and completed implementation design. |
 | 2026-09-28 | Added exact fixtures/surfaces, phase-specific tests, and lossless backup/restore after independent review. |
