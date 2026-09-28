@@ -5,7 +5,7 @@
 
 ## TLDR
 
-Add one app-owned `polana_bootstrap` module that replaces installed `customers` and `catalog` example seeds with deterministic, tenant-and-organization-scoped fixtures. Fresh installations receive fictional Wrocław people and the eight services published at `https://polanaprzygody.pl/cennik`; Companies and Deals/Opportunities pages disappear through supported overrides. A guarded CLI reuses the bootstrap for local development, deleting every catalog-product custom-field definition and value in the selected scope only after dry-run, backup, and explicit confirmation.
+Add one app-owned `polana_bootstrap` module that replaces installed `customers`, `staff`, and `catalog` example seeds with deterministic, tenant-and-organization-scoped fixtures. Fresh installations receive fictional Wrocław people, the public therapist team captured from `https://polanaprzygody.pl/terapeuci`, and the eight services published at `https://polanaprzygody.pl/cennik`; Companies and Deals/Opportunities pages disappear through supported overrides. A guarded CLI reuses the bootstrap for local development, deleting every catalog-product custom-field definition and value in the selected scope only after dry-run, backup, and explicit confirmation.
 
 ## Problem Statement
 
@@ -21,6 +21,7 @@ Generic scaffold examples do not represent Polana Przygody, while Companies and 
 ## Goals
 
 - **REQ-001** — Seed ten clearly fictional Wrocław people with Polish names, `example.invalid` emails, and complete synthetic addresses.
+- **REQ-001A** — Seed the four published Polana therapists, their team and six distinct roles; preserve source ID/URL, photo, experience, short and full biography, quote, specializations, booking URL, and snapshot date in editable member fields.
 - **REQ-002** — Disable Companies and all Deals/Opportunities pages and deal-only widgets while keeping People usable.
 - **REQ-003** — Seed eight services, one default variant each, regular PLN prices, descriptions, categories, and approved custom fields.
 - **REQ-004** — On explicit reconciliation, delete every catalog-product custom-field value and definition in the selected tenant/organization before installing the approved set.
@@ -110,6 +111,7 @@ No system scope is allowed. Reject null organization, unknown IDs, cross-tenant 
 | People/addresses | reuse | `customers` | installed persistence contracts | Preserve PII/search behavior. |
 | Products/variants/prices | reuse | `catalog` | installed contracts | Preserve pricing/catalog behavior. |
 | Installation policy | app-own | `polana_bootstrap` | replacement seed hooks | App-specific data. |
+| Therapist team | reuse | `staff` | installed teams, roles, members, and custom fields | Preserve canonical staff screens without parallel schema. |
 | Product fields | replace scoped definitions | `entities` + `catalog` | custom-field/Data Engine | No parallel schema. |
 | UI visibility | extend | `customers` | unified overrides | Supported/reversible. |
 
@@ -133,7 +135,7 @@ src/modules.ts -> page/widget overrides -> generated navigation/registries
 ### Journey J-001 — Fresh installation
 
 1. Standard setup supplies trusted tenant/organization scope.
-2. App hooks upsert ten people, approved fields, and eight services.
+2. App hooks upsert ten people, the Polana therapist team/profile fields, approved product fields, and eight services.
 3. Employee sees People/Products but no Companies/Deals.
 4. Retry produces no duplicates.
 
@@ -154,7 +156,7 @@ Disable Companies list/create/details; Deals list/create/details/map/pipeline; d
 
 ## Data Models
 
-No new entity/migration is planned. Reuse `customers:customer_person_profile` plus addresses, `catalog:catalog_product`, `catalog:catalog_product_variant`, `catalog:catalog_product_price`, and installed custom-field storage. Stable fixture keys are unique inside tenant+organization. Synthetic emails use `@example.invalid`. Prices use exact decimal semantics and PLN.
+No new entity/migration is planned. Reuse `customers:customer_person_profile` plus addresses, `staff:staff_team`, `staff:staff_team_role`, `staff:staff_team_member`, `catalog:catalog_product`, `catalog:catalog_product_variant`, `catalog:catalog_product_price`, and installed custom-field storage. Stable fixture keys are unique inside tenant+organization. Synthetic emails use `@example.invalid`. Prices use exact decimal semantics and PLN. Therapist profiles are a reviewed 2026-09-28 snapshot; installation never fetches the live website.
 
 ## API, Command, and Error Contracts
 
@@ -165,6 +167,8 @@ No HTTP API is added.
 | Setup hook | `polana_bootstrap.seedExamples` | trusted scope, EM/container | Idempotent fixtures | Missing scope fails; uniqueness prevents duplicates | REQ-001/003/005 |
 | CLI | `polana-bootstrap install` | IDs, dry-run/execute, backup, confirmation | Counted JSON/text summary and versioned backup | Wrong scope, production, backup failure, missing confirmation fail before mutation; scoped lock prevents overlap | REQ-004/005 |
 | CLI | `polana-bootstrap restore` | tenant, organization, backup path, checksum, restore confirmation | Restored definitions/values and fixture-key preimages; created fixture IDs removed | Scope/checksum/schema mismatch fails before mutation; one scoped transaction; rerun is idempotent | REQ-004/005 |
+
+The additive `polana_bootstrap reconcile-crm` command handles already-installed generic CRM examples. It is dry-run by default, requires explicit `--tenant` and `--organization`, refuses production, and execute mode additionally requires `--backup` plus `--confirm replace-known-crm-examples`. It transforms only the six frozen upstream example e-mail keys into the first six Polana fixtures, then reuses the idempotent customer bootstrap; unrelated people are never selected.
 
 The CLI is a new stable contract and must be documented. No HTTP payload can select scope.
 
@@ -202,6 +206,7 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 | Test | Level | Action | Assertions | Requirements |
 |---|---|---|---|---|
 | TEST-001 | customer integration | Run customer setup twice in empty scope A | Exact ten-person table once, including each address/email | REQ-001/005 |
+| TEST-001A | staff integration | Run therapist setup twice in empty scope A | One team, six roles, four members, and every source profile field exactly once | REQ-001A/005 |
 | TEST-002 | catalog integration | Run catalog setup twice in empty scope A | Exact eight-service table, four definitions, and payloads once | REQ-003/005 |
 | TEST-003 | security | Seed A then inspect/operate in B | No customer, catalog, field, or cleanup cross-scope effect | REQ-001/003/004/005 |
 | TEST-004-* | generated registry/UI parameterized cases | Generate, inspect navigation, request each exact route/widget key listed below | Each named contribution absent; People/Products present | REQ-002 |
@@ -212,16 +217,42 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 
 ## Implementation Phases
 
-### Phase 1 — Module, navigation, and people
+## Implementation Status
+
+Source doc: .ai/specs/2026-09-28-wroclaw-crm-and-polana-catalog-bootstrap.md
+
+| Phase | State | Dependencies | Acceptance IDs | Focused validation | Exit gate |
+|---|---|---|---|---|---|
+| Phase 1 — Module, navigation, people, and therapists | in_progress | none | AC-001, AC-001A, AC-002, AC-005 | `yarn generate && yarn test --runInBand --testPathPattern=polana_bootstrap && yarn typecheck` | Double seed yields ten people and four complete therapist profiles; generated routes/navigation satisfy REQ-002. |
+| Phase 2 — Catalog bootstrap | complete | Phase 1 | AC-003, AC-005 | focused catalog tests, `yarn typecheck`, `yarn lint` | Double seed yields eight exact services. |
+| Phase 3 — Guarded reconciliation | pending | Phase 2 | AC-004, AC-005 | focused CLI tests, broad gate, `yarn test:integration:ephemeral` | Guarded backup/reset/restore passes; DB execution remains separately approved. |
+
+### Phase 1 progress
+
+- [x] Module registration and exact customer fixtures: `src/modules/polana_bootstrap/index.ts`, `fixtures.ts`, `setup.ts`; generated module/setup call sites and ten approved fixture keys — `yarn generate` passed.
+- [x] Scoped/idempotent customer command path: `src/modules/polana_bootstrap/customer-bootstrap.ts`, `__tests__/customer-bootstrap.test.ts`; AC-001 create/update/no-scope oracles — `yarn test --runInBand --runTestsByPath src/modules/polana_bootstrap/__tests__/customer-bootstrap.test.ts src/modules/polana_bootstrap/__tests__/module-overrides.test.ts` passed (2 suites, 4 tests).
+- [x] Therapist snapshot and scoped staff seed path: `lib/therapistFixtures.ts`, `lib/staffBootstrap.ts`; four members, six roles, one team and ten lossless profile fields — focused tests and lint passed.
+- [x] Companies/Deals override matrix: `src/modules.ts`, `__tests__/module-overrides.test.ts`; AC-002 exact page/widget keys absent while People is not overridden — `yarn eslint src/modules/polana_bootstrap src/modules.ts` passed.
+- [x] CRM validation and TypeScript baseline: customer fixtures, People preservation, Companies/Deals override matrix, and generated module registration — `yarn generate`, focused CRM tests (2 suites, 4 tests), scoped ESLint, and `NODE_OPTIONS=--max-old-space-size=8192 yarn typecheck` passed.
+- [x] Existing CRM fixture reconciliation: `crm-reconciliation.ts`, `cli.ts`, and focused tests; dry-run found exactly the six known upstream people and zero unrelated people in the selected local scope, with no writes — all Polana tests (5 suites, 10 tests), scoped ESLint, `yarn generate`, and full `yarn typecheck` passed.
+- [ ] IN FLIGHT: Phase 1 combined exit gate — files: therapist/staff slice owned by the parallel agent; last command: CRM gates passed; remaining: integrate and validate the independently owned staff slice before marking the whole phase verified.
+
+### Phase 1 — Module, navigation, people, and therapists
 
 - **Depends on:** none
-- **Outcome:** Fresh installs have Wrocław people and no Companies/Deals UI.
-- **Deliverables:** module/setup, fixtures, scoped customer upserts, overrides, tests.
-- **Requirements:** REQ-001/002 and customer part of REQ-005.
-- **Tests/validation:** TEST-001, customer portion of TEST-003, all TEST-004-* cases; `yarn generate`, focused tests, `yarn typecheck`.
-- **Exit gate:** Double seed yields ten people; generated routes/navigation satisfy REQ-002.
+- **Outcome:** Fresh installs have Wrocław people, the complete Polana therapist team, and no Companies/Deals UI.
+- **Deliverables:** module/setup, fixtures, scoped customer/staff upserts, therapist custom fields, overrides, tests.
+- **Requirements:** REQ-001/001A/002 and customer/staff part of REQ-005.
+- **Tests/validation:** TEST-001/001A, customer/staff portion of TEST-003, all TEST-004-* cases; `yarn generate`, focused tests, `yarn typecheck`.
+- **Exit gate:** Double seed yields ten people and four complete therapist profiles; generated routes/navigation satisfies REQ-002.
 
 ### Phase 2 — Catalog bootstrap
+
+- [x] Frozen 2026-09-28 cennik snapshot: eight exact services, four categories, PLN prices, range/surcharge metadata — `catalog-fixtures.ts`.
+- [x] Scoped idempotent catalog bootstrap: categories, products, default variants, regular prices, and four product fields — `catalog-bootstrap.ts`, `setup.ts`; built-in catalog examples disabled in `src/modules.ts`.
+- [x] Guarded local installer and dry-run: `polana_bootstrap install-catalog`; local plan reports 4 categories, 8 products, 8 variants, and 8 PLN prices to create with zero writes.
+- [x] Focused validation: all Polana tests (6 suites, 14 tests), `yarn generate`, scoped ESLint, and full `yarn typecheck` passed.
+- [x] Executed with operator confirmation; final dry-run reports 0 creates and 8 fixture-key updates for products, variants, and prices. Read-only DB verification shows exactly 8 active products, all `PP-*`, with the expected PLN gross prices.
 
 - **Depends on:** Phase 1
 - **Outcome:** Fresh installs have the reviewed catalog/fields.
@@ -244,6 +275,7 @@ No jobs/notifications. Use installed mutation/side-effect paths where available 
 | Requirement | Journey | Contract | Phase | Tests | Acceptance |
 |---|---|---|---|---|---|
 | REQ-001 | J-001 | setup/customer records | 1 | 001/003 | AC-001 |
+| REQ-001A | J-001 | setup/staff records and custom fields | 1 | 001A/003 | AC-001A |
 | REQ-002 | J-001 | page/widget overrides | 1 | 004-* | AC-002 |
 | REQ-003 | J-001 | setup/catalog/fields | 2 | 002/003/008 | AC-003 |
 | REQ-004 | J-002 | CLI/backup/cleanup/restore | 3 | 003/005/006/007 | AC-004 |
@@ -292,8 +324,9 @@ Generate, validate, inspect local scope, run dry-run, review backup destination/
 ## Acceptance Criteria
 
 - [ ] **AC-001** — Fresh scope gets exactly ten synthetic Wrocław people; rerun adds none; other scope sees none.
+- [ ] **AC-001A** — Fresh scope gets one therapist team, six roles, and the four published therapists; every captured profile field survives a rerun and other scopes see none.
 - [ ] **AC-002** — Companies and Deals pages/navigation/deal-only widgets are absent; People remains usable.
-- [ ] **AC-003** — In a fresh scope, and in an existing scope only after confirmed Phase 3 reconciliation, eight services match captured content and PLN semantics and the product field set contains exactly the four approved definitions.
+- [x] **AC-003** — In a fresh scope, and in an existing scope only after confirmed Phase 3 reconciliation, eight services match captured content and PLN semantics and the product field set contains exactly the four approved definitions.
 - [ ] **AC-004** — Dry-run reports all scoped product fields; execute refuses without guards, then replaces all scoped fields without touching other scopes; `restore` losslessly reconstructs definitions, values, and overwritten fixture-key records.
 - [ ] **AC-005** — Idempotency, fault injection, double-restore, focused tests, and configured gate pass; DB execution occurs only after separate confirmation.
 
