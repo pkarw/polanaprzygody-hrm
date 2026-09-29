@@ -1,9 +1,9 @@
 # Patient — kartoteka i dokumentacja pacjenta
 
-**Date**: 2026-09-29  
-**Status**: Draft  
-**Spec ID**: PAT  
-**Zakres**: projekt, bez implementacji i zmian bazy. Wersja kompletna do przeglądu.  
+**Date**: 2026-09-29
+**Status**: Draft
+**Spec ID**: PAT
+**Zakres**: projekt, bez implementacji i zmian bazy. Wersja kompletna do przeglądu.
 **Powiązana specyfikacja**: [Wizyty](2026-09-29-patient-visits.md), ten sam moduł `patient`.
 
 ## TLDR
@@ -330,30 +330,40 @@ Wszystkie fazy pozostają **nieuruchomione**. Każda zawiera walidację, a nie p
 
 Osobne powierzchnie discovery/runtime mają poniższe wzorce z `src/modules/example/references/surface-inventory.json`. Każdy test jest samowystarczalny; powtórzenie testu w kilku wierszach oznacza, że bada różne powiązane powierzchnie w tym samym scenariuszu. Wszystkie poniższe klasyfikacje to dokładnie **`emitted-example`**; pliki wzorcowe są nieaktywne, chyba że świadomie zarejestrowano example. Dla wymaganego przyszłego kontraktu SEC-ATT nie przypisujemy fikcyjnego capabilityId ani klasyfikacji — to zewnętrzny warunek, nie istniejący contribution aplikacji.
 
-| Powierzchnia patient | Requirement | Capability ID | Dokładny wzorzec | Faza | Własny oracle |
-|---|---|---|---|---|---|
-| index/module registration | R01 | module.metadata | `src/modules/example/index.ts` | 1 | PAT-T01 |
-| entities + migracje/snapshot | R01/02/04/05/06 | data.entities; data.migrations | `src/modules/example/data/entities.ts`; `src/modules/example/migrations/Migration20260804120546_example.ts` | 1/2/3 | PAT-T01/T05/T07/T08 |
-| validators | R07 | data.validators | `src/modules/example/data/validators.ts` | 1/2/3 | PAT-T10 |
-| encryption | R07 | data.encryption-map | `src/modules/example/encryption.ts` | 1/2/3 | PAT-T10 |
-| ACL | R07 | module.acl-features | `src/modules/example/acl.ts` | 1/2/3 | PAT-T10 |
-| setup/default grants/partycja | R03/06 | module.setup-role-features | `src/modules/example/setup.ts` | 1/3 | PAT-T04/T08 |
-| ce/custom fields | R03 | data.custom-fields | `src/modules/example/ce.ts` | 1 | PAT-T04 |
-| CRUD patient/address/contact | R01/02/03 | api.crud-query-engine-custom-fields | `src/modules/example/api/todos/route.ts` | 1 | PAT-T01/T02/T03/T04 |
-| CRUD diagnosis/document/attachment links | R04/05/06 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 2/3 | PAT-T05/T06/T08 |
-| specjalne correct/void/new/resume/upload/file | R04/05/06 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2/3 | PAT-T05/T07/T08/T09 |
-| OpenAPI wszystkich tras | R07 | api.openapi | `src/modules/example/api/openapi.ts` | 1/2/3 | PAT-T10 |
-| komendy / undo | R01–07 | commands.write; commands.undo-redo | `src/modules/example/commands/todos.ts` | 1/2/3 | PAT-T01/T02/T03/T05/T07/T08 |
-| patientReferenceService DI | R02/05 | module.di-registration | `src/modules/example/di.ts` | 1/2 | PAT-T02/T06 |
-| events | R07 | events.typed-definitions | `src/modules/example/events.ts` | 1/2/3 | PAT-T10 |
-| lista / DataTable host | R01 | ui.datatable | `src/modules/example/components/TodosTable.tsx` | 1 | PAT-T11 |
-| page/meta/nav | R01 | ui.page-shell | `src/modules/example/backend/todos/page.meta.ts` | 1 | PAT-T11 |
-| create/CrudForm host | R01/03 | ui.form-create | `src/modules/example/components/TodoForm.tsx` | 1 | PAT-T01/T04/T11 |
-| karta/adresy/dialogi | R01–06 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1/2/3 | PAT-T11 |
-| deklaracje extension hostów | R01/03 | umes.extension-points | `src/modules/example/extension-points.ts` | 1 | PAT-T11 |
-| pl/en | R01–06 | module.i18n-catalogs | `src/modules/example/i18n/pl.json` | 1/2/3 | PAT-T11 |
+| Powierzchnia patient | Requirement | Capability ID | Dokładny wzorzec | Faza | Własny oracle | Classification |
+|---|---|---|---|---|---|---|
+| index/module registration | R01 | module.metadata | `src/modules/example/index.ts` | 1 | PAT-T01 | emitted-example |
+| entities | R01/02/04/05/06 | data.entities | `src/modules/example/data/entities.ts` | 1/2/3 | PAT-T01/T05/T07/T08 | emitted-example |
+| migracje/snapshot | R01/02/04/05/06 | data.migrations | `src/modules/example/migrations/Migration20260804120546_example.ts` | 1/2/3 | PAT-T01/T05/T07/T08 | emitted-example |
+| validators | R07 | data.validators | `src/modules/example/data/validators.ts` | 1/2/3 | PAT-T10 | emitted-example |
+| encryption | R07 | data.encryption-map | `src/modules/example/encryption.ts` | 1/2/3 | PAT-T10 | emitted-example |
+| ACL | R07 | module.acl-features | `src/modules/example/acl.ts` | 1/2/3 | PAT-T10 | emitted-example |
+| setup/default grants/partycja | R03/06 | module.setup-role-features | `src/modules/example/setup.ts` | 1/3 | PAT-T04/T08 | emitted-example |
+| ce/custom fields | R03 | data.custom-fields | `src/modules/example/ce.ts` | 1 | PAT-T04 | emitted-example |
+| CRUD patients | R01/03 | api.crud-query-engine-custom-fields | `src/modules/example/api/todos/route.ts` | 1 | PAT-T01/T04 | emitted-example |
+| CRUD addresses | R01 | api.crud-query-engine-custom-fields | `src/modules/example/api/todos/route.ts` | 1 | PAT-T03 | emitted-example |
+| CRUD contacts | R02 | api.crud-query-engine-custom-fields | `src/modules/example/api/todos/route.ts` | 1 | PAT-T02 | emitted-example |
+| CRUD diagnoses | R04 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 2 | PAT-T05 | emitted-example |
+| CRUD document-links | R05 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 2 | PAT-T06 | emitted-example |
+| CRUD attachment-links | R06 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 3 | PAT-T08 | emitted-example |
+| diagnoses/[id]/correct | R04 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | PAT-T05 | emitted-example |
+| diagnoses/[id]/void | R04 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | PAT-T05 | emitted-example |
+| document-links/new | R05 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | PAT-T07 | emitted-example |
+| document-links/[id]/resume | R05 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | PAT-T07 | emitted-example |
+| attachment-links/upload | R06 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 3 | PAT-T08 | emitted-example |
+| attachment-links/[id]/file | R06/07 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 3 | PAT-T09 | emitted-example |
+| OpenAPI wszystkich tras | R07 | api.openapi | `src/modules/example/api/openapi.ts` | 1/2/3 | PAT-T10 | emitted-example |
+| komendy / undo | R01–07 | commands.write; commands.undo-redo | `src/modules/example/commands/todos.ts` | 1/2/3 | PAT-T01/T02/T03/T05/T07/T08 | emitted-example |
+| patientReferenceService DI | R02/05 | module.di-registration | `src/modules/example/di.ts` | 1/2 | PAT-T02/T06 | emitted-example |
+| events | R07 | events.typed-definitions | `src/modules/example/events.ts` | 1/2/3 | PAT-T10 | emitted-example |
+| lista / DataTable host | R01 | ui.datatable | `src/modules/example/components/TodosTable.tsx` | 1 | PAT-T11 | emitted-example |
+| page/meta/nav | R01 | ui.page-shell | `src/modules/example/backend/todos/page.meta.ts` | 1 | PAT-T11 | emitted-example |
+| create/CrudForm host | R01/03 | ui.form-create | `src/modules/example/components/TodoForm.tsx` | 1 | PAT-T01/T04/T11 | emitted-example |
+| karta/adresy/dialogi | R01–06 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1/2/3 | PAT-T11 | emitted-example |
+| deklaracje extension hostów | R01/03 | umes.extension-points | `src/modules/example/extension-points.ts` | 1 | PAT-T11 | emitted-example |
+| pl/en | R01–06 | module.i18n-catalogs | `src/modules/example/i18n/pl.json` | 1/2/3 | PAT-T11 | emitted-example |
 
-Przy implementacji rozbić wiersze zbiorcze na dokładne pliki tras/komend dostarczane w danej fazie; żaden nowy mechanizm poza tą listą nie może pojawić się bez własnego oracle i aktualizacji specyfikacji.
+Każda wymieniona trasa ma osobny wiersz; wspólne deklaracje w plikach modułu mają wiersz swojego mechanizmu. Nowy mechanizm poza tą listą wymaga własnego oracle i aktualizacji specyfikacji.
 
 ## Rollout, Migration, and Rollback
 
@@ -387,6 +397,8 @@ Przy implementacji rozbić wiersze zbiorcze na dokładne pliki tras/komend dosta
 
 ## Final Compliance Report
 
+Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **approve**. Potwierdzono rozdzielenie PAT/VIS, tożsamość pacjenta, opcjonalnego prowadzącego versus wymaganego wykonawcę, 0..n usług, reguły cyklu życia oraz zależność VIS wyłącznie od PAT-1. Przegląd nie jest odbiorem implementacji. Lokalna kontrola dokumentów: wszystkie 25 sekcji szablonu, linki względne, ścieżki wzorców i mapowanie capability IDs poprawne; oryginalny diagram zachowany bez zmian.
+
 | Check | Status | Evidence / resolution |
 |---|---|---|
 | Applicable AGENTS/guides/skills | pass | spec-pr, om-spec-writing, template/spec-delivery; bounded framework-context, BC, backend-ui; installed-version wskazany |
@@ -410,3 +422,4 @@ Brak pytań blokujących model do użytkownika. Q1 rozstrzygnięte: dwa dokument
 |---|---|
 | 2026-09-29 | Szkielet briefu i diagramu, Q1/Q2 |
 | 2026-09-29 | Decyzje użytkownika; rozdzielenie PAT/VIS, model danych, sprawdzone kontrakty adresów/dokumentów/plików, SEC-ATT, plan i oracles |
+| 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i dokładne wiersze powierzchni API |

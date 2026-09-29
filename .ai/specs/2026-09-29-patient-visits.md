@@ -1,9 +1,9 @@
 # Patient — wizyty pacjenta
 
-**Date**: 2026-09-29  
-**Status**: Draft  
-**Spec ID**: VIS  
-**Zakres**: projekt, bez implementacji.  
+**Date**: 2026-09-29
+**Status**: Draft
+**Spec ID**: VIS
+**Zakres**: projekt, bez implementacji.
 **Zależność**: [PAT — kartoteka i dokumentacja](2026-09-29-patient-ehr-base.md), faza PAT-1. Ten sam moduł `patient`.
 
 ## TLDR
@@ -59,7 +59,7 @@ Faktury, płatności, kwoty, ceny, waluty, rabaty, ubezpieczenia, podział płat
 ## Domain Vocabulary and Business Rules
 
 1. Wizyta należy do jednego aktywnego pacjenta w tej samej organizacji. Po utworzeniu `patient_id` jest niezmienny; błędną wizytę anuluje się i zakłada dla właściwego pacjenta. Nie przenosimy dokumentacji między osobami przez edycję pola.
-2. `team_member_id` obowiązkowe przy każdym zapisie, wskazuje aktywny `staff:staff_team_member`, nie auth user. Prowadzący z karty może podpowiedzieć wybór, ale nie wypełnia pola niewidocznie; użytkownik widzi i zatwierdza wykonawcę. Brak prowadzącego nie blokuje wizyty.
+2. `team_member_id` obowiązkowe przy każdym zapisie i wskazuje `staff:staff_team_member`, nie auth user. Aktywność jest wymagana przy utworzeniu lub zmianie wykonawcy; późniejsza dezaktywacja nie blokuje korekty opisu ani odczytu historii. Prowadzący z karty może podpowiedzieć wybór, ale nie wypełnia pola niewidocznie; użytkownik widzi i zatwierdza wykonawcę. Brak prowadzącego nie blokuje wizyty.
 3. `resource_id` opcjonalne; jeśli ustawione, aktywny `resources:resources_resource` tego scope. Termin „gabinet” to zastosowanie zasobu, nie nowa encja. UI może filtrować istniejący typ zasobu, ale nie zgaduje typu po polskiej nazwie i nie tworzy go automatycznie.
 4. `starts_at` wymagane, `ends_at` opcjonalne i > starts_at. Brak czasu końca oznacza nieznany czas trwania, nie zero minut. API wymaga ISO-8601 z offsetem i prawidłowej IANA `time_zone`. UTC jest wartością porównywaną; UI pokazuje lokalny czas i strefę. Dla nieistniejącej godziny DST formularz odmawia, dla podwójnej wymaga jawnego offsetu. Data historyczna jest dozwolona do wprowadzenia odbytej wizyty; completed nie może zaczynać się w przyszłości.
 5. Liczba usług od 0 wzwyż. Ten sam product pojawia się najwyżej raz na wizycie. Pozycja oznacza rodzaj usługi, nie ilość/sprzedaż; brak quantity i cen. Uporządkowanie listy w `position`, zero usług nie blokuje potwierdzenia, ukończenia ani ręcznego rozliczenia.
@@ -305,27 +305,27 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 
 Każdy niżej wymieniony mechanizm ma klasyfikację **`emitted-example`** według `src/modules/example/references/surface-inventory.json`; dokładne wzorce są nieaktywne w runtime. Testy wskazane w wierszach są samowystarczalne.
 
-| Powierzchnia | Requirement | Capability ID | Wzorzec | Phase | Oracle |
-|---|---|---|---|---|---|
-| Encje visits/services | R01/02 | data.entities | `src/modules/example/data/entities.ts` | 1 | VIS-T01/T03 |
-| Migracja/snapshot | R01/02 | data.migrations | `src/modules/example/migrations/Migration20260804120546_example.ts` | 1 | VIS-T01 |
-| Validators | R01/02/03/04 | data.validators | `src/modules/example/data/validators.ts` | 1/2 | VIS-T02/T04/T05/T07 |
-| Encryption | R06 | data.encryption-map | `src/modules/example/encryption.ts` | 1 | VIS-T09 |
-| ACL/setup additions | R06 | module.acl-features; module.setup-role-features | `src/modules/example/acl.ts`; `src/modules/example/setup.ts` | 1/2 | VIS-T05/T09 |
-| Komendy + chronione undo | R01–06 | commands.write; commands.undo-redo | `src/modules/example/commands/todos.ts` | 1/2 | VIS-T03/T04/T05/T06 |
-| Visits CRUD | R01/02 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 1 | VIS-T01/T03 |
-| Confirmation action | R03 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T04 |
-| Status action | R03 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T04 |
-| Settlement action | R04 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T05 |
-| OpenAPI | R06 | api.openapi | `src/modules/example/api/openapi.ts` | 1/2 | VIS-T09 |
-| Events | R06 | events.typed-definitions | `src/modules/example/events.ts` | 1/2 | VIS-T09 |
-| Lista/DataTable host | R05 | ui.datatable | `src/modules/example/components/TodosTable.tsx` | 1 | VIS-T08 |
-| Create/CrudForm host | R05 | ui.form-create | `src/modules/example/components/TodoForm.tsx` | 1 | VIS-T08 |
-| Detail/edit | R05 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1/2 | VIS-T08 |
-| Page metadata/nav | R05 | ui.page-shell | `src/modules/example/backend/todos/page.meta.ts` | 1 | VIS-T08 |
-| Tab wizyt na karcie PAT | R05 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1 | VIS-T08 |
-| Deklaracje hostów | R05 | umes.extension-points | `src/modules/example/extension-points.ts` | 1 | VIS-T08 |
-| pl/en | R05 | module.i18n-catalogs | `src/modules/example/i18n/pl.json` | 1/2 | VIS-T08 |
+| Powierzchnia | Requirement | Capability ID | Wzorzec | Phase | Oracle | Classification |
+|---|---|---|---|---|---|---|
+| Encje visits/services | R01/02 | data.entities | `src/modules/example/data/entities.ts` | 1 | VIS-T01/T03 | emitted-example |
+| Migracja/snapshot | R01/02 | data.migrations | `src/modules/example/migrations/Migration20260804120546_example.ts` | 1 | VIS-T01 | emitted-example |
+| Validators | R01/02/03/04 | data.validators | `src/modules/example/data/validators.ts` | 1/2 | VIS-T02/T04/T05/T07 | emitted-example |
+| Encryption | R06 | data.encryption-map | `src/modules/example/encryption.ts` | 1 | VIS-T09 | emitted-example |
+| ACL/setup additions | R06 | module.acl-features; module.setup-role-features | `src/modules/example/acl.ts`; `src/modules/example/setup.ts` | 1/2 | VIS-T05/T09 | emitted-example |
+| Komendy + chronione undo | R01–06 | commands.write; commands.undo-redo | `src/modules/example/commands/todos.ts` | 1/2 | VIS-T03/T04/T05/T06 | emitted-example |
+| Visits CRUD | R01/02 | api.crud-factory | `src/modules/example/api/customer-priorities/route.ts` | 1 | VIS-T01/T03 | emitted-example |
+| Confirmation action | R03 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T04 | emitted-example |
+| Status action | R03 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T04 | emitted-example |
+| Settlement action | R04 | api.custom-route | `src/modules/example/api/organizations/route.ts` | 2 | VIS-T05 | emitted-example |
+| OpenAPI | R06 | api.openapi | `src/modules/example/api/openapi.ts` | 1/2 | VIS-T09 | emitted-example |
+| Events | R06 | events.typed-definitions | `src/modules/example/events.ts` | 1/2 | VIS-T09 | emitted-example |
+| Lista/DataTable host | R05 | ui.datatable | `src/modules/example/components/TodosTable.tsx` | 1 | VIS-T08 | emitted-example |
+| Create/CrudForm host | R05 | ui.form-create | `src/modules/example/components/TodoForm.tsx` | 1 | VIS-T08 | emitted-example |
+| Detail/edit | R05 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1/2 | VIS-T08 | emitted-example |
+| Page metadata/nav | R05 | ui.page-shell | `src/modules/example/backend/todos/page.meta.ts` | 1 | VIS-T08 | emitted-example |
+| Tab wizyt na karcie PAT | R05 | ui.form-edit | `src/modules/example/backend/todos/[id]/edit/page.tsx` | 1 | VIS-T08 | emitted-example |
+| Deklaracje hostów | R05 | umes.extension-points | `src/modules/example/extension-points.ts` | 1 | VIS-T08 | emitted-example |
+| pl/en | R05 | module.i18n-catalogs | `src/modules/example/i18n/pl.json` | 1/2 | VIS-T08 | emitted-example |
 
 ## Rollout, Migration, and Rollback
 
@@ -356,6 +356,8 @@ VIS-2 dodaje zachowania i uprawnienia na istniejących polach; stare planned wiz
 
 ## Final Compliance Report
 
+Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **approve**. Potwierdzono rozdzielenie PAT/VIS, tożsamość pacjenta, opcjonalnego prowadzącego versus wymaganego wykonawcę, 0..n usług, reguły cyklu życia oraz zależność VIS wyłącznie od PAT-1. Przegląd nie jest odbiorem implementacji. Lokalna kontrola dokumentów: wszystkie 25 sekcji szablonu, linki względne, ścieżki wzorców i mapowanie capability IDs poprawne; oryginalny diagram zachowany bez zmian.
+
 | Check | Status | Evidence / resolution |
 |---|---|---|
 | AGENTS/guides/skills | pass | om-spec-writing, spec-delivery/template, BC, backend-ui, wersja i facts |
@@ -377,3 +379,4 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 | Date | Change |
 |---|---|
 | 2026-09-29 | Osobna specyfikacja VIS po decyzjach użytkownika; model agregatu/listy usług, stany, API/UI, testy i fazy |
+| 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i jawne klasyfikacje powierzchni |
