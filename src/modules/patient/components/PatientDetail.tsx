@@ -22,6 +22,9 @@ import type { PatientDetailItem } from '../types'
 import { loadTeamMemberOptions, resolveTeamMemberLabel } from './referencePickers'
 import { PatientAddressesSection } from './PatientAddressesSection'
 import { PatientContactsSection } from './PatientContactsSection'
+import { PatientDiagnosesSection } from './PatientDiagnosesSection'
+import { PatientDocumentsSection } from './PatientDocumentsSection'
+import { useClinicalAccess } from './useClinicalAccess'
 
 const LIST_HREF = '/backend/patient/patients'
 const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
@@ -31,8 +34,11 @@ const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
  * and so a 409 that reloads the record does not silently drop the operator back to the first
  * tab.
  */
-const TABS = ['data', 'addresses', 'contacts'] as const
+const TABS = ['data', 'addresses', 'contacts', 'diagnoses', 'documents'] as const
 type TabId = (typeof TABS)[number]
+
+/** Tabs that require `patient.clinical.view`; absent entirely for a records-only operator. */
+const CLINICAL_TABS: readonly TabId[] = ['diagnoses', 'documents']
 
 function isTabId(value: string | null): value is TabId {
   return value !== null && (TABS as readonly string[]).includes(value)
@@ -95,8 +101,18 @@ export function PatientDetail({ id }: { id: string }) {
   const [isTransitioning, setIsTransitioning] = React.useState(false)
   const [reloadToken, setReloadToken] = React.useState(0)
 
+  const clinicalAccess = useClinicalAccess(id)
+  // `unknown` keeps the clinical tabs hidden until the probe answers, so they do not flash in
+  // and out for an operator who turns out not to hold the feature. `unavailable` shows them, so
+  // a transport failure does not silently remove a surface the operator may be entitled to.
+  const showClinicalTabs = clinicalAccess === 'granted' || clinicalAccess === 'unavailable'
+
   const requestedTab = searchParams?.get('tab') ?? null
-  const activeTab: TabId = isTabId(requestedTab) ? requestedTab : 'data'
+  const resolvedTab: TabId = isTabId(requestedTab) ? requestedTab : 'data'
+  // A deep link to a clinical tab the operator cannot open falls back to the record tab rather
+  // than rendering an empty panel with no trigger to leave it.
+  const activeTab: TabId =
+    !showClinicalTabs && CLINICAL_TABS.includes(resolvedTab) ? 'data' : resolvedTab
 
   const setActiveTab = React.useCallback(
     (next: string) => {
@@ -311,6 +327,12 @@ export function PatientDetail({ id }: { id: string }) {
           <TabsTrigger value="data">{t('patient.patients.tabs.data')}</TabsTrigger>
           <TabsTrigger value="addresses">{t('patient.patients.tabs.addresses')}</TabsTrigger>
           <TabsTrigger value="contacts">{t('patient.patients.tabs.contacts')}</TabsTrigger>
+          {showClinicalTabs ? (
+            <>
+              <TabsTrigger value="diagnoses">{t('patient.patients.tabs.diagnoses')}</TabsTrigger>
+              <TabsTrigger value="documents">{t('patient.patients.tabs.documents')}</TabsTrigger>
+            </>
+          ) : null}
         </TabsList>
 
         <TabsContent value="data">
@@ -363,6 +385,20 @@ export function PatientDetail({ id }: { id: string }) {
         <TabsContent value="contacts">
           <PatientContactsSection patientId={id} readOnly={isArchived} onMutated={reload} />
         </TabsContent>
+
+        {showClinicalTabs ? (
+          <>
+            <TabsContent value="diagnoses">
+              {/* `readOnly` blocks only NEW entries on an archived record. Correcting and voiding
+                  stay available inside the section, because they repair history rather than add
+                  to it — the same distinction the server enforces. */}
+              <PatientDiagnosesSection patientId={id} readOnly={isArchived} onMutated={reload} />
+            </TabsContent>
+            <TabsContent value="documents">
+              <PatientDocumentsSection patientId={id} readOnly={isArchived} onMutated={reload} />
+            </TabsContent>
+          </>
+        ) : null}
       </Tabs>
 
       {ConfirmDialogElement}
