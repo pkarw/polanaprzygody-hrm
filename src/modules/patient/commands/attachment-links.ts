@@ -8,7 +8,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { PatientAttachmentLink, PatientDiagnosis } from '../data/entities'
+import { Patient, PatientAttachmentLink, PatientDiagnosis } from '../data/entities'
 import {
   patientAttachmentLinkCreateSchema,
   patientAttachmentLinkDeleteSchema,
@@ -113,28 +113,6 @@ const createAttachmentLinkCommand: CommandHandler<Record<string, unknown>, Patie
       return await loadLinkDecrypted(em, String(replayed.id), scope)
     }
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
-
-    // A file may belong to the patient in general or to one diagnosis — and that diagnosis must
-    // belong to THIS patient. Without the check, a caller could attach a file to a diagnosis of
-    // someone else's record while naming a patient they can see.
-    if (parsed.diagnosisId) {
-      const diagnosis = await em.findOne(PatientDiagnosis, {
-        id: parsed.diagnosisId,
-        patientId: parsed.patientId,
-        tenantId: scope.tenantId,
-        organizationId: scope.organizationId,
-        deletedAt: null,
-      } as FilterQuery<PatientDiagnosis>)
-      if (!diagnosis) {
-        throw new CrudHttpError(422, {
-          error: 'The referenced diagnosis does not belong to this patient',
-          code: 'diagnosis_not_of_patient',
-        })
-      }
-    }
-
     const encrypted = await encryptSensitiveFields(
       ATTACHMENT_LINK_ENTITY_ID,
       { originalFileName: null },
@@ -143,7 +121,8 @@ const createAttachmentLinkCommand: CommandHandler<Record<string, unknown>, Patie
     )
 
     const linkId = randomUUID()
-    const now = nextUpdatedAt(patient.updatedAt)
+    let patient!: Patient
+    let now!: Date
     let link!: PatientAttachmentLink
 
     try {
@@ -157,6 +136,31 @@ const createAttachmentLinkCommand: CommandHandler<Record<string, unknown>, Patie
         indexer: patientAttachmentLinkCrudIndexer,
         syncOrigin: ctx.syncOrigin,
         phases: [
+          async ({ em: phaseEm }) => {
+            patient = await lockPatient(phaseEm, parsed.patientId, scope)
+            assertPatientAcceptsNewEntries(patient)
+
+            // A file may belong to the patient in general or to one diagnosis — and that
+            // diagnosis must belong to THIS patient. Without the check, a caller could attach a
+            // file to a diagnosis of someone else's record while naming a patient they can see.
+            if (parsed.diagnosisId) {
+              const diagnosis = await phaseEm.findOne(PatientDiagnosis, {
+                id: parsed.diagnosisId,
+                patientId: parsed.patientId,
+                tenantId: scope.tenantId,
+                organizationId: scope.organizationId,
+                deletedAt: null,
+              } as FilterQuery<PatientDiagnosis>)
+              if (!diagnosis) {
+                throw new CrudHttpError(422, {
+                  error: 'The referenced diagnosis does not belong to this patient',
+                  code: 'diagnosis_not_of_patient',
+                })
+              }
+            }
+
+            now = nextUpdatedAt(patient.updatedAt)
+          },
           ({ em: phaseEm }) => {
             link = phaseEm.create(PatientAttachmentLink, {
               id: linkId,
@@ -239,19 +243,9 @@ const deleteAttachmentLinkCommand: CommandHandler<Record<string, unknown>, Patie
     } as FilterQuery<PatientAttachmentLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'File link not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await em.findOne(PatientAttachmentLink, {
-      id: parsed.id,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientAttachmentLink>)
-    if (!link) throw new CrudHttpError(404, { error: 'File link not found' })
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, ATTACHMENT_LINK_ENTITY_ID)
-
-    const deletedAt = nextUpdatedAt(
-      patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
-    )
+    let patient!: Patient
+    let link!: PatientAttachmentLink
+    let deletedAt!: Date
 
     await runCrudCommandWrite<PatientAttachmentLink>({
       ctx,
@@ -263,6 +257,21 @@ const deleteAttachmentLinkCommand: CommandHandler<Record<string, unknown>, Patie
       indexer: patientAttachmentLinkCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          const found = await phaseEm.findOne(PatientAttachmentLink, {
+            id: parsed.id,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          } as FilterQuery<PatientAttachmentLink>)
+          if (!found) throw new CrudHttpError(404, { error: 'File link not found' })
+          link = found
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, ATTACHMENT_LINK_ENTITY_ID)
+          deletedAt = nextUpdatedAt(
+            patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           // Both, deliberately: `state` records the domain fact for a reader of the history, and
           // `deleted_at` releases the partial unique index so the same file can be re-attached.

@@ -6,7 +6,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { PatientAddress } from '../data/entities'
+import { Patient, PatientAddress } from '../data/entities'
 import {
   patientAddressCreateSchema,
   patientAddressDeleteSchema,
@@ -160,21 +160,6 @@ const createAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
-
-    const activeCount = await em.count(PatientAddress, {
-      patientId: parsed.patientId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientAddress>)
-
-    // A record with no address must not stay that way: the first address added back is
-    // promoted automatically, because "exactly one primary" is an invariant of an active
-    // record rather than a user preference.
-    const shouldBePrimary = parsed.isPrimary === true || activeCount === 0
-
     // Built explicitly rather than through `collectAddressSensitive`, because on create
     // `addressLine1` is required by the schema and the entity, while the shared collector
     // has to leave every key optional to express "absent means unchanged" on update.
@@ -198,7 +183,9 @@ const createAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
       tryResolveEncryptionService(ctx),
     )
 
-    const now = nextUpdatedAt(patient.updatedAt)
+    let patient!: Patient
+    let now!: Date
+    let shouldBePrimary = false
     let address!: PatientAddress
 
     await runCrudCommandWrite<PatientAddress>({
@@ -211,6 +198,25 @@ const createAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
       indexer: patientAddressCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // Lock first, inside the transaction: PESSIMISTIC_WRITE is only legal within one, and
+        // the "is this the only address" count must be serialized against a concurrent add.
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, parsed.patientId, scope)
+          assertPatientAcceptsNewEntries(patient)
+
+          const activeCount = await phaseEm.count(PatientAddress, {
+            patientId: parsed.patientId,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          } as FilterQuery<PatientAddress>)
+
+          // A record with no address must not stay that way: the first address added back is
+          // promoted automatically, because "exactly one primary" is an invariant of an active
+          // record rather than a user preference.
+          shouldBePrimary = parsed.isPrimary === true || activeCount === 0
+          now = nextUpdatedAt(patient.updatedAt)
+        },
         async ({ em: phaseEm }) => {
           if (shouldBePrimary) {
             await demoteCurrentPrimary(phaseEm, parsed.patientId, scope, null, now, actorUserId)
@@ -286,10 +292,6 @@ const updateAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
     } as FilterQuery<PatientAddress>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Address not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const address = await loadAddressDecrypted(em, parsed.id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, address.updatedAt, ADDRESS_ENTITY_ID)
-
     const encrypted = await encryptSensitiveFields(
       ADDRESS_ENTITY_ID,
       collectAddressSensitive(parsed),
@@ -297,10 +299,10 @@ const updateAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
       tryResolveEncryptionService(ctx),
     )
 
-    const promoting = parsed.isPrimary === true && !address.isPrimary
-    const now = nextUpdatedAt(
-      patient.updatedAt > address.updatedAt ? patient.updatedAt : address.updatedAt,
-    )
+    let patient!: Patient
+    let address!: PatientAddress
+    let promoting = false
+    let now!: Date
 
     await runCrudCommandWrite<PatientAddress>({
       ctx,
@@ -312,6 +314,15 @@ const updateAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
       indexer: patientAddressCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          address = await loadAddressDecrypted(phaseEm, parsed.id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, address.updatedAt, ADDRESS_ENTITY_ID)
+          promoting = parsed.isPrimary === true && !address.isPrimary
+          now = nextUpdatedAt(
+            patient.updatedAt > address.updatedAt ? patient.updatedAt : address.updatedAt,
+          )
+        },
         async ({ em: phaseEm }) => {
           if (promoting) {
             await demoteCurrentPrimary(phaseEm, String(address.patientId), scope, parsed.id, now, actorUserId)
@@ -390,40 +401,9 @@ const deleteAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
     } as FilterQuery<PatientAddress>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Address not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const address = await em.findOne(PatientAddress, {
-      id: parsed.id,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientAddress>)
-    if (!address) throw new CrudHttpError(404, { error: 'Address not found' })
-    assertExpectedVersion(parsed.expectedUpdatedAt, address.updatedAt, ADDRESS_ENTITY_ID)
-
-    const remaining = await em.count(PatientAddress, {
-      patientId: address.patientId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-      id: { $ne: parsed.id },
-    } as FilterQuery<PatientAddress>)
-
-    if (remaining === 0 && patient.status === 'active') {
-      throw new CrudHttpError(409, {
-        error: 'An active patient must keep at least one address',
-        code: 'last_address',
-      })
-    }
-    if (address.isPrimary && remaining > 0) {
-      throw new CrudHttpError(409, {
-        error: 'Promote another address to primary before deleting this one',
-        code: 'primary_address_in_use',
-      })
-    }
-
-    const deletedAt = nextUpdatedAt(
-      patient.updatedAt > address.updatedAt ? patient.updatedAt : address.updatedAt,
-    )
+    let patient!: Patient
+    let address!: PatientAddress
+    let deletedAt!: Date
 
     await runCrudCommandWrite<PatientAddress>({
       ctx,
@@ -435,6 +415,45 @@ const deleteAddressCommand: CommandHandler<Record<string, unknown>, PatientAddre
       indexer: patientAddressCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // Both refusals depend on a count taken under the lock; outside the transaction two
+        // concurrent deletes could each see one remaining address and both proceed.
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          const found = await phaseEm.findOne(PatientAddress, {
+            id: parsed.id,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          } as FilterQuery<PatientAddress>)
+          if (!found) throw new CrudHttpError(404, { error: 'Address not found' })
+          address = found
+          assertExpectedVersion(parsed.expectedUpdatedAt, address.updatedAt, ADDRESS_ENTITY_ID)
+
+          const remaining = await phaseEm.count(PatientAddress, {
+            patientId: address.patientId,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+            id: { $ne: parsed.id },
+          } as FilterQuery<PatientAddress>)
+
+          if (remaining === 0 && patient.status === 'active') {
+            throw new CrudHttpError(409, {
+              error: 'An active patient must keep at least one address',
+              code: 'last_address',
+            })
+          }
+          if (address.isPrimary && remaining > 0) {
+            throw new CrudHttpError(409, {
+              error: 'Promote another address to primary before deleting this one',
+              code: 'primary_address_in_use',
+            })
+          }
+
+          deletedAt = nextUpdatedAt(
+            patient.updatedAt > address.updatedAt ? patient.updatedAt : address.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           address.deletedAt = deletedAt
           address.isPrimary = false

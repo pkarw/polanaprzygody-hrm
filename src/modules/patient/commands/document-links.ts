@@ -10,7 +10,7 @@ import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { hasTier, loadScopedDocument, resolveUserAccess } from '@open-mercato/documents/modules/documents/lib/permissions'
-import { PatientDocumentLink } from '../data/entities'
+import { Patient, PatientDocumentLink } from '../data/entities'
 import {
   patientDocumentLinkCreateSchema,
   patientDocumentLinkDeleteSchema,
@@ -136,27 +136,13 @@ const createDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patient
       return await loadLinkDecrypted(em, String(replayed.id), scope)
     }
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
+    // The document ACL check is a read and needs no patient lock, so it runs first and fails
+    // fast without holding a row.
     await requireDocumentReadAccess(em, parsed.documentId, scope, actorUserId, ctx.container)
 
-    const alreadyLinked = await em.count(PatientDocumentLink, {
-      patientId: parsed.patientId,
-      documentId: parsed.documentId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-      state: { $ne: 'abandoned' },
-    } as FilterQuery<PatientDocumentLink>)
-    if (alreadyLinked > 0) {
-      throw new CrudHttpError(409, {
-        error: 'This document is already linked to this patient',
-        code: 'document_already_linked',
-      })
-    }
-
     const linkId = randomUUID()
-    const now = nextUpdatedAt(patient.updatedAt)
+    let patient!: Patient
+    let now!: Date
     let link!: PatientDocumentLink
 
     try {
@@ -170,6 +156,27 @@ const createDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patient
         indexer: patientDocumentLinkCrudIndexer,
         syncOrigin: ctx.syncOrigin,
         phases: [
+          async ({ em: phaseEm }) => {
+            patient = await lockPatient(phaseEm, parsed.patientId, scope)
+            assertPatientAcceptsNewEntries(patient)
+
+            const alreadyLinked = await phaseEm.count(PatientDocumentLink, {
+              patientId: parsed.patientId,
+              documentId: parsed.documentId,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+              deletedAt: null,
+              state: { $ne: 'abandoned' },
+            } as FilterQuery<PatientDocumentLink>)
+            if (alreadyLinked > 0) {
+              throw new CrudHttpError(409, {
+                error: 'This document is already linked to this patient',
+                code: 'document_already_linked',
+              })
+            }
+
+            now = nextUpdatedAt(patient.updatedAt)
+          },
           ({ em: phaseEm }) => {
             link = phaseEm.create(PatientDocumentLink, {
               id: linkId,
@@ -325,9 +332,6 @@ const createNewDocumentLinkCommand: CommandHandler<Record<string, unknown>, Pati
       return await loadLinkDecrypted(em, String(replayed.id), scope)
     }
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
-
     const linkId = randomUUID()
     const documentId = randomUUID()
     const contentId = randomUUID()
@@ -337,14 +341,22 @@ const createNewDocumentLinkCommand: CommandHandler<Record<string, unknown>, Pati
       scope,
       tryResolveEncryptionService(ctx),
     )
-    const now = nextUpdatedAt(patient.updatedAt)
-
     // Step 1 — the intent. Committed before the document exists, on purpose: a crash from here
     // on leaves something to resume rather than an orphaned document.
+    //
+    // The patient lock lives INSIDE this transaction: PESSIMISTIC_WRITE is only legal within an
+    // open one, and the archived-record gate has to be read under it.
+    let patient!: Patient
+    let now!: Date
     let link!: PatientDocumentLink
     await withAtomicFlush(
       em,
       [
+        async () => {
+          patient = await lockPatient(em, parsed.patientId, scope)
+          assertPatientAcceptsNewEntries(patient)
+          now = nextUpdatedAt(patient.updatedAt)
+        },
         async () => {
           link = em.create(PatientDocumentLink, {
             id: linkId,
@@ -473,9 +485,21 @@ const resumeDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patient
     } as FilterQuery<PatientDocumentLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Document link not found' })
 
-    await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await loadLinkDecrypted(em, id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
+    // Resume composes its own multi-step flow (it may call the documents module's command), so
+    // it takes the lock in an explicit transaction it owns rather than through
+    // `runCrudCommandWrite`. The lock is released at commit, before the documents command runs.
+    let link!: PatientDocumentLink
+    await withAtomicFlush(
+      em,
+      [
+        async () => {
+          await lockPatient(em, String(preliminary.patientId), scope)
+          link = await loadLinkDecrypted(em, id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
+        },
+      ],
+      { transaction: true, label: 'patient.document_links.resume.check' },
+    )
 
     return await resumePendingLink(ctx, em, link, scope, actorUserId)
   },
@@ -518,18 +542,9 @@ const abandonDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patien
     } as FilterQuery<PatientDocumentLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Document link not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await loadLinkDecrypted(em, id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
-
-    if (link.state !== 'pending_create') {
-      throw new CrudHttpError(409, {
-        error: 'Only an unfinished creation intent can be abandoned',
-        code: 'document_link_not_pending',
-      })
-    }
-
-    const now = nextUpdatedAt(patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt)
+    let patient!: Patient
+    let link!: PatientDocumentLink
+    let now!: Date
 
     await runCrudCommandWrite<PatientDocumentLink>({
       ctx,
@@ -541,6 +556,22 @@ const abandonDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patien
       indexer: patientDocumentLinkCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          link = await loadLinkDecrypted(phaseEm, id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
+
+          if (link.state !== 'pending_create') {
+            throw new CrudHttpError(409, {
+              error: 'Only an unfinished creation intent can be abandoned',
+              code: 'document_link_not_pending',
+            })
+          }
+
+          now = nextUpdatedAt(
+            patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           link.state = 'abandoned'
           // Required by the table's check constraint, which permits a working title only while
@@ -600,28 +631,9 @@ const deleteDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patient
     } as FilterQuery<PatientDocumentLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Document link not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await em.findOne(PatientDocumentLink, {
-      id: parsed.id,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientDocumentLink>)
-    if (!link) throw new CrudHttpError(404, { error: 'Document link not found' })
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
-
-    // An unfinished intent blocks deleting the patient, and unpinning is not the way to clear
-    // it: abandoning it is an explicit, audited decision about a document that may exist.
-    if (link.state === 'pending_create') {
-      throw new CrudHttpError(409, {
-        error: 'Finish or abandon this document creation before unpinning it',
-        code: 'document_link_pending',
-      })
-    }
-
-    const deletedAt = nextUpdatedAt(
-      patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
-    )
+    let patient!: Patient
+    let link!: PatientDocumentLink
+    let deletedAt!: Date
 
     await runCrudCommandWrite<PatientDocumentLink>({
       ctx,
@@ -633,6 +645,32 @@ const deleteDocumentLinkCommand: CommandHandler<Record<string, unknown>, Patient
       indexer: patientDocumentLinkCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          const found = await phaseEm.findOne(PatientDocumentLink, {
+            id: parsed.id,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          } as FilterQuery<PatientDocumentLink>)
+          if (!found) throw new CrudHttpError(404, { error: 'Document link not found' })
+          link = found
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, DOCUMENT_LINK_ENTITY_ID)
+
+          // An unfinished intent blocks deleting the patient, and unpinning is not the way to
+          // clear it: abandoning it is an explicit, audited decision about a document that may
+          // exist.
+          if (link.state === 'pending_create') {
+            throw new CrudHttpError(409, {
+              error: 'Finish or abandon this document creation before unpinning it',
+              code: 'document_link_pending',
+            })
+          }
+
+          deletedAt = nextUpdatedAt(
+            patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           link.deletedAt = deletedAt
           link.updatedAt = deletedAt

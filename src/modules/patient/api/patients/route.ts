@@ -12,6 +12,7 @@ import {
 import type { CustomFieldSet } from '@open-mercato/shared/modules/entities'
 import {
   archived_at,
+  birth_date,
   created_at,
   description as descriptionField,
   email as emailField,
@@ -112,11 +113,14 @@ const baseListFields = [
 ]
 
 /**
- * `description` is projected only for a single-record request.
+ * Columns projected only for a single-record request.
  *
- * It is encrypted and it is the module's longest free-text field, so a grid page would pay
- * the module's most expensive per-row decrypt for a column nothing on the page renders.
- * A single-record request is exactly how the detail form loads one patient.
+ * `description` is encrypted and is the module's longest free-text field, so a grid page would
+ * pay the most expensive per-row decrypt for a column nothing on the page renders.
+ * `birth_date` and `archived_at` are likewise only rendered on the card.
+ *
+ * A single-record request is exactly how the detail form loads one patient — and every field the
+ * edit form binds MUST be in this list, or it silently loads blank and a save then clears it.
  */
 function isSingleRecordRequest(query: Pick<Query, 'id' | 'ids'>): boolean {
   if (typeof query.id === 'string' && query.id.length > 0) return true
@@ -152,6 +156,7 @@ type PatientRow = {
   email: string | null
   phone: string | null
   description?: string | null
+  birth_date?: string | null
   owner_team_member_id: string | null
   status: 'active' | 'archived'
   archived_at?: Date | string | null
@@ -170,6 +175,7 @@ type PatientItem = {
   email: string | null
   phone: string | null
   description?: string | null
+  birthDate?: string | null
   ownerTeamMemberId: string | null
   owner: { id: string; name: string; isAvailable: boolean } | null
   status: 'active' | 'archived'
@@ -218,7 +224,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     entityId: ENTITY_ID,
     fields: (query: Query) => [
       ...baseListFields,
-      ...(isSingleRecordRequest(query) ? [descriptionField, archived_at] : []),
+      ...(isSingleRecordRequest(query) ? [descriptionField, birth_date, archived_at] : []),
       ...cfSel.keys.map((key) => `cf:${key}`),
     ],
     sortFieldMap,
@@ -264,6 +270,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       email: item.email ?? null,
       phone: item.phone ?? null,
       ...(item.description !== undefined ? { description: item.description ?? null } : {}),
+      ...(item.birth_date !== undefined ? { birthDate: item.birth_date ?? null } : {}),
       ownerTeamMemberId: item.owner_team_member_id ?? null,
       // Filled in by `afterList` in ONE batched lookup for the whole page.
       owner: null,

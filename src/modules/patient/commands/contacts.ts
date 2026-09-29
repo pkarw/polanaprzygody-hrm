@@ -7,7 +7,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { PatientContactLink } from '../data/entities'
+import { Patient, PatientContactLink } from '../data/entities'
 import {
   patientContactCreateSchema,
   patientContactDeleteSchema,
@@ -120,27 +120,14 @@ const createContactCommand: CommandHandler<Record<string, unknown>, PatientConta
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
-
     // 422 when the id is not an active CRM person in this scope. Validating the reference
     // does not grant access to it: the picker that discovered the candidate called the
     // customers API and inherited its ACL.
+    //
+    // Done BEFORE the transaction opens: it is a read plus, for encryption, a KMS round trip,
+    // and neither needs the patient lock. Holding a row lock across them would only widen the
+    // window in which another operator blocks.
     await referenceService(ctx).requireActiveCrmPerson(parsed.customerEntityId, scope)
-
-    const alreadyLinked = await em.count(PatientContactLink, {
-      patientId: parsed.patientId,
-      customerEntityId: parsed.customerEntityId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientContactLink>)
-    if (alreadyLinked > 0) {
-      throw new CrudHttpError(409, {
-        error: 'This person is already linked to this patient',
-        code: 'contact_already_linked',
-      })
-    }
 
     const encrypted = await encryptSensitiveFields(
       CONTACT_ENTITY_ID,
@@ -149,7 +136,8 @@ const createContactCommand: CommandHandler<Record<string, unknown>, PatientConta
       tryResolveEncryptionService(ctx),
     )
 
-    const now = nextUpdatedAt(patient.updatedAt)
+    let patient!: Patient
+    let now!: Date
     let link!: PatientContactLink
 
     try {
@@ -163,6 +151,29 @@ const createContactCommand: CommandHandler<Record<string, unknown>, PatientConta
         indexer: patientContactCrudIndexer,
         syncOrigin: ctx.syncOrigin,
         phases: [
+          // Phase 1 is the lock and every check that depends on it. `runCrudCommandWrite` opens
+          // the transaction around these phases, and `PESSIMISTIC_WRITE` is only legal — and
+          // only meaningful — inside one.
+          async ({ em: phaseEm }) => {
+            patient = await lockPatient(phaseEm, parsed.patientId, scope)
+            assertPatientAcceptsNewEntries(patient)
+
+            const alreadyLinked = await phaseEm.count(PatientContactLink, {
+              patientId: parsed.patientId,
+              customerEntityId: parsed.customerEntityId,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+              deletedAt: null,
+            } as FilterQuery<PatientContactLink>)
+            if (alreadyLinked > 0) {
+              throw new CrudHttpError(409, {
+                error: 'This person is already linked to this patient',
+                code: 'contact_already_linked',
+              })
+            }
+
+            now = nextUpdatedAt(patient.updatedAt)
+          },
           async ({ em: phaseEm }) => {
             if (parsed.isPrimaryContact) {
               await demoteCurrentPrimaryContact(phaseEm, parsed.patientId, scope, null, now, actorUserId)
@@ -258,10 +269,6 @@ const updateContactCommand: CommandHandler<Record<string, unknown>, PatientConta
     } as FilterQuery<PatientContactLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Contact link not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await loadContactDecrypted(em, parsed.id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, CONTACT_ENTITY_ID)
-
     const encrypted = await encryptSensitiveFields(
       CONTACT_ENTITY_ID,
       parsed.relationshipLabel !== undefined
@@ -271,8 +278,10 @@ const updateContactCommand: CommandHandler<Record<string, unknown>, PatientConta
       tryResolveEncryptionService(ctx),
     )
 
-    const promoting = parsed.isPrimaryContact && !link.isPrimaryContact
-    const now = nextUpdatedAt(patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt)
+    let patient!: Patient
+    let link!: PatientContactLink
+    let promoting = false
+    let now!: Date
 
     await runCrudCommandWrite<PatientContactLink>({
       ctx,
@@ -284,6 +293,15 @@ const updateContactCommand: CommandHandler<Record<string, unknown>, PatientConta
       indexer: patientContactCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // Lock, then compare the version — in that order and inside the transaction, or two
+        // writers can both read the same `updated_at`, both pass, and both write.
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          link = await loadContactDecrypted(phaseEm, parsed.id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, CONTACT_ENTITY_ID)
+          promoting = parsed.isPrimaryContact && !link.isPrimaryContact
+          now = nextUpdatedAt(patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt)
+        },
         async ({ em: phaseEm }) => {
           if (promoting) {
             await demoteCurrentPrimaryContact(
@@ -362,19 +380,9 @@ const deleteContactCommand: CommandHandler<Record<string, unknown>, PatientConta
     } as FilterQuery<PatientContactLink>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Contact link not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const link = await em.findOne(PatientContactLink, {
-      id: parsed.id,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<PatientContactLink>)
-    if (!link) throw new CrudHttpError(404, { error: 'Contact link not found' })
-    assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, CONTACT_ENTITY_ID)
-
-    const deletedAt = nextUpdatedAt(
-      patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
-    )
+    let patient!: Patient
+    let link!: PatientContactLink
+    let deletedAt!: Date
 
     await runCrudCommandWrite<PatientContactLink>({
       ctx,
@@ -386,6 +394,21 @@ const deleteContactCommand: CommandHandler<Record<string, unknown>, PatientConta
       indexer: patientContactCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          const found = await phaseEm.findOne(PatientContactLink, {
+            id: parsed.id,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          } as FilterQuery<PatientContactLink>)
+          if (!found) throw new CrudHttpError(404, { error: 'Contact link not found' })
+          link = found
+          assertExpectedVersion(parsed.expectedUpdatedAt, link.updatedAt, CONTACT_ENTITY_ID)
+          deletedAt = nextUpdatedAt(
+            patient.updatedAt > link.updatedAt ? patient.updatedAt : link.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           link.deletedAt = deletedAt
           // Released with the link so the partial unique index does not keep treating a

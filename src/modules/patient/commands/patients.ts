@@ -480,11 +480,8 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
 
-    // Lock before the version check, never after: check-then-lock lets two writers read
-    // the same `updated_at`, both pass, and both write.
-    const locked = await lockPatient(em, parsed.id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
-
+    // Read once outside the transaction to decide what needs validating and encrypting. The
+    // authoritative re-read happens under the lock in phase 1 below.
     const current = await loadPatientDecrypted(em, parsed.id, scope)
     const mergedEmail = parsed.email !== undefined ? parsed.email : current.email ?? null
     const mergedPhone = parsed.phone !== undefined ? parsed.phone : current.phone ?? null
@@ -519,7 +516,8 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       tryResolveEncryptionService(ctx),
     )
 
-    const updatedAt = nextUpdatedAt(locked.updatedAt)
+    let locked!: Patient
+    let updatedAt!: Date
     let patient!: Patient
 
     await runCrudCommandWrite<Patient>({
@@ -533,6 +531,14 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       indexer: patientCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // Lock, THEN compare the version — and both inside the transaction. Check-then-lock
+        // lets two writers read the same `updated_at`, both pass, and both write; and
+        // PESSIMISTIC_WRITE is only legal within an open transaction at all.
+        async ({ em: phaseEm }) => {
+          locked = await lockPatient(phaseEm, parsed.id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
+          updatedAt = nextUpdatedAt(locked.updatedAt)
+        },
         ({ em: phaseEm }) => {
           for (const [key, value] of Object.entries(encrypted)) {
             ;(locked as unknown as Record<string, unknown>)[key] = value
@@ -591,6 +597,11 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       throw new CrudHttpError(403, { error: 'Undo scope does not match tenant' })
     }
     const em = (ctx.container.resolve('em') as EntityManager).fork()
+    // Undo takes the same lock as a normal write, so it needs its own transaction; unlike the
+    // commands above it has no `runCrudCommandWrite` to open one, so it opens one explicitly
+    // and owns the commit.
+    await em.begin()
+    try {
     const locked = await lockPatient(em, before.id, scope)
     const current = await loadPatientDecrypted(em, before.id, scope)
     if (after) {
@@ -630,6 +641,11 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     locked.updatedAt = nextUpdatedAt(locked.updatedAt)
     locked.updatedByUserId = requireActorUserId(ctx)
     await em.persist(locked).flush()
+      await em.commit()
+    } catch (error) {
+      await em.rollback()
+      throw error
+    }
   },
 }
 
@@ -653,18 +669,10 @@ const archivePatientCommand: CommandHandler<Record<string, unknown>, Patient> = 
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
 
-    const locked = await lockPatient(em, parsed.id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
-
     const target = parsed.archived ? 'archived' : 'active'
-    if (locked.status === target) {
-      throw new CrudHttpError(409, {
-        error: parsed.archived ? 'This record is already archived' : 'This record is already active',
-        code: 'status_unchanged',
-      })
-    }
 
-    const updatedAt = nextUpdatedAt(locked.updatedAt)
+    let locked!: Patient
+    let updatedAt!: Date
     let patient!: Patient
 
     await runCrudCommandWrite<Patient>({
@@ -680,6 +688,21 @@ const archivePatientCommand: CommandHandler<Record<string, unknown>, Patient> = 
       indexer: patientCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // The status gate is read under the lock, so two concurrent archives cannot both see
+        // `active` and both proceed.
+        async ({ em: phaseEm }) => {
+          locked = await lockPatient(phaseEm, parsed.id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
+          if (locked.status === target) {
+            throw new CrudHttpError(409, {
+              error: parsed.archived
+                ? 'This record is already archived'
+                : 'This record is already active',
+              code: 'status_unchanged',
+            })
+          }
+          updatedAt = nextUpdatedAt(locked.updatedAt)
+        },
         ({ em: phaseEm }) => {
           locked.status = target
           locked.archivedAt = parsed.archived ? updatedAt : null
@@ -753,29 +776,8 @@ const deletePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
 
-    const locked = await lockPatient(em, parsed.id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
-
-    const scopedChild = {
-      patientId: parsed.id,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    }
-    const [diagnoses, documentLinks, attachmentLinks] = await Promise.all([
-      em.count(PatientDiagnosis, scopedChild as FilterQuery<PatientDiagnosis>),
-      em.count(PatientDocumentLink, scopedChild as FilterQuery<PatientDocumentLink>),
-      em.count(PatientAttachmentLink, scopedChild as FilterQuery<PatientAttachmentLink>),
-    ])
-    if (diagnoses > 0 || documentLinks > 0 || attachmentLinks > 0) {
-      throw new CrudHttpError(409, {
-        error: 'This record has documentation and cannot be deleted; archive it instead',
-        code: 'patient_not_empty',
-        counts: { diagnoses, documentLinks, attachmentLinks },
-      })
-    }
-
-    const deletedAt = nextUpdatedAt(locked.updatedAt)
+    let locked!: Patient
+    let deletedAt!: Date
     let patient!: Patient
 
     await runCrudCommandWrite<Patient>({
@@ -788,6 +790,33 @@ const deletePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       indexer: patientCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        // The emptiness check runs under the lock, so a diagnosis cannot be inserted between
+        // the count and the delete.
+        async ({ em: phaseEm }) => {
+          locked = await lockPatient(phaseEm, parsed.id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
+
+          const scopedChild = {
+            patientId: parsed.id,
+            tenantId: scope.tenantId,
+            organizationId: scope.organizationId,
+            deletedAt: null,
+          }
+          const [diagnoses, documentLinks, attachmentLinks] = await Promise.all([
+            phaseEm.count(PatientDiagnosis, scopedChild as FilterQuery<PatientDiagnosis>),
+            phaseEm.count(PatientDocumentLink, scopedChild as FilterQuery<PatientDocumentLink>),
+            phaseEm.count(PatientAttachmentLink, scopedChild as FilterQuery<PatientAttachmentLink>),
+          ])
+          if (diagnoses > 0 || documentLinks > 0 || attachmentLinks > 0) {
+            throw new CrudHttpError(409, {
+              error: 'This record has documentation and cannot be deleted; archive it instead',
+              code: 'patient_not_empty',
+              counts: { diagnoses, documentLinks, attachmentLinks },
+            })
+          }
+
+          deletedAt = nextUpdatedAt(locked.updatedAt)
+        },
         ({ em: phaseEm }) => {
           locked.deletedAt = deletedAt
           locked.updatedAt = deletedAt

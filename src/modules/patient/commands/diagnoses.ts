@@ -8,7 +8,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
-import { PatientDiagnosis } from '../data/entities'
+import { Patient, PatientDiagnosis } from '../data/entities'
 import {
   patientDiagnosisCorrectSchema,
   patientDiagnosisCreateSchema,
@@ -164,13 +164,14 @@ const createDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDia
       return await loadDiagnosisDecrypted(em, String(replayed.id), scope)
     }
 
-    const patient = await lockPatient(em, parsed.patientId, scope)
-    assertPatientAcceptsNewEntries(patient)
+    // Date and content checks need no lock, so they run before the transaction opens and fail
+    // fast; encryption is a KMS round trip that should not be held across a row lock either.
     assertDiagnosisDateNotInFuture(parsed.diagnosedOn)
-
     const columns = await encryptDiagnosisContent(parsed, scope, tryResolveEncryptionService(ctx))
     const diagnosisId = randomUUID()
-    const now = nextUpdatedAt(patient.updatedAt)
+
+    let patient!: Patient
+    let now!: Date
     let diagnosis!: PatientDiagnosis
 
     try {
@@ -184,6 +185,13 @@ const createDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDia
         indexer: patientDiagnosisCrudIndexer,
         syncOrigin: ctx.syncOrigin,
         phases: [
+          // The lock, and the archived-record gate that depends on it, inside the transaction:
+          // `PESSIMISTIC_WRITE` is only legal — and only meaningful — within one.
+          async ({ em: phaseEm }) => {
+            patient = await lockPatient(phaseEm, parsed.patientId, scope)
+            assertPatientAcceptsNewEntries(patient)
+            now = nextUpdatedAt(patient.updatedAt)
+          },
           ({ em: phaseEm }) => {
             diagnosis = phaseEm.create(PatientDiagnosis, {
               id: diagnosisId,
@@ -289,22 +297,6 @@ const correctDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDi
     } as FilterQuery<PatientDiagnosis>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Diagnosis not found' })
 
-    // Patient first, then the entry: the same lock order every command in this module uses.
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const previous = await loadDiagnosisDecrypted(em, id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, previous.updatedAt, DIAGNOSIS_ENTITY_ID)
-
-    if (previous.status !== 'active') {
-      throw new CrudHttpError(409, {
-        error:
-          previous.status === 'voided'
-            ? 'A voided entry cannot be corrected'
-            : 'This entry has already been corrected; correct the latest entry instead',
-        code: 'diagnosis_not_correctable',
-        status: previous.status,
-      })
-    }
-
     // Idempotent retry: a repeated correction returns the successor it already created.
     const digest = createRequestDigest({
       supersedesId: id,
@@ -334,9 +326,10 @@ const correctDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDi
 
     const columns = await encryptDiagnosisContent(parsed, scope, tryResolveEncryptionService(ctx))
     const successorId = randomUUID()
-    const now = nextUpdatedAt(
-      patient.updatedAt > previous.updatedAt ? patient.updatedAt : previous.updatedAt,
-    )
+
+    let patient!: Patient
+    let previous!: PatientDiagnosis
+    let now!: Date
     let successor!: PatientDiagnosis
 
     try {
@@ -351,6 +344,29 @@ const correctDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDi
         indexer: patientDiagnosisCrudIndexer,
         syncOrigin: ctx.syncOrigin,
         phases: [
+          // Patient first, then the entry — the same lock order every command here uses, and
+          // inside the transaction so the chain check and the version check are serialized
+          // against a concurrent correction rather than racing it.
+          async ({ em: phaseEm }) => {
+            patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+            previous = await loadDiagnosisDecrypted(phaseEm, id, scope)
+            assertExpectedVersion(parsed.expectedUpdatedAt, previous.updatedAt, DIAGNOSIS_ENTITY_ID)
+
+            if (previous.status !== 'active') {
+              throw new CrudHttpError(409, {
+                error:
+                  previous.status === 'voided'
+                    ? 'A voided entry cannot be corrected'
+                    : 'This entry has already been corrected; correct the latest entry instead',
+                code: 'diagnosis_not_correctable',
+                status: previous.status,
+              })
+            }
+
+            now = nextUpdatedAt(
+              patient.updatedAt > previous.updatedAt ? patient.updatedAt : previous.updatedAt,
+            )
+          },
           ({ em: phaseEm }) => {
             successor = phaseEm.create(PatientDiagnosis, {
               id: successorId,
@@ -473,26 +489,16 @@ const voidDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDiagn
     } as FilterQuery<PatientDiagnosis>)
     if (!preliminary) throw new CrudHttpError(404, { error: 'Diagnosis not found' })
 
-    const patient = await lockPatient(em, String(preliminary.patientId), scope)
-    const diagnosis = await loadDiagnosisDecrypted(em, id, scope)
-    assertExpectedVersion(parsed.expectedUpdatedAt, diagnosis.updatedAt, DIAGNOSIS_ENTITY_ID)
-
-    if (diagnosis.status === 'voided') {
-      throw new CrudHttpError(409, {
-        error: 'This entry is already voided',
-        code: 'diagnosis_already_voided',
-      })
-    }
-
     const encrypted = await encryptSensitiveFields(
       DIAGNOSIS_ENTITY_ID,
       { voidReason: parsed.reason },
       scope,
       tryResolveEncryptionService(ctx),
     )
-    const now = nextUpdatedAt(
-      patient.updatedAt > diagnosis.updatedAt ? patient.updatedAt : diagnosis.updatedAt,
-    )
+
+    let patient!: Patient
+    let diagnosis!: PatientDiagnosis
+    let now!: Date
 
     await runCrudCommandWrite<PatientDiagnosis>({
       ctx,
@@ -503,6 +509,22 @@ const voidDiagnosisCommand: CommandHandler<Record<string, unknown>, PatientDiagn
       indexer: patientDiagnosisCrudIndexer,
       syncOrigin: ctx.syncOrigin,
       phases: [
+        async ({ em: phaseEm }) => {
+          patient = await lockPatient(phaseEm, String(preliminary.patientId), scope)
+          diagnosis = await loadDiagnosisDecrypted(phaseEm, id, scope)
+          assertExpectedVersion(parsed.expectedUpdatedAt, diagnosis.updatedAt, DIAGNOSIS_ENTITY_ID)
+
+          if (diagnosis.status === 'voided') {
+            throw new CrudHttpError(409, {
+              error: 'This entry is already voided',
+              code: 'diagnosis_already_voided',
+            })
+          }
+
+          now = nextUpdatedAt(
+            patient.updatedAt > diagnosis.updatedAt ? patient.updatedAt : diagnosis.updatedAt,
+          )
+        },
         ({ em: phaseEm }) => {
           // Status, reason, timestamp and actor move together — the table's check constraint
           // requires all four to agree, so a partial write is impossible by construction.
