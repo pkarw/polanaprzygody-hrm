@@ -249,8 +249,10 @@ export async function encryptSensitiveFields<T extends Record<string, unknown>>(
 
   if (!encryption) {
     throw new CrudHttpError(503, {
-      error: 'Encryption for patient data is unavailable; the write was refused',
+      error: ENCRYPTION_UNAVAILABLE_MESSAGE,
       code: 'encryption_unavailable',
+      entityId,
+      remedy: ENCRYPTION_REMEDY,
     })
   }
 
@@ -266,14 +268,37 @@ export async function encryptSensitiveFields<T extends Record<string, unknown>>(
     const stored = encrypted?.[key]
     if (typeof stored !== 'string' || stored === plaintext) {
       throw new CrudHttpError(503, {
-        error: 'Encryption for patient data did not produce ciphertext; the write was refused',
+        // `entityId` is named because the remedy is per-entity: the operator needs to know WHICH
+        // map is missing. The field key is deliberately not included — it would appear in logs
+        // and error surfaces, and the field names here are themselves clinical vocabulary.
+        error: ENCRYPTION_UNAVAILABLE_MESSAGE,
         code: 'encryption_unavailable',
+        entityId,
+        remedy: ENCRYPTION_REMEDY,
       })
     }
     result[key] = stored
   }
   return result as T
 }
+
+/**
+ * The remedy, carried on the error itself.
+ *
+ * By far the most likely cause in practice is an existing tenant: `encryption.ts` only declares
+ * the maps, and they are materialized as `EncryptionMap` rows at tenant creation or by the CLI
+ * below. A tenant created before this module was installed therefore has no `patient:*` maps, and
+ * every sensitive write fails closed — correctly, but with no clue what to do about it. The spec's
+ * rollout step 2 names this command; repeating it at the point of failure is what turns a dead end
+ * into a two-minute fix.
+ */
+const ENCRYPTION_REMEDY =
+  'If this tenant existed before the patient module was installed, its encryption maps were never ' +
+  'created. Run `yarn mercato entities seed-encryption --tenant <tenantId>`. Otherwise check that ' +
+  'TENANT_DATA_ENCRYPTION is enabled and the tenant has a usable data key.'
+
+const ENCRYPTION_UNAVAILABLE_MESSAGE =
+  'Patient data could not be encrypted, so the write was refused rather than stored in plain text.'
 
 /**
  * Today's date in the organization's timezone, as `YYYY-MM-DD`.

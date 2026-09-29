@@ -244,6 +244,42 @@ describe('encryptSensitiveFields', () => {
       encryptSensitiveFields('patient:patient', { firstName: 'Anna' }, scope, dropping),
     ).rejects.toMatchObject({ status: 503 })
   })
+
+  /**
+   * The refusal has to be actionable.
+   *
+   * The overwhelmingly common cause is a tenant that existed before this module was installed, so
+   * its `patient:*` encryption maps were never materialized. Without the remedy on the error, an
+   * operator sees only "the write was refused" and has nowhere to go; `encryption.ts` merely
+   * DECLARES the maps, and the CLI is what creates them.
+   */
+  it('carries the entity id and the remedy on the refusal', async () => {
+    const noop: PatientEncryptionService = { encryptEntityPayload: async (_id, payload) => payload }
+    try {
+      await encryptSensitiveFields('patient:patient_diagnosis', { title: 'x' }, scope, noop)
+      throw new Error('Expected the write to be refused')
+    } catch (err) {
+      const error = err as CrudHttpError
+      expect(error.status).toBe(503)
+      const body = error.body as { entityId?: string; remedy?: string; error?: string }
+      // Which map is missing — the remedy is per entity.
+      expect(body.entityId).toBe('patient:patient_diagnosis')
+      expect(body.remedy).toContain('seed-encryption')
+      // The refusal says plainly that nothing was stored in plain text, which is the reassurance
+      // an operator actually needs from a 503 on a clinical write.
+      expect(body.error).toContain('plain text')
+    }
+  })
+
+  it('does not name the offending field, which is itself clinical vocabulary', async () => {
+    const noop: PatientEncryptionService = { encryptEntityPayload: async (_id, payload) => payload }
+    try {
+      await encryptSensitiveFields('patient:patient_diagnosis', { voidReason: 'x' }, scope, noop)
+      throw new Error('Expected the write to be refused')
+    } catch (err) {
+      expect(JSON.stringify((err as CrudHttpError).body)).not.toContain('voidReason')
+    }
+  })
 })
 
 describe('organizationToday', () => {

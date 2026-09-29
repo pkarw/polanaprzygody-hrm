@@ -417,6 +417,14 @@ Wdrożenie: gałąź `feat/patient-ehr`, PR z implementacją. Zgoda użytkownika
 2026-09-29 („apply migrations") — migracja `Migration20260929140457_patient` zastosowana i
 zweryfikowana w bazie (6 tabel `patient_*`, 8 indeksów częściowych, 6 ograniczeń CHECK).
 
+Wykonano też **krok 2 rolloutu** — instalację map szyfrowania dla istniejącego tenanta:
+`yarn mercato entities seed-encryption --tenant <id>`. Bez niego `encryption.ts` jedynie
+*deklaruje* mapy, a rekordy `EncryptionMap` powstają wyłącznie przy tworzeniu tenanta; tenant
+założony przed instalacją modułu nie miał żadnej mapy `patient:*`, więc każdy zapis wrażliwego
+pola słusznie kończył się odmową 503 (fail closed, bez zapisu plaintextu). Zweryfikowano: 6 map
+`patient:*` z dokładnie zadeklarowanymi polami. Komunikat odmowy niesie teraz `entityId` i
+konkretny środek zaradczy, żeby ta sytuacja nie kończyła się ślepym zaułkiem.
+
 | Faza | Stan | Dowód |
 |---|---|---|
 | PAT-1 — działająca kartoteka | **done** | Encje/walidatory/szyfrowanie/ACL/setup; komendy pacjenta, adresów i kontaktów; `/api/patient/{patients,addresses,contacts}` + `/api/patient/patients/[id]/archive`; lista, create i karta z zakładkami Dane/Adresy/Kontakty |
