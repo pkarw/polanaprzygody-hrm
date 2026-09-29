@@ -10,6 +10,10 @@ import {
   extractAllCustomFieldEntries,
 } from '@open-mercato/shared/lib/crud/custom-fields'
 import type { CustomFieldSet } from '@open-mercato/shared/modules/entities'
+import {
+  findEntityIdsBySearchTokens,
+  type SearchTokenDatabase,
+} from '@open-mercato/shared/lib/search/tokenLookup'
 import { CustomFieldDef } from '@open-mercato/core/modules/entities/data/entities'
 import {
   archived_at,
@@ -45,15 +49,27 @@ import {
 const ENTITY_ID = 'patient:patient' as const
 
 /**
+ * The encrypted columns the single search box reaches through the token index.
+ *
+ * Deliberately narrower than the encryption map: `description` is a free-text clinical
+ * note and `create_request_payload` is an idempotency digest, and neither is something an
+ * operator means to search a register by. Adding a field here makes its content
+ * discoverable by anyone holding `patient.patients.view`.
+ */
+const PATIENT_SEARCH_TOKEN_FIELDS = ['first_name', 'last_name', 'email', 'phone'] as const
+
+/**
  * List query.
  *
- * Searching is exact, never a substring, and this is a consequence of the data model
- * rather than a limitation of the UI: names and contact channels are encrypted, so
- * `last_name ilike '%kow%'` would compare a plaintext pattern against ciphertext and match
- * nothing. `patientNumber` is the one plaintext handle and is matched exactly;
- * `firstName` / `lastName` / `email` / `phone` are routed through the query engine's
- * like-rewrite, which resolves them against the hashed token index when search is active
- * and warns rather than silently matching nothing when it is not.
+ * `search` is the list's one box and spans both kinds of column: a substring of the
+ * plaintext `patient_number`, or a name / email / phone resolved through the hashed token
+ * index, because those columns hold ciphertext and an `ilike` against them matches
+ * nothing. `resolvePatientSearchIds` owns that split.
+ *
+ * The per-field parameters below remain for API callers that know which column they mean.
+ * `patientNumber` is matched exactly; `firstName` / `lastName` / `email` / `phone` go
+ * through the query engine's like-rewrite, which resolves them against the same token
+ * index and warns rather than silently matching nothing when search is switched off.
  *
  * `format` is absent on purpose — there is no CSV export. See `../../encryption.ts`.
  */
@@ -66,6 +82,8 @@ const querySchema = z
     sortField: z.string().optional().default('created_at'),
     sortDir: z.enum(['asc', 'desc']).optional().default('desc'),
     status: z.enum(['active', 'archived']).optional(),
+    /** The list's one search box: patient number, name, email or phone. */
+    search: z.string().optional(),
     patientNumber: z.string().optional(),
     firstName: z.string().optional(),
     lastName: z.string().optional(),
@@ -215,6 +233,69 @@ function isSingleRecordRequest(query: Pick<Query, 'id' | 'ids'>): boolean {
  * plaintext columns is what the list UI offers; the spec's "sort by number, date, status"
  * is the contract.
  */
+/**
+ * Stands in for "no record can satisfy this filter".
+ *
+ * A search that matched nothing must produce an impossible predicate rather than no
+ * predicate at all: dropping the filter would answer a failed search with the entire
+ * register, which for a patient list is the worst possible failure mode.
+ */
+const NO_MATCH_ID = '00000000-0000-4000-8000-000000000000'
+
+/** Bounds one search, so a one-letter term cannot drag the whole register through memory. */
+const SEARCH_ID_LIMIT = 500
+
+/**
+ * Resolves the list's single search term to a set of record ids.
+ *
+ * The term has to reach two kinds of column, and they cannot be filtered the same way:
+ *
+ * - `patient_number` is plaintext, so a substring match is a real SQL `ilike`. It has to
+ *   run as SQL and not through the query engine's filter rewrite: with
+ *   `OM_SEARCH_USE_ILIKE_FOR_NON_ENCRYPTED_FIELDS` at its default the engine routes even a
+ *   plaintext `$ilike` to the token index, which is not what "starts with P-2" means.
+ * - `first_name`, `last_name`, `email`, `phone` and `description` are covered by this
+ *   module's encryption map, so the stored value is ciphertext and `ilike '%kow%'` matches
+ *   nothing. The token index holds hashes of the plaintext, which is what keeps them
+ *   findable — `findEntityIdsBySearchTokens` is the supported way in.
+ *
+ * `matched: false` from the token lookup means the index was NOT consulted (search
+ * disabled, term produced no tokens, or the entity has no tokens yet). That is not "no
+ * name matched", so it contributes nothing rather than an empty result — the number half
+ * still answers.
+ */
+async function resolvePatientSearchIds(
+  term: string,
+  scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
+): Promise<string[]> {
+  const ids = new Set<string>()
+
+  const numberRows = await scope.em.find(
+    Patient,
+    {
+      patientNumber: { $ilike: `%${term}%` },
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+      deletedAt: null,
+    } as never,
+    { fields: ['id'], limit: SEARCH_ID_LIMIT },
+  )
+  for (const row of numberRows) ids.add(String(row.id))
+
+  const tokenMatch = await findEntityIdsBySearchTokens({
+    db: scope.em.getKysely<SearchTokenDatabase>(),
+    entityType: ENTITY_ID,
+    query: term,
+    fields: PATIENT_SEARCH_TOKEN_FIELDS,
+    scope: { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  })
+  if (tokenMatch.matched) {
+    for (const id of tokenMatch.ids.slice(0, SEARCH_ID_LIMIT)) ids.add(id)
+  }
+
+  return Array.from(ids)
+}
+
 const sortFieldMap: Record<string, string> = {
   id: idField,
   patient_number,
@@ -320,6 +401,30 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       if (q.status) F.status = q.status
       // Plaintext column, so an exact equality is a real index lookup.
       if (q.patientNumber) F.patient_number = q.patientNumber
+
+      // The list's single search box. One term has to reach both a plaintext column and
+      // five encrypted ones, and those need opposite treatments, so the two halves are
+      // resolved to id sets here and unioned — see `resolvePatientSearchIds`.
+      if (typeof q.search === 'string' && q.search.trim().length > 0) {
+        const matchedIds = await resolvePatientSearchIds(q.search.trim(), {
+          em: ctx.container.resolve<EntityManager>('em'),
+          tenantId: ctx.auth?.tenantId ?? null,
+          organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null,
+        })
+        // An empty set is a real "no match", not an absent filter: without the
+        // impossible predicate the search box would silently return the whole register.
+        const narrowed = matchedIds.length > 0 ? matchedIds : [NO_MATCH_ID]
+        const existing = F.id
+        if (existing && typeof existing === 'object' && '$in' in existing) {
+          const previous = (existing as { $in: string[] }).$in
+          const allowed = new Set(narrowed)
+          F.id = { $in: previous.filter((value) => allowed.has(value)) }
+        } else if (typeof existing === 'string') {
+          F.id = narrowed.includes(existing) ? existing : NO_MATCH_ID
+        } else {
+          F.id = { $in: narrowed }
+        }
+      }
       // Encrypted columns. A plain `$ilike` is deliberate: the query engine intercepts it
       // and rewrites it into a `search_tokens` lookup over hashes of the decrypted value.
       // Hand-rolling an id narrowing here would duplicate that and would have to re-apply

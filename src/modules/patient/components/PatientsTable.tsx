@@ -20,7 +20,8 @@ import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { useCustomFieldDefs, type CustomFieldDefDto } from '@open-mercato/ui/backend/utils/customFieldDefs'
 import { applyCustomFieldVisibility } from '@open-mercato/ui/backend/utils/customFieldColumns'
 import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/useOrganizationScope'
-import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { formatDate } from '@open-mercato/ui/utils/format'
+import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import type { PatientListItem, PatientPagedResponse } from '../types'
 
@@ -33,10 +34,11 @@ type Translate = ReturnType<typeof useT>
 /**
  * The patient register list.
  *
- * Search is exact rather than a substring, and the placeholder says so, because names are
- * encrypted at rest: a `%kow%` pattern would be compared against ciphertext and match
- * nothing. The number field hits a plaintext unique index; the name fields are routed
- * through the query engine's hashed-token path.
+ * One search box covers the number, the name and the contact channels, but the route has
+ * to resolve it two different ways: the number is plaintext and takes a real substring
+ * match, while the names and contact channels are encrypted at rest, so `%kow%` would be
+ * compared against ciphertext and match nothing — those are resolved through the hashed
+ * token index instead. See `resolvePatientSearchIds` in the route.
  *
  * Sorting offers only plaintext columns. Offering "sort by surname" would hand the engine
  * an encrypted column, which it can only sort by decrypting a capped number of rows in
@@ -55,22 +57,24 @@ export default function PatientsTable() {
   const queryClient = useQueryClient()
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const scopeVersion = useOrganizationScopeVersion()
+  const locale = useLocale()
 
   const [search, setSearch] = React.useState('')
   const [filterValues, setFilterValues] = React.useState<FilterValues>({})
-  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'created_at', desc: true }])
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'createdAt', desc: true }])
   const [page, setPage] = React.useState(1)
 
   const queryParams = React.useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
       pageSize: String(PAGE_SIZE),
-      sortField: sorting[0]?.id || 'created_at',
+      sortField: sorting[0]?.id || 'createdAt',
       sortDir: sorting[0]?.desc ? 'desc' : 'asc',
     })
-    // The single search box targets the patient number, which is the one plaintext handle
-    // and the identifier staff actually quote to each other.
-    if (search.trim()) params.set('patientNumber', search.trim())
+    // One box, one parameter. The route resolves it against the plaintext patient number
+    // AND the hashed token index that makes the encrypted name and contact columns
+    // findable — neither half works for the other's columns, so the split lives there.
+    if (search.trim()) params.set('search', search.trim())
     for (const [key, value] of Object.entries(filterValues)) {
       if (key === 'status') {
         if (typeof value === 'string' && value.length > 0) params.set('status', value)
@@ -88,9 +92,10 @@ export default function PatientsTable() {
   const cfDefs = rawCfDefs ?? EMPTY_CUSTOM_FIELD_DEFS
 
   const computedColumns = React.useMemo(() => {
-    const base = buildPatientColumns(t)
-    return cfDefs.length ? applyCustomFieldVisibility(base, cfDefs) : base
-  }, [cfDefs, t])
+    const base = buildPatientColumns(t, locale)
+    if (!cfDefs.length) return base
+    return withCustomFieldDateCells(applyCustomFieldVisibility(base, cfDefs), cfDefs, locale)
+  }, [cfDefs, locale, t])
 
   const {
     data: patientsData,
@@ -299,7 +304,41 @@ export default function PatientsTable() {
   )
 }
 
-function buildPatientColumns(t: Translate): ColumnDef<PatientListItem>[] {
+/**
+ * Renders date and datetime custom fields as dates rather than raw ISO strings.
+ *
+ * `applyCustomFieldVisibility` appends a column per visible definition with an
+ * `accessorKey` and no `cell`, so the stored value is printed verbatim — which for a date
+ * field means `2026-09-08T22:00:00.000Z` in a register operators read at a glance. The
+ * formatting is applied only to the kinds where the raw form is unreadable; every other
+ * kind keeps the framework's default rendering.
+ */
+function withCustomFieldDateCells(
+  columns: ColumnDef<PatientListItem>[],
+  defs: CustomFieldDefDto[],
+  locale: string | undefined,
+): ColumnDef<PatientListItem>[] {
+  const dateKeys = new Set(
+    defs.filter((def) => def.kind === 'date' || def.kind === 'datetime').map((def) => def.key),
+  )
+  if (dateKeys.size === 0) return columns
+  return columns.map((column) => {
+    const accessorKey = String((column as { accessorKey?: unknown }).accessorKey ?? '')
+    if (!accessorKey.startsWith('cf_')) return column
+    if (!dateKeys.has(accessorKey.slice(3))) return column
+    if ((column as { cell?: unknown }).cell) return column
+    return {
+      ...column,
+      cell: ({ getValue }: { getValue: () => unknown }) => {
+        const value = getValue()
+        const formatted = typeof value === 'string' ? formatDate(value, locale) : null
+        return formatted ?? <span className="text-muted-foreground">—</span>
+      },
+    } as ColumnDef<PatientListItem>
+  })
+}
+
+function buildPatientColumns(t: Translate, locale: string | undefined): ColumnDef<PatientListItem>[] {
   return [
     {
       accessorKey: 'patientNumber',
@@ -353,6 +392,20 @@ function buildPatientColumns(t: Translate): ColumnDef<PatientListItem>[] {
           )
         }
         return owner.name
+      },
+    },
+    {
+      // Present so the default ordering has a column to belong to. Without it the table
+      // is handed a sorting state for an id it does not render — TanStack logs
+      // "Column with id 'created_at' does not exist" and the operator sees a register
+      // sorted by something with no header to click.
+      accessorKey: 'createdAt',
+      header: t('patient.patients.columns.createdAt'),
+      meta: { priority: 6 },
+      cell: ({ getValue }) => {
+        const value = getValue()
+        const formatted = typeof value === 'string' ? formatDate(value, locale) : null
+        return formatted ?? <span className="text-muted-foreground">—</span>
       },
     },
     {

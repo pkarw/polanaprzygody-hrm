@@ -203,7 +203,7 @@
   "patient.patients.files.source.patient": "Patient file",
   "patient.patients.files.unavailableNotice": "Clinical files are switched off on this installation. The attachments module currently lets any signed-in user of this organisation open a stored file if they know its identifier, without checking clinical permissions — so storing patient files here would not protect them. Ask your administrator to upgrade to a platform version that enforces per-record file access.",
   "patient.patients.files.unnamed": "File without a recorded name",
-  "patient.patients.filters.search": "Search by number or exact details",
+  "patient.patients.filters.search": "Search by number, name, email or phone",
   "patient.patients.filters.status": "Status",
   "patient.patients.flash.archived": "The patient record was archived.",
   "patient.patients.flash.created": "The patient record was created.",

@@ -203,7 +203,7 @@
   "patient.patients.files.source.patient": "Plik pacjenta",
   "patient.patients.files.unavailableNotice": "Pliki kliniczne są wyłączone na tej instalacji. Moduł załączników pozwala obecnie każdemu zalogowanemu użytkownikowi tej organizacji otworzyć zapisany plik, jeśli zna jego identyfikator, bez sprawdzania uprawnień klinicznych — przechowywanie plików pacjenta nie chroniłoby ich. Poproś administratora o aktualizację do wersji platformy, która wymusza dostęp do pliku na poziomie rekordu.",
   "patient.patients.files.unnamed": "Plik bez zapisanej nazwy",
-  "patient.patients.filters.search": "Szukaj po numerze lub dokładnych danych",
+  "patient.patients.filters.search": "Szukaj po numerze, nazwisku, e-mailu lub telefonie",
   "patient.patients.filters.status": "Status",
   "patient.patients.flash.archived": "Karta pacjenta została zarchiwizowana.",
   "patient.patients.flash.created": "Karta pacjenta została utworzona.",
