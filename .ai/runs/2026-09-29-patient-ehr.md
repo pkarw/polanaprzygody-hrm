@@ -139,10 +139,10 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 2: Commands, references and the record API
 
-- [ ] 2.1 patientReferenceService DI
-- [ ] 2.2 Patient commands
-- [ ] 2.3 Address and contact commands
-- [ ] 2.4 Record API routes, OpenAPI and command unit tests
+- [x] 2.1 patientReferenceService DI — 3667752
+- [x] 2.2 Patient commands — 3667752
+- [x] 2.3 Address and contact commands — 27e6191
+- [x] 2.4 Record API routes, OpenAPI and command unit tests — 92d1a1b
 
 ### Phase 3: Patient record UI
 
