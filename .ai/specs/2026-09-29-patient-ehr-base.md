@@ -126,7 +126,7 @@ Zmiany są addytywne: nowe tabele, ID `patient:*`, feature IDs i trasy; żadnych
 
 | Powierzchnia | Dane / zapis | Wzorzec i komponenty | Wymagania |
 |---|---|---|---|
-| `/backend/patient/patients` | `GET /api/patient/patients`, filtry status/ID, wyszukiwanie dokładne | CRM people list; `Page`, `PageBody`, `DataTable`, `RowActions` | PAT-R01/07 |
+| `/backend/patient/patients` | `GET /api/patient/patients`, filtry status/ID, wyszukiwanie dokładne; opcjonalna kolumna „Kolejna wizyta” z VIS | CRM people list; `Page`, `PageBody`, `DataTable`, `RowActions` | PAT-R01/07 |
 | `/backend/patient/patients/create` | `POST /api/patient/patients` + pierwszy adres | Example todo create; `CrudForm`, wspólne pola adresu | PAT-R01/03 |
 | `/backend/patient/patients/[id]` | Pacjent, adresy/kontakty, diagnozy, linki | CRM people detail; `CrudForm`, `AddressesSection`, `DataTable` w zakładkach | Wszystkie PAT |
 | Natywne `/backend/documents/[id]` | API właściciela dokumentu | Istniejący edytor dokumentów; otwierany z karty | PAT-R05 |
@@ -134,7 +134,7 @@ Zmiany są addytywne: nowe tabele, ID `patient:*`, feature IDs i trasy; żadnych
 ```text
 Pacjenci                                      [Dodaj pacjenta]
 [Status] [Wyszukaj po numerze / dokładnych danych]
-Numer | Imię i nazwisko | Kontakt | Prowadzący | Status | Akcje
+Numer | Imię i nazwisko | Kontakt | Prowadzący | Kolejna wizyta | Status | Akcje
 
 Pacjent: imię nazwisko / numer                [Zapisz] [Archiwizuj]
 Dane i pola dodatkowe | Adresy | Kontakty | Diagnozy | Dokumenty | Pliki
@@ -143,6 +143,8 @@ Adresy: wspólny edytor CRM, oznaczenie adresu głównego
 Diagnozy: data | tytuł | autor | stan | [Zobacz] [Skoryguj]
 Dokumenty: tytuł | stan przypisania | [Otwórz] [Odepnij] [+ Nowy]
 ```
+
+**Kolumna „Kolejna wizyta” na liście pacjentów** należy do VIS, nie do PAT-1: pokazuje najbliższy zaplanowany termin (data/godzina, gabinet lub „Gabinet nieprzypisany”, oznaczenie niepotwierdzonej) albo „Brak zaplanowanej”. Wizyty są w tym samym module, więc serwer wylicza ją jednym zapytaniem dla widocznej strony wyników — bez zapytania na wiersz i bez zwracania historii ani treści klinicznej. Kolumna i sortowanie po niej pojawiają się dopiero po VIS-1 i tylko dla uprawnienia podglądu wizyt; bez niego lista działa bez kolumny, a nie z pustą. Szczegóły kontraktu: [Wizyty](2026-09-29-patient-visits.md).
 
 **Makiety do przeglądu (2026-09-29).** Statyczne wizualizacje powyższych powierzchni, do decyzji użytkownika przed implementacją — nie są kodem ani gotowym designem:
 [lista](assets/patient-ui-01-lista-pacjentow.png) ·
@@ -437,3 +439,4 @@ Brak pytań blokujących model do użytkownika. Q1 rozstrzygnięte: dwa dokument
 | 2026-09-29 | Decyzje użytkownika; rozdzielenie PAT/VIS, model danych, sprawdzone kontrakty adresów/dokumentów/plików, SEC-ATT, plan i oracles |
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i dokładne wiersze powierzchni API |
 | 2026-09-29 | Makiety UI powierzchni PAT (PNG + źródło HTML) dołączone do przeglądu; bez zmian modelu, API i faz |
+| 2026-09-29 | Kolumna „Kolejna wizyta” na liście pacjentów (dane z VIS, widoczna po VIS-1) w makiecie i kontrakcie UI |

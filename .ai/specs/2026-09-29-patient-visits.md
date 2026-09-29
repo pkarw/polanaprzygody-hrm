@@ -136,6 +136,7 @@ Tylko additive contracts: nowe `patient:patient_visit` / `patient:patient_visit_
 | `/backend/patient/visits/create?patientId=…` | POST visits | `src/modules/example/backend/todos/create/page.tsx`, TodoForm; CrudForm |
 | `/backend/patient/visits/[id]` | GET id, PUT visits, versioned actions | Example todo edit, CRM detail; CrudForm/StatusBadge/dialogi |
 | Karta PAT `/backend/patient/patients/[id]`, zakładka Wizyty | GET visits?patientId, akcja create | CRM detail tabs; DataTable z linkami |
+| Lista PAT `/backend/patient/patients`, kolumna „Kolejna wizyta” | Pole `nextVisit` listy pacjentów: najbliższa wizyta `status=planned`, `starts_at >= teraz`, liczona serwerowo dla widocznej strony | DataTable column + `StatusBadge`; sortowanie po `starts_at` |
 
 ```text
 Wizyty                                        [Zaplanuj wizytę]
@@ -150,6 +151,8 @@ Usługi: [Wyszukaj w katalogu] [+ Dodaj]
 [Opis organizacyjny]
 [Potwierdź] [Zakończ] [Anuluj] [Nieobecność] [Rozliczona ręcznie]
 ```
+
+`nextVisit` zwraca wyłącznie `{startsAt, timeZone, resourceNameSnapshot?, confirmedAt}` — bez opisu, usług i danych klinicznych; brak terminu to jawne `null` prezentowane jako „Brak zaplanowanej”, nie pusta komórka. Jedno zapytanie na stronę wyników (`DISTINCT ON`/window po `(patient_id, starts_at)` w zakresie tenant/organizacja), nigdy jedno na wiersz. Bez uprawnienia `patient.visits.view` pole nie jest liczone ani zwracane, a kolumna i sortowanie po niej znikają z listy. Sortowanie korzysta z `starts_at`, więc nie narusza zakazu sortowania po polach szyfrowanych z PAT.
 
 **Makieta do przeglądu (2026-09-29):** [lista wizyt, formularz i akcje](assets/patient-ui-09-wizyty-lista-spec-vis-ten-sam-modul.png); zakładka Wizyty na karcie pacjenta widoczna też na makietach PAT. Źródło: `assets/patient-ui-mockups.html`.
 
@@ -269,7 +272,7 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 | VIS-T05 | Settle/unset w różnych statusach; brak feature; generic PUT isSettled | Oddzielny ACL, audyt actor/time, powód unset, brak sales/payment write | R04/06 |
 | VIS-T06 | Dwie karty przeglądarki confirm/update/settle; retry create; archive patient vs create visit | 409 i zachowanie input; jeden rekord; zero wizyt na zarchiwizowanym pacjencie | R01/03/04/06 |
 | VIS-T07 | UTC, Europe/Warsaw DST gap/fold, daty historyczne/przyszłe, ends ≤ starts | Jedna chwila, odrzucenie błędnych godzin/offsetów, stabilny round-trip | R01/03 |
-| VIS-T08 | Lista/create/detail/tab; keyboard, loading/empty/errors/409/360 px/light/dark | Pełny przepływ, czytelne nazwy, brak UUID/raw controls; lokalizacja | R05 |
+| VIS-T08 | Lista/create/detail/tab i kolumna „Kolejna wizyta” na liście pacjentów (z prawem wizyt i bez, pacjent bez terminu, tylko wizyty przeszłe/anulowane); keyboard, loading/empty/errors/409/360 px/light/dark | Pełny przepływ, czytelne nazwy, brak UUID/raw controls; kolumna pokazuje najbliższy planned albo „Brak zaplanowanej”, znika bez uprawnienia, jedno zapytanie na stronę; lokalizacja | R05/R06 |
 | VIS-T09 | Inny tenant/org, brak scope, brak features, brak keys/hosta, analiza logów/events | Fail closed; żadnych efektów przy odmowie; brak tekstów medycznych w logach | R06 |
 
 ## Implementation Phases
@@ -278,7 +281,7 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 
 - **Depends on:** PAT-1 exit gate, zatwierdzenie implementacji. Nie czeka na PAT-2/3.
 - **Outcome/value:** operator zapisuje i edytuje planned wizytę z pustą lub pełną listą usług.
-- **Steps:** 1) Visit/VisitService, walidatory, mapy szyfrowania, ACL, SQL/snapshot do przeglądu. 2) create/update/delete/query przez komendy, atomowe listy usług i sprawdzanie archiwizacji pacjenta. 3) Lista/create/detail, pickery i tab na karcie. 4) VIS-T01–03/06–09 i obowiązkowe stany UI.
+- **Steps:** 1) Visit/VisitService, walidatory, mapy szyfrowania, ACL, SQL/snapshot do przeglądu. 2) create/update/delete/query przez komendy, atomowe listy usług i sprawdzanie archiwizacji pacjenta. 3) Lista/create/detail, pickery, tab na karcie i kolumna „Kolejna wizyta” na liście pacjentów. 4) VIS-T01–03/06–09 i obowiązkowe stany UI.
 - **Bounded slices:** ok. 3–4 commity w kolejności; nie edytować wspólnych entities/ACL w dwóch niezależnych zadaniach.
 - **Requirements:** R01/R02/R05/R06; statusy utworzone w modelu, przyciski przejść dostarcza VIS-2.
 - **Validation:** `yarn db:generate` i przegląd; `yarn generate`; unit komend; `yarn test:integration:ephemeral` z VIS-T01–03/06–09 w zatwierdzonym środowisku, bez migracji dla samej walidacji.
@@ -383,3 +386,4 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 | 2026-09-29 | Osobna specyfikacja VIS po decyzjach użytkownika; model agregatu/listy usług, stany, API/UI, testy i fazy |
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i jawne klasyfikacje powierzchni |
 | 2026-09-29 | Makieta UI listy wizyt i formularza dołączona do przeglądu; bez zmian modelu, API i faz |
+| 2026-09-29 | Pole `nextVisit` i kolumna „Kolejna wizyta” na liście pacjentów: kontrakt, ACL, jedno zapytanie na stronę, oracle VIS-T08 |

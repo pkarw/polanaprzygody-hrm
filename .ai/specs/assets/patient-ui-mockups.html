@@ -169,7 +169,7 @@
   .ptabs{display:flex;gap:6px;overflow:hidden;border-bottom:1px solid var(--border);padding:0 14px}
   .ptabs .tab{padding:8px 4px;font-size:12px}
   .aria{font-size:11px;color:var(--muted-fg);line-height:1.8;margin-top:10px}
-  #s06 td:first-child,#s09 td:first-child,#s08 td:nth-child(5){white-space:nowrap}
+  #s01 td:nth-child(5),#s06 td:first-child,#s09 td:first-child,#s08 td:nth-child(5){white-space:nowrap}
   .note{font-size:11.5px;color:var(--muted-fg);margin-top:10px;line-height:1.5}
 </style>
 </head>
@@ -239,48 +239,60 @@ html:`${NAV('patients')}
       <div class="sel">Prowadzący: <b>Wszyscy</b> <span class="cv">▾</span></div>
       <div class="inp grow"><span class="mag">◎</span> Szukaj po numerze, nazwisku, e-mailu lub telefonie — dopasowanie dokładne</div>
       <div class="sel">⊞ Kolumny <span class="cv">▾</span></div>
-      <div class="sel">⇅ Numer <span class="cv">▾</span></div>
+      <div class="sel">⇅ Kolejna wizyta <span class="cv">▾</span></div>
     </div>
     <div class="card">
       <table>
-        <thead><tr><th style="width:120px">Numer</th><th>Imię i nazwisko</th><th>Kontakt pacjenta</th><th>Prowadzący</th><th style="width:110px">Status</th><th class="r" style="width:190px">Akcje</th></tr></thead>
+        <thead><tr><th style="width:116px">Numer</th><th>Imię i nazwisko</th><th>Kontakt pacjenta</th><th style="width:130px">Prowadzący</th><th style="width:166px">Kolejna wizyta</th><th style="width:104px">Status</th><th class="r" style="width:180px">Akcje</th></tr></thead>
         <tbody>
           <tr><td class="mono">P-8f2c4b19</td>
-              <td><div class="nm">Zofia Kaczmarek</div><div class="sub2">ur. 2017-04-12 · 3 kontakty CRM</div></td>
+              <td><div class="nm">Zofia Kaczmarek</div><div class="sub2">ur. 2017-04-12 · 3 kontakty</div></td>
               <td>z.kaczmarek@example.org<div class="sub2">+48 601 234 567</div></td>
-              <td>Anna Nowicka</td><td><span class="b ok">Aktywna</span></td>
+              <td>Anna Nowicka</td>
+              <td>2026-10-02, 09:30<div class="sub2">Gabinet 2 · potwierdzona</div></td>
+              <td><span class="b ok">Aktywna</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
           <tr><td class="mono">P-3b7109ac</td>
-              <td><div class="nm">Jan Lewandowski</div><div class="sub2">ur. 2019-11-02 · 2 kontakty CRM</div></td>
-              <td>—<div class="sub2">+48 512 880 145 (telefon opiekuna, wpisany świadomie)</div></td>
-              <td>Marek Zieliński</td><td><span class="b ok">Aktywny</span></td>
+              <td><div class="nm">Jan Lewandowski</div><div class="sub2">ur. 2019-11-02 · 2 kontakty</div></td>
+              <td>—<div class="sub2">+48 512 880 145 (telefon opiekuna)</div></td>
+              <td>Marek Zieliński</td>
+              <td>2026-10-02, 11:00<div class="sub2"><span class="b warn">Niepotwierdzona</span></div></td>
+              <td><span class="b ok">Aktywny</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
           <tr><td class="mono">P-51d0e7b4</td>
-              <td><div class="nm">Maja Wiśniewska</div><div class="sub2">ur. 2015-06-30 · 1 kontakt CRM</div></td>
+              <td><div class="nm">Maja Wiśniewska</div><div class="sub2">ur. 2015-06-30 · 1 kontakt</div></td>
               <td>m.wisniewska@example.org<div class="sub2">—</div></td>
-              <td><span style="color:var(--muted-fg)">Nie przypisano</span></td><td><span class="b ok">Aktywna</span></td>
+              <td><span style="color:var(--muted-fg)">Nie przypisano</span></td>
+              <td style="color:var(--muted-fg)">Brak zaplanowanej<div class="sub2">ostatnia: 2026-09-29</div></td>
+              <td><span class="b ok">Aktywna</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
           <tr><td class="mono">P-c4a9f200</td>
-              <td><div class="nm">Tomasz Górski</div><div class="sub2">ur. 1984-02-19 · bez kontaktów CRM</div></td>
+              <td><div class="nm">Tomasz Górski</div><div class="sub2">ur. 1984-02-19 · bez kontaktów</div></td>
               <td>t.gorski@example.org<div class="sub2">+48 698 003 771</div></td>
-              <td>Anna Nowicka</td><td><span class="b ok">Aktywny</span></td>
+              <td>Anna Nowicka</td>
+              <td>2026-10-06, 16:00<div class="sub2">Gabinet nieprzypisany</div></td>
+              <td><span class="b ok">Aktywny</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
           <tr><td class="mono">P-77be1c05</td>
-              <td><div class="nm">Antoni Dąbrowski</div><div class="sub2">ur. 2020-08-08 · 2 kontakty CRM</div></td>
+              <td><div class="nm">Antoni Dąbrowski</div><div class="sub2">ur. 2020-08-08 · 2 kontakty</div></td>
               <td>—<div class="sub2">+48 604 112 900</div></td>
-              <td>Katarzyna Mazur</td><td><span class="b ok">Aktywny</span></td>
+              <td>Katarzyna Mazur</td>
+              <td style="color:var(--muted-fg)">Brak zaplanowanej<div class="sub2">nieobecność 28.09</div></td>
+              <td><span class="b ok">Aktywny</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
           <tr class="dim"><td class="mono">P-1e6633fd</td>
               <td><div class="nm">Helena Sikora</div><div class="sub2">ur. 2013-01-24 · archiwum od 2026-03-11</div></td>
               <td>h.sikora@example.org<div class="sub2">+48 666 100 210</div></td>
-              <td>Marek Zieliński</td><td><span class="b gray">Archiwalna</span></td>
+              <td>Marek Zieliński</td>
+              <td style="color:var(--muted-fg)">—</td>
+              <td><span class="b gray">Archiwalna</span></td>
               <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">Przywróć</button></div></td></tr>
         </tbody>
       </table>
       <div class="pager">Wyświetlono 1–6 z 42 · rozmiar strony <b>25</b>
         <div class="r"><button class="btn sm off">‹ Poprzednia</button><button class="btn sm">Następna ›</button></div></div>
     </div>
-    <div class="note">Wyszukiwanie jest dokładne (szyfrowane pola, indeksy hashowane) — nie ma dopasowania częściowego ani sortowania po treści. Eksport nie zawiera treści klinicznej.</div>
+    <div class="note">Kolumna „Kolejna wizyta” pochodzi z modułu wizyt (VIS) — pojawia się po fazie VIS-1 i tylko dla użytkownika z prawem podglądu wizyt; bez niego lista działa bez tej kolumny. Pokazujemy najbliższy zaplanowany termin, nie historię. Wyszukiwanie jest dokładne (szyfrowane pola, indeksy hashowane) — nie ma dopasowania częściowego ani sortowania po treści. Eksport nie zawiera treści klinicznej.</div>
   </div>
 </div>`});
 
