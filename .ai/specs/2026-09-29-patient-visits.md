@@ -151,6 +151,8 @@ Usługi: [Wyszukaj w katalogu] [+ Dodaj]
 [Potwierdź] [Zakończ] [Anuluj] [Nieobecność] [Rozliczona ręcznie]
 ```
 
+**Makieta do przeglądu (2026-09-29):** [lista wizyt, formularz i akcje](assets/patient-ui-09-wizyty-lista-spec-vis-ten-sam-modul.png); zakładka Wizyty na karcie pacjenta widoczna też na makietach PAT. Źródło: `assets/patient-ui-mockups.html`.
+
 Nawigacja „Pacjenci” → „Wizyty”; zakładka pacjenta pojawia się po VIS-1 i tylko przy feature view. Bez dashboardu/kalendarza. Pełna akcja zaplanowania z karty ≤3 kliknięcia nawigacyjne. PatientId w query jest tylko sugestią, serwer waliduje scope i aktywność; użytkownik nie wprowadza UUID. Referencje prezentują display names/snapshoty, „Gabinet nieprzypisany” dla null.
 
 Potwierdzone źródła hostów: `staff/api/team-members.ts`, `resources/api/resources.ts`, `catalog/api/products/route.ts`. Picker source: `GET /api/patient/patients`, `GET /api/staff/team-members`, `GET /api/resources/resources`, `GET /api/catalog/products`; filtry scope/aktywnych i natywne ACL. Zgodność pól ID z payloadami potwierdza VIS-T02; nie dodawać czterech nowych publicznych API opcji, jeśli istniejące wystarczają. Pole staff podpowiada prowadzącego, nie traktuje go jak automatycznego wykonawcy.
@@ -380,3 +382,4 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 |---|---|
 | 2026-09-29 | Osobna specyfikacja VIS po decyzjach użytkownika; model agregatu/listy usług, stany, API/UI, testy i fazy |
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i jawne klasyfikacje powierzchni |
+| 2026-09-29 | Makieta UI listy wizyt i formularza dołączona do przeglądu; bez zmian modelu, API i faz |

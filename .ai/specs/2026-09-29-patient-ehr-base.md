@@ -144,6 +144,19 @@ Diagnozy: data | tytuł | autor | stan | [Zobacz] [Skoryguj]
 Dokumenty: tytuł | stan przypisania | [Otwórz] [Odepnij] [+ Nowy]
 ```
 
+**Makiety do przeglądu (2026-09-29).** Statyczne wizualizacje powyższych powierzchni, do decyzji użytkownika przed implementacją — nie są kodem ani gotowym designem:
+[lista](assets/patient-ui-01-lista-pacjentow.png) ·
+[create](assets/patient-ui-02-nowy-pacjent-atomowy-zapis-z-pierwszym-adresem.png) ·
+[karta/dane](assets/patient-ui-03-karta-pacjenta-dane-i-pola-dodatkowe.png) ·
+[adresy](assets/patient-ui-04-karta-pacjenta-adresy-wspolny-edytor-crm.png) ·
+[kontakty](assets/patient-ui-05-karta-pacjenta-kontakty-crm-0-n-role-jako-flagi.png) ·
+[diagnozy](assets/patient-ui-06-karta-pacjenta-diagnozy-niezmienne-wpisy-korekta.png) ·
+[dokumenty](assets/patient-ui-07-karta-pacjenta-dokumenty-przypiecie-nowy-wznowie.png) ·
+[pliki](assets/patient-ui-08-karta-pacjenta-pliki-kliniczne-faza-pat-3-warune.png) ·
+[stany PAT-T11](assets/patient-ui-10-stany-ui-wymagane-na-kazdej-powierzchni.png) ·
+[360 px](assets/patient-ui-11-szerokosc-360-px-lista-karta-i-dialog.png).
+Źródło: `assets/patient-ui-mockups.html`, render: `node .ai/specs/assets/render-patient-mockups.mjs`.
+
 Menu „Pacjenci” w grupie opieki; create/detail ukryte w nawigacji, wejście przez listę. Bez osobnego dashboardu. Selektory pokazują nazwy, nigdy UUID. Źródła opcji: `GET /api/customers/people` i `GET /api/staff/team-members` (źródło `staff/api/team-members.ts`), mapowanie ID sprawdzone dodatkowo w testach; selektor dokumentów korzysta z `GET /api/documents` z natywnym filtrem widoczności. Brak uprawnienia hosta blokuje selektor zamiast zwracać pełną listę. `PatientReferenceService` normalizuje opcje, nie daje szerszego dostępu niż API hosta.
 
 API przez `apiCall`/`apiCallOrThrow`, CRUD przez `createCrud`/`updateCrud`/`deleteCrud`; niestandardowe akcje przez `useGuardedMutation`, nagłówek wersji i `surfaceRecordConflict`. DataTable ma `entityId=patient:patient`, `extensionTableId=patient.patients.list`; formularz `crud-form:patient.patient`. Odczyt custom fields i zapis używają tej samej tożsamości `patient:patient`.
@@ -423,3 +436,4 @@ Brak pytań blokujących model do użytkownika. Q1 rozstrzygnięte: dwa dokument
 | 2026-09-29 | Szkielet briefu i diagramu, Q1/Q2 |
 | 2026-09-29 | Decyzje użytkownika; rozdzielenie PAT/VIS, model danych, sprawdzone kontrakty adresów/dokumentów/plików, SEC-ATT, plan i oracles |
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i dokładne wiersze powierzchni API |
+| 2026-09-29 | Makiety UI powierzchni PAT (PNG + źródło HTML) dołączone do przeglądu; bez zmian modelu, API i faz |

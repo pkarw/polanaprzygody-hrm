@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Makiety UI — moduł patient (PAT/VIS)</title>
+<style>
+  :root{
+    --primary:#2A5C47; --primary-fg:#EFF1C5; --primary-hover:#1E4435;
+    --bg:#ffffff; --fg:#252525; --muted:#f7f7f7; --muted-fg:#767676;
+    --border:#e6e6e6; --sidebar:#fbfbfb; --ring:#2A5C47;
+    --radius:10px;
+    --ok-bg:#e9f6ef; --ok-fg:#1c5c3e; --ok-bd:#bfe3d0;
+    --warn-bg:#fffaeb; --warn-fg:#624c18; --warn-bd:#f6b51e;
+    --info-bg:#ebf8ff; --info-fg:#124b68; --info-bd:#47c2ff;
+    --purple-bg:#efebff; --purple-fg:#351a75; --purple-bd:#cac0ff;
+    --gray-bg:#f2f2f2; --gray-fg:#5a5a5a; --gray-bd:#dedede;
+    --red-bg:#fdecec; --red-fg:#8c2018; --red-bd:#f3b7b2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#eceef0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fg)}
+  .frame{background:#fff;margin:28px auto;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+  .caption{background:#111827;color:#fff;padding:10px 18px;display:flex;gap:14px;align-items:baseline;font-size:12.5px}
+  .caption b{font-size:14px;letter-spacing:.2px}
+  .caption .rt{font-family:ui-monospace,Menlo,monospace;color:#b9f2c8}
+  .caption .sp{margin-left:auto;color:#9aa4b2}
+  .app{display:grid;grid-template-columns:232px 1fr;min-height:0}
+  /* sidebar */
+  .sb{background:var(--sidebar);border-right:1px solid var(--border);padding:14px 10px}
+  .logo{display:flex;align-items:center;gap:9px;padding:6px 8px 16px;font-weight:650;font-size:14px}
+  .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#B4F372,#EEFB63 45%,#BC9AFF)}
+  .sbgroup{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted-fg);padding:12px 9px 5px}
+  .sbi{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:13px;color:#4a4a4a}
+  .sbi .ic{width:15px;text-align:center;opacity:.65;font-size:12px}
+  .sbi.active{background:var(--primary);color:var(--primary-fg);font-weight:600}
+  .sbi.active .ic{opacity:1}
+  .sbi .cnt{margin-left:auto;font-size:11px;color:var(--muted-fg)}
+  /* topbar */
+  .top{display:flex;align-items:center;gap:12px;padding:11px 22px;border-bottom:1px solid var(--border)}
+  .crumbs{font-size:12.5px;color:var(--muted-fg)}
+  .crumbs b{color:var(--fg);font-weight:600}
+  .topsearch{margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12.5px;color:var(--muted-fg);width:250px;background:var(--muted)}
+  .org{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12.5px}
+  .av{width:28px;height:28px;border-radius:50%;background:#dcd6ff;color:#351a75;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:650}
+  /* page */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .body{padding:20px 22px 26px;flex:1}
+  .ph{display:flex;align-items:flex-start;gap:14px;margin-bottom:16px}
+  .ph h1{margin:0;font-size:21px;font-weight:660;letter-spacing:-.2px}
+  .ph .sub{margin:4px 0 0;font-size:12.5px;color:var(--muted-fg)}
+  .ph .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:var(--radius);padding:7px 12px;font-size:12.5px;font-weight:550;color:#3a3a3a;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+  .btn.p{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+  .btn.d{border-color:var(--red-bd);color:var(--red-fg)}
+  .btn.sm{padding:4px 9px;font-size:11.5px;border-radius:8px}
+  .btn.off{opacity:.45}
+  .btn.link{border:0;background:none;color:var(--primary);text-decoration:underline;padding:4px 2px}
+  /* tabs */
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:2px 0 18px}
+  .tab{padding:9px 13px;font-size:13px;color:var(--muted-fg);border-bottom:2px solid transparent;display:flex;gap:6px;align-items:center}
+  .tab .n{background:var(--muted);border-radius:20px;padding:1px 6px;font-size:10.5px;color:var(--muted-fg)}
+  .tab.active{color:var(--fg);font-weight:620;border-bottom-color:var(--primary)}
+  .tab.active .n{background:var(--ok-bg);color:var(--ok-fg)}
+  .tab.soon{opacity:.55}
+  /* filters */
+  .filters{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .sel,.inp{border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:12.5px;background:#fff;color:#3a3a3a;display:inline-flex;align-items:center;gap:8px}
+  .sel .cv{color:var(--muted-fg);font-size:10px}
+  .inp.grow{flex:1;min-width:230px;color:var(--muted-fg)}
+  .inp .mag{opacity:.5}
+  /* card */
+  .card{border:1px solid var(--border);border-radius:12px;background:#fff;overflow:hidden}
+  .card+.card{margin-top:14px}
+  .card .hd{padding:12px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .card .hd h3{margin:0;font-size:13.5px;font-weight:640}
+  .card .hd .r{margin-left:auto;display:flex;gap:8px}
+  .card .ct{padding:15px}
+  .hint{font-size:11.5px;color:var(--muted-fg);margin-top:5px}
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted-fg);font-weight:600;padding:9px 14px;background:#fcfcfc;border-bottom:1px solid var(--border)}
+  td{padding:11px 14px;border-bottom:1px solid #f1f1f1;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  td.r,th.r{text-align:right}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#4a4a4a}
+  .nm{font-weight:600}
+  .sub2{color:var(--muted-fg);font-size:11.5px;margin-top:2px}
+  .rowacts{display:flex;gap:6px;justify-content:flex-end}
+  .dim td{background:#fcfcfc;color:var(--muted-fg)}
+  /* badges */
+  .b{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:600;border:1px solid transparent}
+  .b.ok{background:var(--ok-bg);color:var(--ok-fg);border-color:var(--ok-bd)}
+  .b.gray{background:var(--gray-bg);color:var(--gray-fg);border-color:var(--gray-bd)}
+  .b.warn{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bd)}
+  .b.info{background:var(--info-bg);color:var(--info-fg);border-color:var(--info-bd)}
+  .b.purple{background:var(--purple-bg);color:var(--purple-fg);border-color:var(--purple-bd)}
+  .b.red{background:var(--red-bg);color:var(--red-fg);border-color:var(--red-bd)}
+  .bs{display:flex;gap:5px;flex-wrap:wrap}
+  /* banners */
+  .banner{display:flex;gap:11px;padding:11px 14px;border-radius:11px;font-size:12.5px;border:1px solid;margin-bottom:14px;line-height:1.45}
+  .banner .i{font-weight:700}
+  .banner.info{background:var(--info-bg);border-color:var(--info-bd);color:var(--info-fg)}
+  .banner.warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-fg)}
+  .banner.red{background:var(--red-bg);border-color:var(--red-bd);color:var(--red-fg)}
+  /* form */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px 16px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px 16px}
+  .f label{display:block;font-size:11.5px;font-weight:600;margin-bottom:5px;color:#3d3d3d}
+  .f label .req{color:#a1231a}
+  .f .in{border:1px solid var(--border);border-radius:9px;padding:8px 11px;font-size:13px;background:#fff;min-height:36px;display:flex;align-items:center;justify-content:space-between}
+  .f .in.ph{color:#a8a8a8}
+  .f .in.ta{min-height:66px;align-items:flex-start}
+  .f .in.err{border-color:#c0392b;box-shadow:0 0 0 3px rgba(192,57,43,.12)}
+  .f .errtxt{color:#a1231a;font-size:11.5px;margin-top:4px}
+  .f .in.ro{background:var(--muted);color:var(--muted-fg)}
+  .sw{display:flex;align-items:center;gap:9px;font-size:12.5px}
+  .sw .tr{width:34px;height:19px;border-radius:20px;background:#d8d8d8;position:relative}
+  .sw .tr.on{background:var(--primary)}
+  .sw .tr i{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff}
+  .sw .tr.on i{left:17px}
+  .cb{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0}
+  .cb .bx{width:15px;height:15px;border-radius:4px;border:1.5px solid #c9c9c9;background:#fff}
+  .cb .bx.on{background:var(--primary);border-color:var(--primary);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center}
+  .split{display:grid;grid-template-columns:1fr 316px;gap:16px;align-items:start}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #f4f4f4;font-size:12.5px}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--muted-fg)}
+  .kv .v{font-weight:550;text-align:right}
+  .sectitle{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted-fg);font-weight:650;margin:0 0 9px}
+  /* dialog */
+  .stage{position:relative}
+  .scrim{position:absolute;inset:0;background:rgba(15,20,25,.38)}
+  .dlg{position:absolute;right:34px;top:50%;transform:translateY(-50%);width:500px;background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden}
+  .dlg .dh{padding:14px 17px;border-bottom:1px solid var(--border);display:flex;align-items:center}
+  .dlg .dh h3{margin:0;font-size:14.5px;font-weight:650}
+  .dlg .dh .x{margin-left:auto;color:var(--muted-fg)}
+  .dlg .dc{padding:16px 17px;display:flex;flex-direction:column;gap:13px}
+  .dlg .df{padding:12px 17px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;background:#fcfcfc}
+  .dlg .df .kbd{margin-right:auto;font-size:11px;color:var(--muted-fg)}
+  kbd{font-family:ui-monospace,Menlo,monospace;background:var(--muted);border:1px solid var(--border);border-radius:5px;padding:1px 5px;font-size:10.5px}
+  /* combobox list */
+  .cbox{border:1px solid var(--ring);border-radius:9px;box-shadow:0 0 0 3px rgba(42,92,71,.12)}
+  .cbox .q{padding:8px 11px;font-size:13px;border-bottom:1px solid var(--border)}
+  .cbox .opt{padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:9px}
+  .cbox .opt.hl{background:#f3f7f4}
+  .cbox .opt .mini{color:var(--muted-fg);font-size:11.5px;margin-left:auto}
+  /* timeline */
+  .tl{position:relative;padding-left:20px}
+  .tl:before{content:"";position:absolute;left:5px;top:5px;bottom:5px;width:2px;background:var(--border)}
+  .tl .it{position:relative;padding:0 0 13px}
+  .tl .it:before{content:"";position:absolute;left:-18px;top:4px;width:9px;height:9px;border-radius:50%;background:#c9c9c9;border:2px solid #fff}
+  .tl .it.now:before{background:var(--primary)}
+  .tl .t1{font-size:12.5px;font-weight:600}
+  .tl .t2{font-size:11.5px;color:var(--muted-fg)}
+  .pager{display:flex;align-items:center;gap:9px;padding:11px 14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted-fg)}
+  .pager .r{margin-left:auto;display:flex;gap:6px}
+  .chip{background:var(--muted);border:1px solid var(--border);border-radius:7px;padding:2px 8px;font-size:11.5px;display:inline-flex;gap:6px;align-items:center}
+  .empty{text-align:center;padding:44px 20px}
+  .empty .ei{width:44px;height:44px;border-radius:12px;background:var(--muted);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:19px}
+  .empty h4{margin:0 0 5px;font-size:14.5px}
+  .empty p{margin:0 0 14px;font-size:12.5px;color:var(--muted-fg)}
+  .skel{background:linear-gradient(90deg,#f1f1f1,#f8f8f8,#f1f1f1);border-radius:6px;height:11px}
+  .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .three .mini-h{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted-fg);font-weight:650;margin-bottom:8px}
+  .phone{width:360px;border:1px solid var(--border);border-radius:0;background:#fff}
+  .ptop{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600}
+  .pbody{padding:14px}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .plist .row{border:1px solid var(--border);border-radius:11px;padding:11px 12px}
+  .ptabs{display:flex;gap:6px;overflow:hidden;border-bottom:1px solid var(--border);padding:0 14px}
+  .ptabs .tab{padding:8px 4px;font-size:12px}
+  .aria{font-size:11px;color:var(--muted-fg);line-height:1.8;margin-top:10px}
+  #s06 td:first-child,#s09 td:first-child,#s08 td:nth-child(5){white-space:nowrap}
+  .note{font-size:11.5px;color:var(--muted-fg);margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+const SCREENS = [];
+function S(o){SCREENS.push(o)}
+
+const NAV = (active, withVisits=true) => `
+<aside class="sb">
+  <div class="logo"><span class="dot"></span> Polana Przygody</div>
+  <div class="sbgroup">Pulpit</div>
+  <div class="sbi"><span class="ic">▤</span> Start</div>
+  <div class="sbgroup">Opieka</div>
+  <div class="sbi ${active==='patients'?'active':''}"><span class="ic">♡</span> Pacjenci</div>
+  <div class="sbi ${active==='visits'?'active':''} ${withVisits?'':'soon'}"><span class="ic">◷</span> Wizyty</div>
+  <div class="sbgroup">CRM</div>
+  <div class="sbi"><span class="ic">◍</span> Osoby</div>
+  <div class="sbi"><span class="ic">◲</span> Firmy</div>
+  <div class="sbgroup">Zasoby</div>
+  <div class="sbi"><span class="ic">▦</span> Katalog usług</div>
+  <div class="sbi"><span class="ic">◰</span> Gabinety</div>
+  <div class="sbgroup">Treści</div>
+  <div class="sbi"><span class="ic">▭</span> Dokumenty</div>
+  <div class="sbi"><span class="ic">◫</span> Pliki</div>
+</aside>`;
+
+const TOP = (crumbs) => `
+<div class="top">
+  <div class="crumbs">${crumbs}</div>
+  <div class="topsearch"><span>◎</span> Szukaj…</div>
+  <div class="org">Polana Przygody • Wrocław <span class="cv">▾</span></div>
+  <div class="av">AN</div>
+</div>`;
+
+const PATIENT_TABS = (active) => `
+<div class="tabs">
+  ${[['data','Dane i pola dodatkowe',''],['addr','Adresy','2'],['cont','Kontakty','3'],['diag','Diagnozy','4'],['docs','Dokumenty','2'],['files','Pliki','5'],['vis','Wizyty','7']]
+    .map(([k,l,n])=>`<div class="tab ${active===k?'active':''}">${l}${n?`<span class="n">${n}</span>`:''}</div>`).join('')}
+</div>`;
+
+const PATIENT_HEAD = `
+<div class="ph">
+  <div>
+    <h1>Zofia Kaczmarek <span class="b ok" style="vertical-align:5px">Aktywna</span></h1>
+    <p class="sub">Numer pacjenta <span class="mono">P-8f2c4b19</span> · ur. 2017-04-12 (9 lat) · prowadząca: Anna Nowicka</p>
+  </div>
+  <div class="acts">
+    <button class="btn">Archiwizuj</button>
+    <button class="btn p">Zapisz</button>
+  </div>
+</div>`;
+
+/* ───────────────────────── 01 — lista pacjentów ───────────────────────── */
+S({id:'s01',w:1440,label:'Lista pacjentów',route:'/backend/patient/patients',spec:'PAT-R01/R07 · PAT-J1 · DataTable patient:patient',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / <b>Pacjenci</b>')}
+  <div class="body">
+    <div class="ph">
+      <div><h1>Pacjenci</h1><p class="sub">Kartoteka pacjentów tej organizacji. Dane kliniczne widoczne tylko z uprawnieniem klinicznym.</p></div>
+      <div class="acts"><button class="btn">⇩ Eksport listy</button><button class="btn p">+ Dodaj pacjenta</button></div>
+    </div>
+    <div class="filters">
+      <div class="sel">Status: <b>Aktywni</b> <span class="cv">▾</span></div>
+      <div class="sel">Prowadzący: <b>Wszyscy</b> <span class="cv">▾</span></div>
+      <div class="inp grow"><span class="mag">◎</span> Szukaj po numerze, nazwisku, e-mailu lub telefonie — dopasowanie dokładne</div>
+      <div class="sel">⊞ Kolumny <span class="cv">▾</span></div>
+      <div class="sel">⇅ Numer <span class="cv">▾</span></div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th style="width:120px">Numer</th><th>Imię i nazwisko</th><th>Kontakt pacjenta</th><th>Prowadzący</th><th style="width:110px">Status</th><th class="r" style="width:190px">Akcje</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">P-8f2c4b19</td>
+              <td><div class="nm">Zofia Kaczmarek</div><div class="sub2">ur. 2017-04-12 · 3 kontakty CRM</div></td>
+              <td>z.kaczmarek@example.org<div class="sub2">+48 601 234 567</div></td>
+              <td>Anna Nowicka</td><td><span class="b ok">Aktywna</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
+          <tr><td class="mono">P-3b7109ac</td>
+              <td><div class="nm">Jan Lewandowski</div><div class="sub2">ur. 2019-11-02 · 2 kontakty CRM</div></td>
+              <td>—<div class="sub2">+48 512 880 145 (telefon opiekuna, wpisany świadomie)</div></td>
+              <td>Marek Zieliński</td><td><span class="b ok">Aktywny</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
+          <tr><td class="mono">P-51d0e7b4</td>
+              <td><div class="nm">Maja Wiśniewska</div><div class="sub2">ur. 2015-06-30 · 1 kontakt CRM</div></td>
+              <td>m.wisniewska@example.org<div class="sub2">—</div></td>
+              <td><span style="color:var(--muted-fg)">Nie przypisano</span></td><td><span class="b ok">Aktywna</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
+          <tr><td class="mono">P-c4a9f200</td>
+              <td><div class="nm">Tomasz Górski</div><div class="sub2">ur. 1984-02-19 · bez kontaktów CRM</div></td>
+              <td>t.gorski@example.org<div class="sub2">+48 698 003 771</div></td>
+              <td>Anna Nowicka</td><td><span class="b ok">Aktywny</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
+          <tr><td class="mono">P-77be1c05</td>
+              <td><div class="nm">Antoni Dąbrowski</div><div class="sub2">ur. 2020-08-08 · 2 kontakty CRM</div></td>
+              <td>—<div class="sub2">+48 604 112 900</div></td>
+              <td>Katarzyna Mazur</td><td><span class="b ok">Aktywny</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">⋯</button></div></td></tr>
+          <tr class="dim"><td class="mono">P-1e6633fd</td>
+              <td><div class="nm">Helena Sikora</div><div class="sub2">ur. 2013-01-24 · archiwum od 2026-03-11</div></td>
+              <td>h.sikora@example.org<div class="sub2">+48 666 100 210</div></td>
+              <td>Marek Zieliński</td><td><span class="b gray">Archiwalna</span></td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz kartę</button><button class="btn sm">Przywróć</button></div></td></tr>
+        </tbody>
+      </table>
+      <div class="pager">Wyświetlono 1–6 z 42 · rozmiar strony <b>25</b>
+        <div class="r"><button class="btn sm off">‹ Poprzednia</button><button class="btn sm">Następna ›</button></div></div>
+    </div>
+    <div class="note">Wyszukiwanie jest dokładne (szyfrowane pola, indeksy hashowane) — nie ma dopasowania częściowego ani sortowania po treści. Eksport nie zawiera treści klinicznej.</div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 02 — nowy pacjent ───────────────────────── */
+S({id:'s02',w:1440,label:'Nowy pacjent (atomowy zapis z pierwszym adresem)',route:'/backend/patient/patients/create',spec:'PAT-R01/R03 · PAT-J1 · CrudForm crud-form:patient.patient',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Nowy pacjent</b>')}
+  <div class="body">
+    <div class="ph">
+      <div><h1>Nowy pacjent</h1><p class="sub">Numer pacjenta nadaje serwer po zapisie.</p></div>
+      <div class="acts"><button class="btn">Anuluj</button><button class="btn p">Zapisz pacjenta</button></div>
+    </div>
+    <div class="banner info"><span class="i">i</span><div>Pacjent i jego pierwszy adres są zapisywane <b>atomowo</b> — albo powstaną oba, albo żaden. Ponowne wysłanie tego samego formularza nie utworzy duplikatu.</div></div>
+    <div class="split">
+      <div>
+        <div class="card"><div class="hd"><h3>Dane pacjenta</h3></div><div class="ct f">
+          <div class="grid2">
+            <div><label>Imię <span class="req">*</span></label><div class="in">Zofia</div></div>
+            <div><label>Nazwisko <span class="req">*</span></label><div class="in">Kaczmarek</div></div>
+            <div><label>Data urodzenia</label><div class="in">2017-04-12 <span class="cv" style="color:var(--muted-fg)">▦</span></div><div class="hint">Opcjonalna, nie może być z przyszłości.</div></div>
+            <div><label>Prowadzący pacjenta</label><div class="in">Anna Nowicka — fizjoterapia <span class="cv" style="color:var(--muted-fg)">▾</span></div><div class="hint">Opcjonalny; nie nadaje uprawnień i nie zastępuje wykonawcy wizyty.</div></div>
+          </div>
+          <div style="margin-top:13px"><label>Opis / notatka organizacyjna</label><div class="in ta ph">Informacje organizacyjne — nie zastępują diagnozy.</div></div>
+        </div></div>
+
+        <div class="card"><div class="hd"><h3>Kontakt pacjenta</h3><span class="b info">wymagany min. 1 kanał</span></div><div class="ct f">
+          <div class="grid2">
+            <div><label>E-mail</label><div class="in">z.kaczmarek@example.org</div></div>
+            <div><label>Telefon</label><div class="in">+48 601 234 567</div><div class="hint">Zachowujemy prefiks kraju.</div></div>
+          </div>
+          <div class="hint" style="margin-top:9px">Dla dziecka można świadomie wpisać kontakt opiekuna — nie pobieramy go dynamicznie z CRM.</div>
+        </div></div>
+
+        <div class="card"><div class="hd"><h3>Pierwszy adres</h3><span class="b ok">zostanie adresem głównym</span></div><div class="ct f">
+          <div class="grid3">
+            <div><label>Nazwa / przeznaczenie</label><div class="in">Dom</div></div>
+            <div style="grid-column:span 2"><label>Ulica i numer <span class="req">*</span></label><div class="in">ul. Leśna 14</div></div>
+            <div><label>Nr lokalu</label><div class="in ph">—</div></div>
+            <div><label>Kod pocztowy</label><div class="in">53-140</div></div>
+            <div><label>Miasto <span class="req">*</span></label><div class="in">Wrocław</div></div>
+            <div><label>Region</label><div class="in ph">—</div></div>
+            <div><label>Kraj <span class="req">*</span></label><div class="in">Polska (PL) <span class="cv" style="color:var(--muted-fg)">▾</span></div></div>
+            <div><label>Dodatkowa linia</label><div class="in ph">—</div></div>
+          </div>
+          <div class="hint" style="margin-top:9px">Ten sam edytor adresów, którego używa CRM (AddressesSection). Bez geokodowania.</div>
+        </div></div>
+
+        <div class="card"><div class="hd"><h3>Pola dodatkowe</h3><span class="b purple">konfigurowalne</span></div><div class="ct f">
+          <div class="grid2">
+            <div><label>Źródło zgłoszenia</label><div class="in">Polecenie lekarza <span class="cv" style="color:var(--muted-fg)">▾</span></div></div>
+            <div><label>Preferowany kanał kontaktu</label><div class="in">Telefon <span class="cv" style="color:var(--muted-fg)">▾</span></div></div>
+            <div><div class="sw" style="margin-top:22px"><span class="tr on"><i></i></span> Zgoda na przypomnienia SMS</div></div>
+            <div><label>Notatka rejestracji</label><div class="in ph">—</div></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div>
+        <div class="card"><div class="hd"><h3>Zanim zapiszesz</h3></div><div class="ct">
+          <div class="kv"><span class="k">Numer pacjenta</span><span class="v" style="color:var(--muted-fg)">nadany po zapisie</span></div>
+          <div class="kv"><span class="k">Organizacja</span><span class="v">Wrocław</span></div>
+          <div class="kv"><span class="k">Kanał kontaktu</span><span class="v"><span class="b ok">e-mail + telefon</span></span></div>
+          <div class="kv"><span class="k">Adres główny</span><span class="v"><span class="b ok">kompletny</span></span></div>
+          <div class="kv"><span class="k">Diagnozy i pliki</span><span class="v" style="color:var(--muted-fg)">dodasz na karcie</span></div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Co nie należy do kartoteki</h3></div><div class="ct">
+          <div class="hint" style="margin:0;line-height:1.7">Opiekunowie, kontakty i płatnicy zostają w CRM i dodasz ich na karcie.<br>PESEL nie jest identyfikatorem pacjenta.<br>Recepty, leki i alergie są poza zakresem.</div>
+        </div></div>
+        <div class="aria">♪ Komunikaty walidacji i zapisu ogłaszane przez aria-live · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> zapisuje</div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 03 — karta: dane ───────────────────────── */
+S({id:'s03',w:1440,label:'Karta pacjenta — Dane i pola dodatkowe',route:'/backend/patient/patients/[id]',spec:'PAT-R01/R03/R07 · wszystkie zakładki jednej karty',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b>')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('data')}
+    <div class="split">
+      <div>
+        <div class="card"><div class="hd"><h3>Dane pacjenta</h3><div class="r"><span class="b gray">wersja z 2026-09-22 10:14</span></div></div><div class="ct f">
+          <div class="grid2">
+            <div><label>Imię <span class="req">*</span></label><div class="in">Zofia</div></div>
+            <div><label>Nazwisko <span class="req">*</span></label><div class="in">Kaczmarek</div></div>
+            <div><label>Data urodzenia</label><div class="in">2017-04-12</div></div>
+            <div><label>Prowadzący pacjenta</label><div class="in">Anna Nowicka — fizjoterapia <span style="color:var(--muted-fg)">▾</span></div><div class="hint">Można wyczyścić — zapisujemy brak przypisania.</div></div>
+            <div><label>E-mail</label><div class="in">z.kaczmarek@example.org</div></div>
+            <div><label>Telefon</label><div class="in">+48 601 234 567</div></div>
+          </div>
+          <div style="margin-top:13px"><label>Opis / notatka organizacyjna</label><div class="in ta">Zajęcia w poniedziałki i czwartki. Odbiór wyłącznie przez rodziców.</div></div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Pola dodatkowe</h3><div class="r"><button class="btn sm">Konfiguruj pola</button></div></div><div class="ct f">
+          <div class="grid2">
+            <div><label>Źródło zgłoszenia</label><div class="in">Polecenie lekarza <span style="color:var(--muted-fg)">▾</span></div></div>
+            <div><label>Preferowany kanał kontaktu</label><div class="in">Telefon <span style="color:var(--muted-fg)">▾</span></div></div>
+            <div><label>Notatka rejestracji</label><div class="in">Karta przeniesiona z papierowej teczki</div></div>
+            <div><div class="sw" style="margin-top:22px"><span class="tr on"><i></i></span> Zgoda na przypomnienia SMS</div><div class="hint">Wyczyszczenie pola zapisuje brak wartości, nie starą wartość.</div></div>
+          </div>
+        </div></div>
+      </div>
+      <div>
+        <div class="card"><div class="hd"><h3>Podsumowanie karty</h3></div><div class="ct">
+          <div class="kv"><span class="k">Adres główny</span><span class="v">ul. Leśna 14<br>53-140 Wrocław</span></div>
+          <div class="kv"><span class="k">Główny kontakt</span><span class="v">Maria Kaczmarek<br><span class="sub2">matka · opiekun</span></span></div>
+          <div class="kv"><span class="k">Ostatnia diagnoza</span><span class="v">2026-06-14</span></div>
+          <div class="kv"><span class="k">Najbliższa wizyta</span><span class="v">2026-10-02, 09:30</span></div>
+          <div class="kv"><span class="k">Dokumenty / pliki</span><span class="v">2 / 5</span></div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Historia rekordu</h3></div><div class="ct">
+          <div class="tl">
+            <div class="it now"><div class="t1">Zmiana danych kontaktowych</div><div class="t2">2026-09-22 10:14 · Anna Nowicka</div></div>
+            <div class="it"><div class="t1">Dodano kontakt: ojciec</div><div class="t2">2026-07-03 12:41 · Katarzyna Mazur</div></div>
+            <div class="it"><div class="t1">Utworzono kartę z adresem</div><div class="t2">2026-05-18 08:05 · Katarzyna Mazur</div></div>
+          </div>
+          <div class="hint">Dziennik zawiera operację, aktora, czas i zakres — bez treści medycznej.</div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Zakres dostępu</h3></div><div class="ct">
+          <div class="kv"><span class="k">Kartoteka</span><span class="v"><span class="b ok">edycja</span></span></div>
+          <div class="kv"><span class="k">Dane kliniczne</span><span class="v"><span class="b ok">edycja</span></span></div>
+          <div class="kv"><span class="k">Pliki kliniczne</span><span class="v"><span class="b warn">wyłączone (PAT-3)</span></span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 04 — adresy ───────────────────────── */
+S({id:'s04',w:1440,label:'Karta pacjenta — Adresy (wspólny edytor CRM)',route:'/backend/patient/patients/[id] · zakładka Adresy',
+spec:'PAT-R01/R07 · AddressesSection + PatientAddressDataAdapter',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b> / Adresy')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('addr')}
+    <div class="ph" style="margin-bottom:12px">
+      <div><h1 style="font-size:16px">Adresy pacjenta</h1><p class="sub">Aktywny pacjent ma dokładnie jeden adres główny.</p></div>
+      <div class="acts"><button class="btn p">+ Dodaj adres</button></div>
+    </div>
+    <div class="split">
+      <div>
+        <div class="card"><div class="hd"><h3>Dom</h3><span class="b ok">Adres główny</span><div class="r"><button class="btn sm">Edytuj</button><button class="btn sm off" title="Nie można usunąć ostatniego adresu aktywnego pacjenta">Usuń</button></div></div>
+          <div class="ct" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;font-size:13px">
+            <div><div class="sectitle">Adres</div>ul. Leśna 14<br>53-140 Wrocław<br>Polska (PL)</div>
+            <div><div class="sectitle">Szczegóły</div><div class="kv"><span class="k">Przeznaczenie</span><span class="v">Zamieszkanie</span></div><div class="kv"><span class="k">Dodano</span><span class="v">2026-05-18</span></div></div>
+          </div>
+          <div class="ct" style="border-top:1px solid var(--border);padding-top:11px"><div class="hint" style="margin:0">Usunięcie ostatniego adresu aktywnego pacjenta zostanie odrzucone (409) — najpierw dodaj inny adres.</div></div>
+        </div>
+        <div class="card"><div class="hd"><h3>Adres do faktury</h3><span class="b gray">Dodatkowy</span><div class="r"><button class="btn sm">Ustaw jako główny</button><button class="btn sm">Edytuj</button><button class="btn sm">Usuń</button></div></div>
+          <div class="ct" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;font-size:13px">
+            <div><div class="sectitle">Adres</div>Kaczmarek Studio sp. z o.o.<br>ul. Powstańców Śląskich 5 / 12<br>53-332 Wrocław<br>Polska (PL)</div>
+            <div><div class="sectitle">Szczegóły</div><div class="kv"><span class="k">Przeznaczenie</span><span class="v">Rozliczenia</span></div><div class="kv"><span class="k">Dodano</span><span class="v">2026-07-03</span></div></div>
+          </div>
+        </div>
+        <div class="note">Zmiana adresu głównego przełącza oba wpisy w jednej transakcji z blokadą karty pacjenta. Dwie osoby nie ustawią dwóch adresów głównych — druga próba dostaje 409 i odświeża widok.</div>
+      </div>
+      <div>
+        <div class="card"><div class="hd"><h3>Adres a opiekun</h3></div><div class="ct">
+          <div class="hint" style="margin:0;line-height:1.7">Adres pacjenta jest <b>jego własny</b> — nie jest referencją do adresu opiekuna w CRM.<br><br>Możesz świadomie skopiować dane z kontaktu; nie ma automatycznej synchronizacji w żadną stronę.</div>
+          <button class="btn sm" style="margin-top:11px">Skopiuj z kontaktu CRM…</button>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Wymagania pola</h3></div><div class="ct">
+          <div class="kv"><span class="k">Ulica i numer</span><span class="v">wymagane</span></div>
+          <div class="kv"><span class="k">Miasto, kraj</span><span class="v">wymagane w 1. adresie</span></div>
+          <div class="kv"><span class="k">Kod pocztowy</span><span class="v">opcjonalny</span></div>
+          <div class="kv"><span class="k">Kraj</span><span class="v">ISO-3166 alpha-2</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 05 — kontakty + dialog ───────────────────────── */
+S({id:'s05',w:1440,bare:true,label:'Karta pacjenta — Kontakty CRM (0..n, role jako flagi)',route:'/backend/patient/patients/[id] · zakładka Kontakty',
+spec:'PAT-R02 · PAT-J2 · PatientContactLink → customers:customer_entity',
+html:`<div class="stage" style="display:grid;grid-template-columns:232px 1fr">
+${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b> / Kontakty')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('cont')}
+    <div class="ph" style="margin-bottom:12px">
+      <div><h1 style="font-size:16px">Osoby powiązane z pacjentem</h1><p class="sub">Opiekun, kontakt i płatnik to niezależne flagi — jedna osoba może mieć kilka ról.</p></div>
+      <div class="acts"><button class="btn p">+ Dodaj kontakt</button></div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Osoba (CRM)</th><th>Relacja</th><th>Role</th><th>Dodano</th><th class="r" style="width:180px">Akcje</th></tr></thead>
+        <tbody>
+          <tr><td><div class="nm">Maria Kaczmarek</div><div class="sub2">m.kaczmarek@example.org · +48 601 234 567</div></td>
+              <td>Matka</td>
+              <td><div class="bs"><span class="b purple">Opiekun</span><span class="b info">Kontakt</span><span class="b ok">Główny kontakt</span></div></td>
+              <td>2026-05-18</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Edytuj role</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr><td><div class="nm">Piotr Kaczmarek</div><div class="sub2">p.kaczmarek@example.org · +48 604 771 020</div></td>
+              <td>Ojciec</td>
+              <td><div class="bs"><span class="b purple">Opiekun</span><span class="b warn">Płatnik</span></div></td>
+              <td>2026-07-03</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Edytuj role</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr><td><div class="nm">Gabinet Dr Kowalska (placówka kierująca)</div><div class="sub2">kontakt@example.org</div></td>
+              <td>Lekarz kierujący</td>
+              <td><div class="bs"><span class="b info">Kontakt</span></div></td>
+              <td>2026-06-02</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Edytuj role</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr class="dim"><td><div class="nm">Osoba niedostępna</div><div class="sub2">rekord CRM nieaktywny — wpis historyczny</div></td>
+              <td>Babcia</td>
+              <td><div class="bs"><span class="b gray">Kontakt</span></div></td>
+              <td>2026-05-20</td>
+              <td class="r"><div class="rowacts"><button class="btn sm off">Edytuj role</button><button class="btn sm">Odepnij</button></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">Odpięcie usuwa tylko powiązanie — rekord osoby w CRM zostaje nietknięty. Relacja „opiekun” nie jest dowodem prawa do reprezentacji ani samodzielnym dostępem do dokumentacji.</div>
+  </div>
+</div>
+<div class="scrim"></div>
+<div class="dlg">
+  <div class="dh"><h3>Dodaj kontakt pacjenta</h3><span class="x">✕</span></div>
+  <div class="dc">
+    <div class="f"><label>Osoba z CRM <span class="req">*</span></label>
+      <div class="cbox">
+        <div class="q">kaczm<span style="color:#a8a8a8">|</span></div>
+        <div class="opt hl">Maria Kaczmarek <span class="mini">już powiązana</span></div>
+        <div class="opt">Piotr Kaczmarek <span class="mini">osoba CRM</span></div>
+        <div class="opt">Karolina Kaczmarek-Nowak <span class="mini">osoba CRM</span></div>
+      </div>
+      <div class="hint">Wybierasz po nazwie — identyfikatory nie są pokazywane ani wpisywane.</div>
+    </div>
+    <div class="f"><label>Relacja (etykieta)</label><div class="in">Ojciec</div></div>
+    <div class="f"><label>Role <span class="req">*</span></label>
+      <div class="cb"><span class="bx on">✓</span> Opiekun</div>
+      <div class="cb"><span class="bx on">✓</span> Kontakt</div>
+      <div class="cb"><span class="bx"></span> Płatnik</div>
+      <div class="cb"><span class="bx"></span> Główny kontakt <span class="sub2">(wymaga roli „Kontakt”; tylko jedna osoba)</span></div>
+      <div class="hint">Co najmniej jedna rola jest wymagana; płatnik i opiekun mogą się łączyć.</div>
+    </div>
+  </div>
+  <div class="df"><span class="kbd"><kbd>Esc</kbd> zamyka · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> zapisuje</span><button class="btn">Anuluj</button><button class="btn p">Dodaj kontakt</button></div>
+</div>
+</div>`});
+
+/* ───────────────────────── 06 — diagnozy ───────────────────────── */
+S({id:'s06',w:1440,label:'Karta pacjenta — Diagnozy (niezmienne wpisy, korekta = nowy wpis)',route:'/backend/patient/patients/[id] · zakładka Diagnozy',
+spec:'PAT-R04 · PAT-J3 · PatientDiagnosis (correct / void)',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b> / Diagnozy')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('diag')}
+    <div class="banner info"><span class="i">i</span><div>Zapisana treść diagnozy jest <b>niezmienna</b>. „Skoryguj” tworzy nowy wpis i oznacza poprzedni jako skorygowany — historia nie znika. Unieważnienie wymaga podania powodu.</div></div>
+    <div class="split" style="grid-template-columns:1fr 372px">
+      <div>
+        <div class="ph" style="margin-bottom:12px">
+          <div><h1 style="font-size:16px">Historia diagnoz i ocen</h1><p class="sub">Wpisy równoległe są dozwolone; wizyta nie jest wymagana.</p></div>
+          <div class="acts"><button class="btn p">+ Dodaj diagnozę</button></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th style="width:104px">Data</th><th>Tytuł</th><th>Autor</th><th style="width:120px">Kod</th><th style="width:130px">Stan</th><th class="r" style="width:150px">Akcje</th></tr></thead>
+            <tbody>
+              <tr style="background:#f7faf8"><td>2026-06-14</td>
+                  <td><div class="nm">Opóźniony rozwój mowy — ocena kontrolna</div><div class="sub2">2 pliki · korekta wpisu z 2026-05-20</div></td>
+                  <td>Anna Nowicka</td><td class="mono">ICD-10 F80.1</td><td><span class="b ok">Aktualna</span></td>
+                  <td class="r"><div class="rowacts"><button class="btn sm">Skoryguj</button><button class="btn sm">⋯</button></div></td></tr>
+              <tr><td>2026-06-01</td>
+                  <td><div class="nm">Zaburzenie integracji sensorycznej</div><div class="sub2">bez plików</div></td>
+                  <td>Marek Zieliński</td><td style="color:var(--muted-fg)">—</td><td><span class="b ok">Aktualna</span></td>
+                  <td class="r"><div class="rowacts"><button class="btn sm">Skoryguj</button><button class="btn sm">⋯</button></div></td></tr>
+              <tr class="dim"><td>2026-05-20</td>
+                  <td><div class="nm">Opóźniony rozwój mowy</div><div class="sub2">skorygowana wpisem z 2026-06-14</div></td>
+                  <td>Anna Nowicka</td><td class="mono">ICD-10 F80.1</td><td><span class="b gray">Skorygowana</span></td>
+                  <td class="r"><div class="rowacts"><button class="btn sm">Zobacz</button></div></td></tr>
+              <tr class="dim"><td>2026-05-19</td>
+                  <td><div class="nm">Wpis wprowadzony omyłkowo</div><div class="sub2">powód: pomyłka pacjenta przy rejestracji</div></td>
+                  <td>Katarzyna Mazur</td><td style="color:var(--muted-fg)">—</td><td><span class="b red">Unieważniona</span></td>
+                  <td class="r"><div class="rowacts"><button class="btn sm">Zobacz</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">Korygować można wyłącznie najnowszy aktualny wpis łańcucha; próba korekty starszego zwraca 409 i odświeża widok bez utraty wpisanej treści. Recepcja (bez uprawnienia klinicznego) nie widzi tej zakładki ani treści wpisów.</div>
+      </div>
+      <div>
+        <div class="card"><div class="hd"><h3>Diagnoza — 2026-06-14</h3><span class="b ok">Aktualna</span></div><div class="ct">
+          <div class="sectitle">Tytuł</div>
+          <div style="font-size:13.5px;font-weight:600;margin-bottom:12px">Opóźniony rozwój mowy — ocena kontrolna</div>
+          <div class="sectitle">Opis</div>
+          <div style="font-size:12.5px;line-height:1.65;color:#3c3c3c;margin-bottom:12px">Po trzech miesiącach terapii poprawa artykulacji szeregu syczącego. Zasób słownictwa czynnego poszerzony. Zalecenie: kontynuacja ćwiczeń domowych, kontrola za 3 miesiące.</div>
+          <div class="kv"><span class="k">Data diagnozy</span><span class="v">2026-06-14</span></div>
+          <div class="kv"><span class="k">Autor</span><span class="v">Anna Nowicka <span class="sub2">(z sesji, nie z formularza)</span></span></div>
+          <div class="kv"><span class="k">Kod</span><span class="v">F80.1 · ICD-10 <span class="sub2">opcjonalny</span></span></div>
+          <div class="kv"><span class="k">Pliki wpisu</span><span class="v">2 <span class="b warn">PAT-3</span></span></div>
+          <div style="margin-top:14px" class="sectitle">Łańcuch korekt</div>
+          <div class="tl">
+            <div class="it now"><div class="t1">2026-06-14 — wpis aktualny</div><div class="t2">Anna Nowicka</div></div>
+            <div class="it"><div class="t1">2026-05-20 — skorygowana</div><div class="t2">treść zachowana, dostępna do odczytu</div></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm p">Skoryguj</button><button class="btn sm d">Unieważnij</button><button class="btn sm">Dodaj plik</button></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 07 — dokumenty ───────────────────────── */
+S({id:'s07',w:1440,label:'Karta pacjenta — Dokumenty (przypięcie, nowy, wznowienie)',route:'/backend/patient/patients/[id] · zakładka Dokumenty',
+spec:'PAT-R05 · PAT-J4 · PatientDocumentLink (pending_create → linked)',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b> / Dokumenty')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('docs')}
+    <div class="banner warn"><span class="i">!</span><div><b>Przypięcie dokumentu nie nadaje dostępu.</b> Dokument zachowuje własne uprawnienia właściciela i udostępnienia. Odebranie dostępu klinicznego w karcie nie usuwa niezależnego udostępnienia dokumentu — trzeba nim zarządzać osobno.</div></div>
+    <div class="ph" style="margin-bottom:12px">
+      <div><h1 style="font-size:16px">Dokumentacja pacjenta</h1><p class="sub">Dokumenty są edytowane w swoim natywnym edytorze; karta tylko je wiąże.</p></div>
+      <div class="acts"><button class="btn">Przypnij istniejący</button><button class="btn p">+ Nowy dokument</button></div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Tytuł</th><th style="width:210px">Stan przypisania</th><th style="width:170px">Dostęp</th><th style="width:130px">Zmieniono</th><th class="r" style="width:230px">Akcje</th></tr></thead>
+        <tbody>
+          <tr><td><div class="nm">Plan terapii — rok 2026</div><div class="sub2">Anna Nowicka · przypięto 2026-05-22</div></td>
+              <td><span class="b ok">Przypięty</span></td>
+              <td>Edycja <span class="sub2">(właściciel)</span></td><td>2026-09-12</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz w edytorze</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr><td><div class="nm">Opinia po konsultacji neurologicznej</div><div class="sub2">udostępniony przez: Marek Zieliński</div></td>
+              <td><span class="b ok">Przypięty</span></td>
+              <td>Podgląd <span class="sub2">(udostępnienie)</span></td><td>2026-08-30</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Otwórz w edytorze</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr style="background:#fffdf5"><td><div class="nm">Zalecenia dla przedszkola</div><div class="sub2">rozpoczęto 2026-09-28 14:02 · Anna Nowicka</div></td>
+              <td><span class="b warn">Tworzenie nieukończone</span><div class="sub2">przerwane po utworzeniu treści</div></td>
+              <td style="color:var(--muted-fg)">—</td><td>—</td>
+              <td class="r"><div class="rowacts"><button class="btn sm p">Dokończ przypisanie</button><button class="btn sm">Porzuć</button></div></td></tr>
+          <tr class="dim"><td><div class="nm">Dokument niedostępny</div><div class="sub2">przypięty do tej karty, brak uprawnień do odczytu — tytuł i treść pozostają ukryte</div></td>
+              <td><span class="b gray">Przypięty</span></td>
+              <td><span class="b red">Brak dostępu</span></td><td>—</td>
+              <td class="r"><div class="rowacts"><button class="btn sm off">Otwórz w edytorze</button><button class="btn sm">Odepnij</button></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="split" style="margin-top:14px;grid-template-columns:1fr 1fr">
+      <div class="card"><div class="hd"><h3>Dlaczego jest stan „nieukończone”</h3></div><div class="ct">
+        <div class="hint" style="margin:0;line-height:1.7">Dokument tworzy jego własny moduł, w osobnej operacji. Gdy przeglądarka lub serwer przerwie proces w połowie, karta pokazuje zamiar utworzenia i pozwala go <b>wznowić</b> — zamiast po cichu utworzyć drugi dokument.<br><br>Wznowienie użyje tego samego dokumentu. Porzucenie zamiaru nie usuwa dokumentu u właściciela.</div>
+      </div></div>
+      <div class="card"><div class="hd"><h3>Współdzielenie między pacjentami</h3></div><div class="ct">
+        <div class="hint" style="margin:0;line-height:1.7">Ten sam dokument można świadomie przypiąć do kilku pacjentów — wtedy uprawnienia zostają wspólne, a UI ostrzeże przed przypięciem.<br><br>Selektor dokumentów pokazuje tylko to, co i tak możesz zobaczyć, i nie ujawnia powiązań z innymi pacjentami.</div>
+      </div></div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 08 — pliki ───────────────────────── */
+S({id:'s08',w:1440,label:'Karta pacjenta — Pliki kliniczne (faza PAT-3, warunek SEC-ATT)',route:'/backend/patient/patients/[id] · zakładka Pliki',
+spec:'PAT-R06 · PAT-J5 · PatientAttachmentLink + prywatna partycja patient-clinical',
+html:`${NAV('patients')}
+<div class="main">
+  ${TOP('Opieka / Pacjenci / <b>Zofia Kaczmarek</b> / Pliki')}
+  <div class="body">
+    ${PATIENT_HEAD}
+    ${PATIENT_TABS('files')}
+    <div class="banner red"><span class="i">⚠</span><div><b>Ta zakładka pozostaje wyłączona do czasu spełnienia warunku SEC-ATT.</b> Dzisiejsze trasy plików autoryzują zakres organizacji, ale nie uprawnienie kliniczne pacjenta — zalogowany użytkownik tej organizacji mógłby odczytać plik, znając jego identyfikator. Makieta pokazuje docelowy wygląd po dostarczeniu ochrony (faza PAT-3).</div></div>
+    <div class="ph" style="margin-bottom:12px">
+      <div><h1 style="font-size:16px">Pliki pacjenta i diagnoz</h1><p class="sub">Prywatna partycja <span class="mono">patient-clinical</span> · nazwa pliku widoczna w UI, w magazynie neutralny identyfikator.</p></div>
+      <div class="acts"><button class="btn">Przypnij chroniony plik</button><button class="btn p">⇧ Wgraj plik</button></div>
+    </div>
+    <div class="filters"><div class="sel">Źródło: <b>Wszystkie</b> <span class="cv">▾</span></div><div class="sel">Typ: <b>Wszystkie</b> <span class="cv">▾</span></div></div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Nazwa pliku</th><th style="width:240px">Źródło</th><th style="width:90px">Rozmiar</th><th style="width:150px">Wgrał</th><th style="width:110px">Data</th><th class="r" style="width:210px">Akcje</th></tr></thead>
+        <tbody>
+          <tr><td><div class="nm">▤ ocena-logopedyczna-2026-06.pdf</div></td>
+              <td><span class="chip">Diagnoza · 2026-06-14</span></td><td>1,2 MB</td><td>Anna Nowicka</td><td>2026-06-14</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Podgląd</button><button class="btn sm">Pobierz</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr><td><div class="nm">▣ skan-skierowania.jpg</div></td>
+              <td><span class="chip">Karta pacjenta</span></td><td>640 kB</td><td>Katarzyna Mazur</td><td>2026-05-18</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Podgląd</button><button class="btn sm">Pobierz</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr><td><div class="nm">▤ karta-obserwacji-05.pdf</div></td>
+              <td><span class="chip">Diagnoza · 2026-05-20</span><div class="sub2">wpis skorygowany — plik pozostaje przy wpisie</div></td><td>380 kB</td><td>Anna Nowicka</td><td>2026-05-20</td>
+              <td class="r"><div class="rowacts"><button class="btn sm">Podgląd</button><button class="btn sm">Pobierz</button><button class="btn sm">Odepnij</button></div></td></tr>
+          <tr style="background:#fdf4f3"><td><div class="nm" style="color:var(--red-fg)">⚠ nagranie-sesji-2026-09.mp4</div><div class="sub2" style="color:var(--red-fg)">Nie wgrano — plik przekracza limit 25 MB. Wpis nie jest gotowym plikiem.</div></td>
+              <td><span class="chip">Karta pacjenta</span></td><td>81 MB</td><td>Anna Nowicka</td><td>2026-09-28</td>
+              <td class="r"><div class="rowacts"><button class="btn sm p">Ponów wysyłkę</button><button class="btn sm">Usuń wpis</button></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="split" style="margin-top:14px;grid-template-columns:1fr 1fr">
+      <div class="card"><div class="hd"><h3>Skąd bierze się plik</h3></div><div class="ct"><div class="hint" style="margin:0;line-height:1.7">Plik można wgrać z karty pacjenta lub z konkretnego wpisu diagnozy — karta pokazuje jedno i drugie z oznaczeniem źródła.<br><br>Przypiąć można wyłącznie plik już objęty ochroną kliniczną. Zwykły plik z biblioteki wymaga utworzenia chronionej kopii — samo dopisanie powiązania nie zabezpiecza starego, publicznego adresu.</div></div></div>
+      <div class="card"><div class="hd"><h3>Komunikaty błędów, które musi mieć UI</h3></div><div class="ct">
+        <div class="kv"><span class="k">Za duży plik (413)</span><span class="v">osobny komunikat + ponowienie</span></div>
+        <div class="kv"><span class="k">Niedozwolony typ (422)</span><span class="v">lista typów</span></div>
+        <div class="kv"><span class="k">Brak miejsca / magazyn (503)</span><span class="v">bez utraty wpisu formularza</span></div>
+        <div class="kv"><span class="k">Nieudana wysyłka</span><span class="v">brak powiązania, wpis oznaczony</span></div>
+      </div></div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 09 — wizyty (VIS) ───────────────────────── */
+S({id:'s09',w:1440,label:'Wizyty — lista (spec VIS, ten sam moduł)',route:'/backend/patient/visits',spec:'VIS · PatientVisit + 0..n usług · zakładka pacjenta po VIS-1',
+html:`${NAV('visits')}
+<div class="main">
+  ${TOP('Opieka / <b>Wizyty</b>')}
+  <div class="body">
+    <div class="ph">
+      <div><h1>Wizyty</h1><p class="sub">Terminarz listowy. Bez osobnego kalendarza i bez automatycznego rozliczania.</p></div>
+      <div class="acts"><button class="btn p">+ Zaplanuj wizytę</button></div>
+    </div>
+    <div class="filters">
+      <div class="sel">Od–do: <b>2026-09-28 — 2026-10-04</b> <span class="cv">▾</span></div>
+      <div class="sel">Status: <b>Wszystkie</b> <span class="cv">▾</span></div>
+      <div class="sel">Osoba realizująca: <b>Wszyscy</b> <span class="cv">▾</span></div>
+      <div class="sel">Gabinet: <b>Wszystkie</b> <span class="cv">▾</span></div>
+      <div class="sel">Rozliczenie: <b>Wszystkie</b> <span class="cv">▾</span></div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th style="width:150px">Termin</th><th>Pacjent</th><th>Wykonawca</th><th>Gabinet</th><th>Usługi</th><th style="width:110px">Status</th><th style="width:120px">Potwierdzenie</th><th style="width:110px">Rozliczenie</th><th class="r" style="width:70px"></th></tr></thead>
+        <tbody>
+          <tr><td>2026-10-02 09:30<div class="sub2">60 min · Europe/Warsaw</div></td>
+              <td class="nm">Zofia Kaczmarek</td><td>Anna Nowicka</td><td>Gabinet 2</td>
+              <td><div class="bs"><span class="chip">Terapia mowy</span><span class="chip">Konsultacja</span></div></td>
+              <td><span class="b info">Zaplanowana</span></td><td><span class="b ok">Potwierdzona</span></td><td><span class="b gray">Nie</span></td>
+              <td class="r"><button class="btn sm">⋯</button></td></tr>
+          <tr><td>2026-10-02 11:00<div class="sub2">bez godziny końca</div></td>
+              <td class="nm">Jan Lewandowski</td><td>Marek Zieliński</td><td style="color:var(--muted-fg)">Gabinet nieprzypisany</td>
+              <td><span class="sub2">Usługi można wybrać później</span></td>
+              <td><span class="b info">Zaplanowana</span></td><td><span class="b warn">Niepotwierdzona</span></td><td><span class="b gray">Nie</span></td>
+              <td class="r"><button class="btn sm">⋯</button></td></tr>
+          <tr><td>2026-09-29 08:00<div class="sub2">45 min</div></td>
+              <td class="nm">Maja Wiśniewska</td><td>Anna Nowicka</td><td>Gabinet 1</td>
+              <td><div class="bs"><span class="chip">Integracja sensoryczna</span></div></td>
+              <td><span class="b ok">Zakończona</span></td><td><span class="b ok">Potwierdzona</span></td><td><span class="b ok">Rozliczona ręcznie</span></td>
+              <td class="r"><button class="btn sm">⋯</button></td></tr>
+          <tr><td>2026-09-28 14:00<div class="sub2">30 min</div></td>
+              <td class="nm">Antoni Dąbrowski</td><td>Katarzyna Mazur</td><td>Gabinet 3</td>
+              <td><div class="bs"><span class="chip">Konsultacja</span></div></td>
+              <td><span class="b red">Nieobecność</span></td><td><span class="b gray">—</span></td><td><span class="b gray">Nie</span></td>
+              <td class="r"><button class="btn sm">⋯</button></td></tr>
+          <tr class="dim"><td>2026-09-28 10:00</td>
+              <td class="nm">Tomasz Górski</td><td>Marek Zieliński</td><td>Gabinet 2</td>
+              <td><div class="bs"><span class="chip">Fizjoterapia</span></div></td>
+              <td><span class="b gray">Anulowana</span></td><td><span class="b gray">—</span></td><td><span class="b gray">Nie</span></td>
+              <td class="r"><button class="btn sm">⋯</button></td></tr>
+        </tbody>
+      </table>
+      <div class="pager">Wyświetlono 1–5 z 18 <div class="r"><button class="btn sm off">‹ Poprzednia</button><button class="btn sm">Następna ›</button></div></div>
+    </div>
+    <div class="split" style="margin-top:14px;grid-template-columns:1fr 1fr">
+      <div class="card"><div class="hd"><h3>Formularz wizyty (skrót)</h3></div><div class="ct f">
+        <div class="grid2">
+          <div><label>Pacjent <span class="req">*</span></label><div class="in">Zofia Kaczmarek <span style="color:var(--muted-fg)">▾</span></div></div>
+          <div><label>Wykonawca <span class="req">*</span></label><div class="in">Anna Nowicka <span style="color:var(--muted-fg)">▾</span></div><div class="hint">Podpowiadany prowadzący, ale wymagany wybór.</div></div>
+          <div><label>Gabinet</label><div class="in ph">Nieprzypisany <span style="color:var(--muted-fg)">▾</span></div></div>
+          <div><label>Strefa czasowa</label><div class="in">Europe/Warsaw</div></div>
+        </div>
+        <div style="margin-top:12px"><label>Usługi (0..n)</label>
+          <div class="in" style="justify-content:flex-start;gap:8px"><span class="chip">Terapia mowy ✕</span><span class="chip">Konsultacja ✕</span><span style="color:#a8a8a8">+ Wyszukaj w katalogu…</span></div>
+          <div class="hint">Zero usług jest dozwolone — „Usługi można wybrać później”.</div>
+        </div>
+      </div></div>
+      <div class="card"><div class="hd"><h3>Akcje na wizycie</h3></div><div class="ct">
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm p">Potwierdź</button><button class="btn sm">Zakończ</button><button class="btn sm">Anuluj</button><button class="btn sm">Nieobecność</button><button class="btn sm">Rozliczona ręcznie</button></div>
+        <div class="hint" style="margin-top:11px;line-height:1.7">Zmiana terminu zdejmuje potwierdzenie — użytkownik widzi to <b>przed</b> zapisem. Rozliczenie jest ręcznym znacznikiem, nie fakturą.</div>
+      </div></div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────────────────────── 10 — stany brzegowe ───────────────────────── */
+S({id:'s10',w:1440,label:'Stany UI wymagane na każdej powierzchni',route:'wszystkie powierzchnie',spec:'PAT-T11 · loading / empty / error / 409 / brak uprawnień',
+html:`<div style="padding:24px 26px;width:100%">
+  <div class="ph" style="margin-bottom:18px"><div><h1>Stany, które musi mieć każdy ekran</h1><p class="sub">Nie są dodatkiem „na koniec” — należą do definicji ukończenia każdej powierzchni.</p></div></div>
+  <div class="three">
+    <div>
+      <div class="mini-h">1 · Wczytywanie</div>
+      <div class="card"><div class="hd"><h3>Pacjenci</h3></div><div class="ct">
+        <div class="stack"><div class="skel" style="width:60%"></div><div class="skel" style="width:88%"></div><div class="skel" style="width:76%"></div><div class="skel" style="width:92%"></div><div class="skel" style="width:54%"></div></div>
+        <div class="aria">♪ „Wczytywanie listy pacjentów”</div>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">2 · Pusto — z następną akcją</div>
+      <div class="card"><div class="ct empty">
+        <div class="ei">♡</div><h4>Brak pacjentów spełniających filtry</h4>
+        <p>Wyszukiwanie jest dokładne — sprawdź numer lub pełne nazwisko.</p>
+        <div style="display:flex;gap:8px;justify-content:center"><button class="btn">Wyczyść filtry</button><button class="btn p">+ Dodaj pacjenta</button></div>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">3 · Błąd — z ponowieniem</div>
+      <div class="card"><div class="ct" style="padding:22px">
+        <div class="banner red" style="margin:0"><span class="i">⚠</span><div><b>Nie udało się wczytać diagnoz.</b><br>Pozostała część karty działa — błąd sekcji nie usuwa karty.</div></div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn p">Ponów</button><button class="btn">Zgłoś problem</button></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="three" style="margin-top:20px">
+    <div>
+      <div class="mini-h">4 · Brak uprawnień</div>
+      <div class="card"><div class="ct" style="padding:22px">
+        <div class="banner warn" style="margin:0"><span class="i">⚠</span><div><b>Brak dostępu do danych klinicznych.</b><br>Widzisz kartotekę, adresy i kontakty. Diagnozy, dokumenty i pliki wymagają uprawnienia klinicznego.</div></div>
+        <div class="hint" style="margin-top:11px">Zakładki nie są tylko wyszarzone po stronie przeglądarki — serwer również odmawia.</div>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">5 · Brak wyniku / 404</div>
+      <div class="card"><div class="ct empty" style="padding:30px 20px">
+        <div class="ei">?</div><h4>Nie znaleziono pacjenta</h4>
+        <p>Karta nie istnieje albo należy do innej organizacji. Nie ujawniamy, która z tych sytuacji zachodzi.</p>
+        <button class="btn">Wróć do listy</button>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">6 · Konflikt wersji (409)</div>
+      <div class="card" style="border-color:var(--warn-bd)"><div class="hd" style="background:var(--warn-bg);border-color:var(--warn-bd)"><h3>Ktoś zmienił tę kartę w trakcie edycji</h3></div><div class="ct">
+        <div class="hint" style="margin:0 0 11px">Twoje zmiany <b>nie zostały</b> utracone i <b>nie</b> nadpisujemy po cichu.</div>
+        <div class="kv"><span class="k">Twoja wersja pola „Telefon”</span><span class="v">+48 601 234 567</span></div>
+        <div class="kv"><span class="k">Wersja na serwerze</span><span class="v">+48 601 000 111</span></div>
+        <div class="kv"><span class="k">Zmienił</span><span class="v">Katarzyna Mazur, 10:41</span></div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn p">Pokaż aktualną wersję</button><button class="btn">Zachowaj moje pole</button></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:18px">Dodatkowo każda powierzchnia ma: sukces z komunikatem aria-live, walidację z fokusem na błędnym polu, oznaczenie pól wymaganych, <kbd>Esc</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> w dialogach, powrót fokusu do przycisku wywołującego, tryb jasny i ciemny, ograniczoną animację oraz brak identyfikatorów technicznych w interfejsie.</div>
+</div>`});
+
+/* ───────────────────────── 11 — 360 px ───────────────────────── */
+S({id:'s11',w:1180,label:'Szerokość 360 px — lista, karta i dialog',route:'wszystkie powierzchnie · 360 px',spec:'PAT-T11 / VIS · układ pionowy, przewijanie tabel, dialog w viewport',
+html:`<div style="padding:24px 26px;width:100%">
+  <div class="ph" style="margin-bottom:18px"><div><h1>Widok 360 px</h1><p class="sub">Grupy układają się pionowo, tabela przewija się poziomo, dialog mieści się w ekranie — bez utraty kontrolek.</p></div></div>
+  <div style="display:flex;gap:26px;align-items:flex-start">
+    <div class="phone">
+      <div class="ptop">☰ Pacjenci <span style="margin-left:auto" class="av">AN</span></div>
+      <div class="pbody">
+        <div class="stack" style="margin-bottom:12px">
+          <div class="inp"><span class="mag">◎</span> Szukaj — dopasowanie dokładne</div>
+          <div style="display:flex;gap:8px"><div class="sel" style="flex:1">Aktywni <span class="cv">▾</span></div><div class="sel">⊞</div></div>
+          <button class="btn p" style="justify-content:center">+ Dodaj pacjenta</button>
+        </div>
+        <div class="plist stack">
+          <div class="row"><div class="nm">Zofia Kaczmarek</div><div class="sub2 mono">P-8f2c4b19</div>
+            <div class="sub2">+48 601 234 567 · Anna Nowicka</div>
+            <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><span class="b ok">Aktywna</span><button class="btn sm" style="margin-left:auto">Otwórz</button></div></div>
+          <div class="row"><div class="nm">Jan Lewandowski</div><div class="sub2 mono">P-3b7109ac</div>
+            <div class="sub2">+48 512 880 145 · Marek Zieliński</div>
+            <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><span class="b ok">Aktywny</span><button class="btn sm" style="margin-left:auto">Otwórz</button></div></div>
+          <div class="row"><div class="nm">Maja Wiśniewska</div><div class="sub2 mono">P-51d0e7b4</div>
+            <div class="sub2">m.wisniewska@example.org</div>
+            <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><span class="b ok">Aktywna</span><button class="btn sm" style="margin-left:auto">Otwórz</button></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="phone">
+      <div class="ptop">‹ Zofia Kaczmarek</div>
+      <div class="ptabs"><div class="tab active">Dane</div><div class="tab">Adresy</div><div class="tab">Kontakty</div><div class="tab">Diagnozy</div><div class="tab">…</div></div>
+      <div class="pbody f">
+        <div class="stack">
+          <div><span class="b ok">Aktywna</span> <span class="mono sub2">P-8f2c4b19</span></div>
+          <div><label>Imię <span class="req">*</span></label><div class="in">Zofia</div></div>
+          <div><label>Nazwisko <span class="req">*</span></label><div class="in">Kaczmarek</div></div>
+          <div><label>Telefon</label><div class="in err">+48 601</div><div class="errtxt">Numer jest niepełny — fokus wraca na to pole.</div></div>
+          <div><label>Prowadzący</label><div class="in">Anna Nowicka <span style="color:var(--muted-fg)">▾</span></div></div>
+          <button class="btn p" style="justify-content:center">Zapisz</button>
+        </div>
+      </div>
+    </div>
+    <div class="phone">
+      <div class="ptop">‹ Diagnozy</div>
+      <div class="pbody">
+        <div class="banner info" style="font-size:11.5px"><span class="i">i</span><div>Wpis jest niezmienny — korekta tworzy nowy.</div></div>
+        <div class="card" style="border-color:var(--border)"><div class="hd" style="padding:10px 12px"><h3 style="font-size:12.5px">Dodaj diagnozę</h3></div>
+          <div class="ct f" style="padding:12px">
+            <div class="stack">
+              <div><label>Tytuł <span class="req">*</span></label><div class="in ph">np. ocena kontrolna</div></div>
+              <div><label>Data <span class="req">*</span></label><div class="in">2026-09-29</div></div>
+              <div><label>Opis <span class="req">*</span></label><div class="in ta ph">Treść po zapisie jest niezmienna</div></div>
+              <div><label>Kod (opcjonalny)</label><div class="in ph">ICD-10 · F80.1</div></div>
+            </div>
+          </div>
+          <div class="df" style="padding:10px 12px;display:flex;gap:8px"><button class="btn sm" style="flex:1;justify-content:center">Anuluj</button><button class="btn sm p" style="flex:1;justify-content:center">Zapisz</button></div>
+        </div>
+        <div class="aria">♪ Dialog mieści się w ekranie, <kbd>Esc</kbd> zamyka</div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* render */
+const out = document.getElementById('out');
+out.innerHTML = SCREENS.map(s=>`
+<div class="frame" id="${s.id}" style="width:${s.w}px">
+  <div class="caption"><b>${s.label}</b><span class="rt">${s.route}</span><span class="sp">${s.spec}</span></div>
+  <div class="app" style="${(!s.bare && s.html.includes('class="sb"'))?'':'grid-template-columns:1fr'}">${s.html}</div>
+</div>`).join('');
+window.__SCREENS = SCREENS.map(s=>({id:s.id,label:s.label}));
+</script>
+</body>
+</html>
