@@ -146,10 +146,10 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 3: Patient record UI
 
-- [ ] 3.1 List surface and navigation
-- [ ] 3.2 Create surface
-- [ ] 3.3 Detail shell, data group and custom fields
-- [ ] 3.4 Addresses and contacts tabs
+- [x] 3.1 List surface and navigation — c8ee0dc
+- [x] 3.2 Create surface — 17abe28
+- [x] 3.3 Detail shell, data group and custom fields — ea038d5
+- [x] 3.4 Addresses and contacts tabs — ea038d5
 
 ### Phase 4: Diagnoses and documents
 
