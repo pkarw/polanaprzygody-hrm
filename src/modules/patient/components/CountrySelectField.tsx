@@ -2,6 +2,7 @@
 import * as React from 'react'
 import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { PHONE_COUNTRIES } from '@open-mercato/ui/backend/inputs/PhoneNumberField'
+import { buildCountryOptions } from '@open-mercato/shared/lib/location/countries'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 
 /**
@@ -26,37 +27,72 @@ export type CountrySelectFieldProps = {
   disabled?: boolean
 }
 
-/** Deduplicated by iso2: the phone dictionary lists territories sharing a dial code separately. */
-const COUNTRY_OPTIONS = (() => {
-  const seen = new Set<string>()
-  const options: Array<{ value: string; label: string }> = []
+/** Flag emoji per ISO-3166 alpha-2 code, taken from the phone dictionary the UI already ships. */
+const FLAG_BY_CODE = (() => {
+  const flags = new Map<string, string>()
   for (const country of PHONE_COUNTRIES) {
     const iso2 = country.iso2.toUpperCase()
-    if (seen.has(iso2)) continue
-    seen.add(iso2)
-    // "🇵🇱  Poland (PL)" — the code stays visible because it is what gets stored and what an
-    // operator transcribing from a document is usually looking for.
-    options.push({ value: iso2, label: `${country.flag}  ${country.label} (${iso2})` })
+    if (!flags.has(iso2)) flags.set(iso2, country.flag)
   }
-  return options.sort((left, right) => left.label.localeCompare(right.label))
+  return flags
 })()
 
-function findLabel(code: string): string {
-  const match = COUNTRY_OPTIONS.find((option) => option.value === code.toUpperCase())
-  // An unrecognized stored code renders as itself rather than blank, so an address imported with
-  // an unusual code is still legible instead of looking unset.
-  return match?.label ?? code
+/**
+ * The same country list, in the same order, with the same names as the address editor on the
+ * patient card.
+ *
+ * `buildCountryOptions` is what that editor uses: it sorts the locale's common countries
+ * first and resolves each name through `customers.countries.<code>`, so a Polish operator
+ * reads "Polska". Building this list from the phone dictionary instead — as this field did —
+ * showed English names ("Poland") on the create form and Polish ones two clicks later on the
+ * same record, for the same field.
+ *
+ * The flag is still the phone dictionary's emoji: it needs no asset pipeline, scales with the
+ * text, and is `aria-hidden` inside the option label so a screen reader announces the country
+ * once. The stored value stays the uppercase two-letter code the API validates.
+ */
+function useCountryOptions(): Array<{ value: string; label: string }> {
+  const t = useT()
+  return React.useMemo(
+    () =>
+      buildCountryOptions({
+        transformLabel: (code, fallback) => t(`customers.countries.${code.toLowerCase()}`, fallback ?? code),
+      }).map((option) => {
+        const flag = FLAG_BY_CODE.get(option.code)
+        // "🇵🇱  Polska (PL)" — the code stays visible because it is what gets stored and what
+        // an operator transcribing from a document is usually looking for.
+        return {
+          value: option.code,
+          label: `${flag ? `${flag}  ` : ''}${option.label} (${option.code})`,
+        }
+      }),
+    [t],
+  )
 }
 
 export function CountrySelectField({ value, onChange, disabled }: CountrySelectFieldProps) {
   const t = useT()
+  const options = useCountryOptions()
 
-  const loadSuggestions = React.useCallback(async (query?: string) => {
-    const term = query?.trim().toLocaleLowerCase() ?? ''
-    if (term.length === 0) return COUNTRY_OPTIONS
-    // Matches the name and the code, so both "pol" and "pl" find Poland.
-    return COUNTRY_OPTIONS.filter((option) => option.label.toLocaleLowerCase().includes(term))
-  }, [])
+  const loadSuggestions = React.useCallback(
+    async (query?: string) => {
+      const term = query?.trim().toLocaleLowerCase() ?? ''
+      if (term.length === 0) return options
+      // Matches the name and the code, so both "pol" and "pl" find Poland.
+      return options.filter((option) => option.label.toLocaleLowerCase().includes(term))
+    },
+    [options],
+  )
+
+  const resolveLabel = React.useCallback(
+    (code: string) => {
+      const match = options.find((option) => option.value === code.toUpperCase())
+      // An unrecognized stored code renders as itself rather than blank, so an address
+      // imported with an unusual code stays legible instead of looking unset.
+      return match?.label ?? code
+    },
+    [options],
+  )
 
   return (
     <ComboboxInput
@@ -66,7 +102,7 @@ export function CountrySelectField({ value, onChange, disabled }: CountrySelectF
       onChange={(next) => onChange((next ?? '').toUpperCase())}
       placeholder={t('patient.patients.address.countryPlaceholder')}
       loadSuggestions={loadSuggestions}
-      resolveLabel={findLabel}
+      resolveLabel={resolveLabel}
       allowCustomValues={false}
       clearable={false}
       disabled={disabled}

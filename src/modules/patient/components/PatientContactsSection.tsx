@@ -17,13 +17,7 @@ import {
 import { CheckboxField } from '@open-mercato/ui/primitives/checkbox-field'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@open-mercato/ui/primitives/select'
+import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { apiCallOrThrow, readApiResultOrThrow, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
@@ -32,8 +26,7 @@ import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
-import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
-import { loadCrmPersonOptions } from './referencePickers'
+import { loadCrmPersonOptions, resolveCrmPersonLabel } from './referencePickers'
 import type { PatientContactItem, PatientPagedResponse } from '../types'
 
 /**
@@ -279,9 +272,9 @@ function ContactDialog({
   const editing = state.mode === 'edit' ? state.contact : null
 
   const [personId, setPersonId] = React.useState<string>('')
-  const [personQuery, setPersonQuery] = React.useState('')
-  const [personOptions, setPersonOptions] = React.useState<CrudFieldOption[]>([])
   const [roles, setRoles] = React.useState<RoleFlags>(EMPTY_ROLES)
+  /** Gates the "pick at least one role" message until the operator has engaged with it. */
+  const [rolesTouched, setRolesTouched] = React.useState(false)
   const [relationshipLabel, setRelationshipLabel] = React.useState('')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
@@ -294,6 +287,7 @@ function ContactDialog({
     setIsSubmitting(false)
     if (editing) {
       setPersonId(editing.customerEntityId)
+      setRolesTouched(true)
       setRoles({
         isGuardian: editing.isGuardian,
         isContact: editing.isContact,
@@ -303,30 +297,11 @@ function ContactDialog({
       setRelationshipLabel(editing.relationshipLabel ?? '')
     } else {
       setPersonId('')
+      setRolesTouched(false)
       setRoles(EMPTY_ROLES)
       setRelationshipLabel('')
-      setPersonQuery('')
     }
   }, [editing, isOpen])
-
-  // Loads candidates for the picker. Active people only — an existing link to someone since
-  // deactivated stays readable, but is not offered again.
-  React.useEffect(() => {
-    if (!isOpen || editing) return
-    let cancelled = false
-    loadCrmPersonOptions(personQuery)
-      .then((options) => {
-        if (!cancelled) setPersonOptions(options)
-      })
-      .catch(() => {
-        // A refused or empty picker is the correct outcome for an operator without
-        // `customers.people.view`; the submit guard below keeps the form unsubmittable.
-        if (!cancelled) setPersonOptions([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [editing, isOpen, personQuery])
 
   const hasAnyRole = roles.isGuardian || roles.isContact || roles.isPayer
   const primaryIsConsistent = !roles.isPrimaryContact || roles.isContact
@@ -419,41 +394,30 @@ function ContactDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="patient-contact-person-search">
-                {t('patient.patients.contacts.person')}
-              </Label>
+              <Label>{t('patient.patients.contacts.person')}</Label>
               {/*
-                Search plus select rather than one free-text field: the value submitted is the
-                CRM entity id, and the operator must never type or read a uuid. The search box
-                narrows the option source server-side, so a long CRM does not have to be
-                loaded into the dialog.
+                One searchable combobox, the same control the create form uses for guardians.
+                A separate search box above a select made the operator type in one field and
+                choose in another for a single value. The submitted value is still the CRM
+                entity id and `allowCustomValues` stays off, so the operator never types or
+                reads a uuid and never submits free text the server would reject.
+
+                An operator without `customers.people.view` gets an empty option list — the
+                picker inherits the customers module's ACL, so that is the correct fail-closed
+                outcome, and the submit guard keeps the form unsubmittable.
               */}
-              <Input
-                id="patient-contact-person-search"
-                value={personQuery}
-                onChange={(event) => setPersonQuery(event.target.value)}
-                placeholder={t('patient.patients.contacts.searchPerson')}
+              <ComboboxInput
+                value={personId}
+                onChange={(next: string | null) => setPersonId(next ?? '')}
+                placeholder={t('patient.patients.contacts.selectPerson')}
+                loadSuggestions={loadCrmPersonOptions}
+                // Renders an already-chosen person by name on re-open rather than leaving the
+                // control looking empty until it is searched again.
+                resolveLabel={resolveCrmPersonLabel}
+                allowCustomValues={false}
+                clearable
+                clearLabel={t('patient.patients.contacts.clearPerson')}
               />
-              <Select value={personId} onValueChange={setPersonId}>
-                <SelectTrigger aria-label={t('patient.patients.contacts.person')}>
-                  <SelectValue placeholder={t('patient.patients.contacts.selectPerson')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {personOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {personOptions.length === 0 ? (
-                // Covers both "no match for this search" and "this operator cannot read CRM
-                // people" — the picker inherits the customers module's own ACL, so an empty
-                // list is the correct, fail-closed outcome rather than an error.
-                <p className="text-xs text-muted-foreground">
-                  {t('patient.patients.contacts.noPeople')}
-                </p>
-              ) : null}
             </div>
           )}
 
@@ -462,12 +426,16 @@ function ContactDialog({
             <CheckboxField
               label={t('patient.patients.contacts.roles.guardian')}
               checked={roles.isGuardian}
-              onCheckedChange={(checked) => setRoles((prev) => ({ ...prev, isGuardian: checked === true }))}
+              onCheckedChange={(checked) => {
+                setRolesTouched(true)
+                setRoles((prev) => ({ ...prev, isGuardian: checked === true }))
+              }}
             />
             <CheckboxField
               label={t('patient.patients.contacts.roles.contact')}
               checked={roles.isContact}
-              onCheckedChange={(checked) =>
+              onCheckedChange={(checked) => {
+                setRolesTouched(true)
                 setRoles((prev) => ({
                   ...prev,
                   isContact: checked === true,
@@ -476,23 +444,30 @@ function ContactDialog({
                   // letting the operator build a payload the server will reject.
                   isPrimaryContact: checked === true ? prev.isPrimaryContact : false,
                 }))
-              }
+              }}
             />
             <CheckboxField
               label={t('patient.patients.contacts.roles.payer')}
               checked={roles.isPayer}
-              onCheckedChange={(checked) => setRoles((prev) => ({ ...prev, isPayer: checked === true }))}
+              onCheckedChange={(checked) => {
+                setRolesTouched(true)
+                setRoles((prev) => ({ ...prev, isPayer: checked === true }))
+              }}
             />
             <CheckboxField
               label={t('patient.patients.contacts.roles.primary')}
               description={t('patient.patients.contacts.roles.primaryHint')}
               checked={roles.isPrimaryContact}
               disabled={!roles.isContact}
-              onCheckedChange={(checked) =>
+              onCheckedChange={(checked) => {
+                setRolesTouched(true)
                 setRoles((prev) => ({ ...prev, isPrimaryContact: checked === true }))
-              }
+              }}
             />
-            {!hasAnyRole ? (
+            {/* Only after the operator has touched the roles or tried to save. Rendering it on
+                open greets a freshly opened dialog with an error about something nobody has
+                had the chance to get wrong yet. */}
+            {!hasAnyRole && rolesTouched ? (
               <p className="text-xs text-destructive" role="alert">
                 {t('patient.patients.contacts.roles.atLeastOne')}
               </p>

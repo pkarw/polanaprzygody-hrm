@@ -4,6 +4,8 @@ import { apiCallOrThrow, readApiResultOrThrow, withScopedApiRequestHeaders } fro
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { AddressesSection as SharedAddressesSection } from '@open-mercato/ui/backend/detail'
+import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
+import { Button } from '@open-mercato/ui/primitives/button'
 import type { AddressDataAdapter, SectionAction } from '@open-mercato/ui/backend/detail'
 import { createTranslatorWithFallback } from '@open-mercato/shared/lib/i18n/translate'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
@@ -46,6 +48,26 @@ export function PatientAddressesSection({
 }: PatientAddressesSectionProps) {
   const tHook = useT()
   const t = React.useMemo(() => createTranslatorWithFallback(tHook), [tHook])
+
+  /**
+   * The shared section does not render its own "Add address" affordance — it REPORTS one
+   * through `onActionChange` and leaves the host to place it. Without a host that renders
+   * it, the tab has no way to add or edit an address at all, which is how this one shipped.
+   *
+   * It is rendered here rather than in `PatientDetail` so the addresses tab carries its own
+   * header, count and description exactly like the contacts, diagnoses and documents tabs
+   * do. `onActionChange` is still forwarded, so a host that wants to place the action
+   * somewhere else can.
+   */
+  const [sectionAction, setSectionAction] = React.useState<SectionAction | null>(null)
+
+  const handleActionChange = React.useCallback(
+    (next: SectionAction | null) => {
+      setSectionAction(next)
+      onActionChange?.(next)
+    },
+    [onActionChange],
+  )
 
   const dataAdapter = React.useMemo<AddressDataAdapter>(
     () => ({
@@ -143,27 +165,50 @@ export function PatientAddressesSection({
   )
 
   return (
-    <SharedAddressesSection
-      // `null` puts the section in its own empty state instead of listing anything, which is
-      // what a read-only archived record should show rather than editable tiles.
-      entityId={patientId}
-      emptyLabel={t('patient.patients.addresses.empty', 'No addresses recorded.')}
-      addActionLabel={t('patient.patients.addresses.add', 'Add address')}
-      emptyState={{
-        title: t('patient.patients.addresses.empty', 'No addresses recorded.'),
-        actionLabel: t('patient.patients.addresses.add', 'Add address'),
-        description: t(
-          'patient.patients.addresses.emptyHint',
-          'An active record keeps exactly one primary address.',
-        ),
-      }}
-      translator={t}
-      onActionChange={readOnly ? undefined : onActionChange}
-      onLoadingChange={onLoadingChange}
-      dataAdapter={dataAdapter}
-      labelPrefix="patient.patients.addresses"
-      showCoordinateFields={false}
-    />
+    <div className="space-y-4">
+      <div className="space-y-1">
+        {/* No `count`: the shared section keeps its own list in state after a create or a
+            delete and never re-runs the adapter's `list`, so a number rendered here would
+            stop matching the tiles below it the moment the operator adds an address. */}
+        <SectionHeader
+          title={t('patient.patients.tabs.addresses', 'Addresses')}
+          action={
+            sectionAction && !readOnly ? (
+              <Button onClick={sectionAction.onClick} disabled={sectionAction.disabled}>
+                {sectionAction.label}
+              </Button>
+            ) : undefined
+          }
+        />
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'patient.patients.addresses.description',
+            'An active record keeps exactly one primary address.',
+          )}
+        </p>
+      </div>
+      <SharedAddressesSection
+        // `null` puts the section in its own empty state instead of listing anything, which
+        // is what a read-only archived record should show rather than editable tiles.
+        entityId={patientId}
+        emptyLabel={t('patient.patients.addresses.empty', 'No addresses recorded.')}
+        addActionLabel={t('patient.patients.addresses.add', 'Add address')}
+        emptyState={{
+          title: t('patient.patients.addresses.empty', 'No addresses recorded.'),
+          actionLabel: t('patient.patients.addresses.add', 'Add address'),
+          description: t(
+            'patient.patients.addresses.emptyHint',
+            'An active record keeps exactly one primary address.',
+          ),
+        }}
+        translator={t}
+        onActionChange={readOnly ? undefined : handleActionChange}
+        onLoadingChange={onLoadingChange}
+        dataAdapter={dataAdapter}
+        labelPrefix="patient.patients.addresses"
+        showCoordinateFields={false}
+      />
+    </div>
   )
 }
 
