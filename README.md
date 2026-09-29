@@ -124,6 +124,12 @@ search term through three paths and unions the ids:
 3. **only when the first two produce nothing**, a bounded decrypt-and-match over the most recent
    page of records.
 
+![Searching the register by surname](docs/screenshots/02-search.png)
+
+A surname narrows the register to one result even though `last_name` is ciphertext in the
+database — the term is resolved through the hashed token index, not an `ILIKE` the column could
+never answer.
+
 The third path exists for one specific moment. Search tokens are written by the query index *after*
 the write commits, so between creating a patient and that pipeline catching up the record exists
 and is invisible to a search by name — which is exactly when an operator is most likely to look for
@@ -287,12 +293,17 @@ the authority on what the module does and does not do.
 | PAT-2 — diagnoses and documents, including interrupted-creation recovery | done |
 | PAT-3 — clinical files | blocked on the host capability described above |
 
-Honest caveats, rather than a green badge:
+Every action in the module has been exercised end to end in a browser against the running app and
+works: listing, sorting, filtering and searching the register; creating a patient with a guardian;
+editing and saving the record; adding, promoting and deleting an address; linking and unlinking a
+contact; adding, correcting and voiding a diagnosis; creating and unpinning a document; the files
+tab's refusal; archiving and restoring; deleting an empty record — and the 409 that refuses to
+delete a record which has documentation. The unit suite and the full validation gate above pass.
 
-- **The PAT-T01–T12 integration specs have been written but not executed.** They live in
-  `src/modules/patient/__integration__/`, they typecheck and discovery finds them, but running them
-  needs Docker and integration credentials that were not available. Do not read them as passing.
-- The unit suite and the full validation gate above do pass.
+One caveat, rather than a green badge: **the PAT-T01–T12 integration specs have been written but
+not executed.** They live in `src/modules/patient/__integration__/`, they typecheck and discovery
+finds them, but running them needs Docker and integration credentials that were not available. The
+manual pass above is not a substitute for them, so do not read them as passing.
 
 ### Not yet built
 
