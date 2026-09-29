@@ -192,6 +192,7 @@
   "patient.patients.diagnoses.voidedWith": "Voided: {reason}",
   "patient.patients.documents.abandon": "Abandon",
   "patient.patients.documents.aclNotice": "Access stays governed by the document's own owner and sharing settings. Removing someone's clinical permission later does not remove a share granted on the document itself.",
+  "patient.patients.documents.clearDocument": "Clear the selected document",
   "patient.patients.documents.confirmAbandon.body": "The link is discarded. If the document was already created it stays in the documents module and is not deleted.",
   "patient.patients.documents.confirmAbandon.title": "Abandon this unfinished document?",
   "patient.patients.documents.confirmUnpin.body": "Only the link to this patient is removed. The document, its versions and its sharing settings are not changed.",

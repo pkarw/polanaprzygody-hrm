@@ -192,6 +192,7 @@
   "patient.patients.diagnoses.voidedWith": "Unieważniono: {reason}",
   "patient.patients.documents.abandon": "Porzuć",
   "patient.patients.documents.aclNotice": "Dostępem rządzą ustawienia właściciela i udostępnień samego dokumentu. Odebranie komuś uprawnienia klinicznego nie odbiera udostępnienia nadanego na dokumencie.",
+  "patient.patients.documents.clearDocument": "Wyczyść wybrany dokument",
   "patient.patients.documents.confirmAbandon.body": "Powiązanie zostaje odrzucone. Jeśli dokument już powstał, zostaje w module dokumentów i nie jest usuwany.",
   "patient.patients.documents.confirmAbandon.title": "Porzucić ten niedokończony dokument?",
   "patient.patients.documents.confirmUnpin.body": "Usuwane jest tylko powiązanie z tym pacjentem. Dokument, jego wersje i ustawienia udostępnień nie zmieniają się.",

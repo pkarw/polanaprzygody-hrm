@@ -232,3 +232,51 @@ export async function resolveCrmPersonContact(id: string): Promise<CrmPersonCont
     phone: readText(first.primary_phone),
   }
 }
+
+type DocumentListItem = { id?: unknown; title?: unknown }
+
+/**
+ * Documents this caller may already open.
+ *
+ * Candidates come from the documents module's own list endpoint, so the picker shows only
+ * what that module's visibility rules already allow — this module does not get to widen
+ * them. A refused or empty response is the correct outcome for an operator without access,
+ * not an error, so it resolves to no options rather than throwing into the dialog.
+ */
+export async function loadDocumentOptions(query?: string): Promise<CrudFieldOption[]> {
+  const params = new URLSearchParams({ pageSize: '50' })
+  const term = query?.trim() ?? ''
+  if (term.length > 0) params.set('search', term)
+  try {
+    const data = await readApiResultOrThrow<ListResponse<DocumentListItem>>(
+      `/api/documents?${params.toString()}`,
+    )
+    const options: CrudFieldOption[] = []
+    for (const item of data?.items ?? []) {
+      const id = typeof item.id === 'string' ? item.id : null
+      const label = readText(item.title)
+      if (id && label) options.push({ value: id, label })
+    }
+    return options
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Renders an already-chosen document by title when the dialog re-opens, instead of leaving
+ * the control looking empty until it is searched again. An id that no longer resolves falls
+ * back to itself rather than to blank, so a stale selection is visible rather than silent.
+ */
+export async function resolveDocumentLabel(id: string): Promise<string> {
+  if (!id) return ''
+  try {
+    const data = await readApiResultOrThrow<ListResponse<DocumentListItem>>(
+      `/api/documents?ids=${encodeURIComponent(id)}&pageSize=1`,
+    )
+    const first = (data?.items ?? [])[0]
+    return readText(first?.title) ?? id
+  } catch {
+    return id
+  }
+}

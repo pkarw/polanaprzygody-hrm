@@ -17,14 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@open-mercato/ui/primitives/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@open-mercato/ui/primitives/select'
 import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
+import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { apiCallOrThrow, readApiResultOrThrow, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
@@ -32,6 +26,7 @@ import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { loadDocumentOptions, resolveDocumentLabel } from './referencePickers'
 import type { PatientDocumentLinkItem, PatientPagedResponse } from '../types'
 
 /**
@@ -62,7 +57,6 @@ export type PatientDocumentsSectionProps = {
 
 type DialogState = { mode: 'closed' } | { mode: 'pin' } | { mode: 'create' }
 
-type DocumentOption = { value: string; label: string }
 
 export function PatientDocumentsSection({
   patientId,
@@ -350,8 +344,6 @@ function DocumentDialog({
   const mode = state.mode
 
   const [title, setTitle] = React.useState('')
-  const [query, setQuery] = React.useState('')
-  const [options, setOptions] = React.useState<DocumentOption[]>([])
   const [documentId, setDocumentId] = React.useState('')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
@@ -366,39 +358,7 @@ function DocumentDialog({
     setClientRequestId(crypto.randomUUID())
     setTitle('')
     setDocumentId('')
-    setQuery('')
   }, [isOpen])
-
-  /**
-   * Candidates come from the documents module's own list endpoint, so the picker shows only
-   * documents this caller may already see — its native visibility filter is the ACL, and this
-   * module does not get to widen it.
-   */
-  React.useEffect(() => {
-    if (!isOpen || mode !== 'pin') return
-    let cancelled = false
-    const params = new URLSearchParams({ pageSize: '50' })
-    if (query.trim().length > 0) params.set('search', query.trim())
-    readApiResultOrThrow<{ items?: Array<{ id?: unknown; title?: unknown }> }>(
-      `/api/documents?${params.toString()}`,
-    )
-      .then((data) => {
-        if (cancelled) return
-        const next: DocumentOption[] = []
-        for (const item of data?.items ?? []) {
-          const id = typeof item.id === 'string' ? item.id : null
-          const label = typeof item.title === 'string' && item.title.length > 0 ? item.title : null
-          if (id && label) next.push({ value: id, label })
-        }
-        setOptions(next)
-      })
-      .catch(() => {
-        if (!cancelled) setOptions([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [isOpen, mode, query])
 
   const canSubmit =
     !isSubmitting && (mode === 'create' ? title.trim().length > 0 : documentId.length > 0)
@@ -489,30 +449,21 @@ function DocumentDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="patient-document-search">{t('patient.patients.documents.searchLabel')}</Label>
-              <Input
-                id="patient-document-search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
+              <Label>{t('patient.patients.documents.selectLabel')}</Label>
+              {/* One searchable combobox, the same control the contact picker uses: the
+                  operator types and chooses in one place instead of typing into a search box
+                  above a separate select. `allowCustomValues` stays off, so the submitted
+                  value is always a document id this caller can already see. */}
+              <ComboboxInput
+                value={documentId}
+                onChange={(next: string | null) => setDocumentId(next ?? '')}
                 placeholder={t('patient.patients.documents.searchLabel')}
+                loadSuggestions={loadDocumentOptions}
+                resolveLabel={resolveDocumentLabel}
+                allowCustomValues={false}
+                clearable
+                clearLabel={t('patient.patients.documents.clearDocument')}
               />
-              <Select value={documentId} onValueChange={setDocumentId}>
-                <SelectTrigger aria-label={t('patient.patients.documents.selectLabel')}>
-                  <SelectValue placeholder={t('patient.patients.documents.selectLabel')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {options.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {t('patient.patients.documents.noDocuments')}
-                </p>
-              ) : null}
             </div>
           )}
         </div>

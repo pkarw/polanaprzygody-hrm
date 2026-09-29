@@ -26,6 +26,7 @@ import {
 } from '@/.mercato/generated/entities/patient_address'
 import { PatientAddress } from '../../data/entities'
 import { toIsoTimestamp } from '../../lib/commandSupport'
+import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
 import {
   createPatientCrudOpenApi,
@@ -215,6 +216,8 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     },
     delete: {
       commandId: 'patient.addresses.delete',
+      // DELETE is handed `{ body, query }` rather than the body; see the helper.
+      mapInput: ({ raw }) => buildDeleteCommandInput(raw),
       response: ({ result }) => ({
         ok: true as const,
         id: String((result as { id: string }).id),
