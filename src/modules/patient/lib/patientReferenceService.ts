@@ -79,7 +79,20 @@ function normalizeIds(ids: string[]): string[] {
   return Array.from(seen)
 }
 
-export function createPatientReferenceService({ em }: { em: EntityManager }): PatientReferenceService {
+/**
+ * Factory for the reference service.
+ *
+ * The parameter is a POSITIONAL `em`, not a destructured `{ em }`, and that is load-bearing: the
+ * app container runs awilix in `InjectionMode.CLASSIC`
+ * (`@open-mercato/shared/lib/di/container.ts`), which resolves dependencies by reading the
+ * function's parameter NAMES. A destructuring pattern has no name for awilix to match, so it
+ * injects `undefined` — which surfaces far away as
+ * `TypeError: Cannot read properties of undefined (reading 'find')` inside `findWithDecryption`,
+ * with nothing in the stack pointing back at the registration.
+ *
+ * `__tests__/patientReferenceService.test.ts` pins the parameter name for that reason.
+ */
+export function createPatientReferenceService(em: EntityManager): PatientReferenceService {
   async function resolveCrmPeople(
     ids: string[],
     scope: PatientReferenceScope,
