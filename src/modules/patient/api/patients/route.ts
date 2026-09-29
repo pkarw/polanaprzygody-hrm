@@ -14,6 +14,7 @@ import {
   findEntityIdsBySearchTokens,
   type SearchTokenDatabase,
 } from '@open-mercato/shared/lib/search/tokenLookup'
+import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { CustomFieldDef } from '@open-mercato/core/modules/entities/data/entities'
 import {
   archived_at,
@@ -245,6 +246,9 @@ const NO_MATCH_ID = '00000000-0000-4000-8000-000000000000'
 /** Bounds one search, so a one-letter term cannot drag the whole register through memory. */
 const SEARCH_ID_LIMIT = 500
 
+/** How many recent records the decrypt-in-memory fallback below is allowed to examine. */
+const SEARCH_FALLBACK_SCAN_LIMIT = 200
+
 /**
  * Resolves the list's single search term to a set of record ids.
  *
@@ -291,6 +295,41 @@ async function resolvePatientSearchIds(
   })
   if (tokenMatch.matched) {
     for (const id of tokenMatch.ids.slice(0, SEARCH_ID_LIMIT)) ids.add(id)
+  }
+
+  // Safety net for a record the token index has not caught up with.
+  //
+  // Tokens are written by the query index AFTER the write commits, so between creating a
+  // patient and that pipeline completing, the record exists and is invisible to a search
+  // by name — the one moment an operator is most likely to search for it. Worse, a
+  // deployment whose indexing is not running at all would leave the whole register
+  // unsearchable by name with no error anywhere.
+  //
+  // So when the index produced nothing for this term, the most recent page of records is
+  // decrypted and matched in memory. It runs ONLY on that miss, it is capped, and it is
+  // ordered by recency because the rows the index is missing are by definition the new
+  // ones. Past the cap the fallback is deliberately partial — it is a bridge over index
+  // lag, not a replacement for the index.
+  if (ids.size === 0) {
+    const needle = term.toLocaleLowerCase()
+    const recent = await findWithDecryption(
+      scope.em,
+      Patient,
+      {
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+        deletedAt: null,
+      } as never,
+      { orderBy: { createdAt: 'desc' }, limit: SEARCH_FALLBACK_SCAN_LIMIT },
+      { tenantId: scope.tenantId, organizationId: scope.organizationId },
+    )
+    for (const row of recent) {
+      const haystack = [row.firstName, row.lastName, row.email, row.phone]
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .join(' ')
+        .toLocaleLowerCase()
+      if (haystack.includes(needle)) ids.add(String(row.id))
+    }
   }
 
   return Array.from(ids)
