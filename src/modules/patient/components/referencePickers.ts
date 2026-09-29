@@ -25,6 +25,16 @@ type StaffTeamMemberListItem = {
   id?: unknown
   displayName?: unknown
   display_name?: unknown
+  /**
+   * Specializations, as the staff module already stores and projects them.
+   *
+   * `tags` is deliberately the source rather than the `cf_polana_specializations` custom
+   * field: both hold the same values (see `polana_bootstrap/lib/staffBootstrap.ts`, which
+   * writes them to each), but `tags` is a first-class column the host's own list route
+   * already returns. Reading the custom field instead would mean a second request per
+   * picker open, or asking the host route for a projection it does not offer.
+   */
+  tags?: unknown
 }
 
 type CrmPersonListItem = {
@@ -54,16 +64,57 @@ function toOptions(items: Array<{ id?: unknown; displayName?: unknown; display_n
   return options
 }
 
+/** Keeps only non-empty strings, so a stray null in the jsonb column cannot reach the label. */
+function readTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+}
+
+/**
+ * Renders a team member as "Name — specialization, specialization".
+ *
+ * Choosing who leads a patient's care is a clinical decision, and a list of bare names does
+ * not support it: two names tell the operator nothing about which of them treats this
+ * condition. The separator is an em dash so the name stays readable when a member has no
+ * specializations recorded, in which case the label is just the name.
+ *
+ * The list is capped at three with a "+n" remainder. An uncapped join turns a member with a
+ * dozen tags into a label that pushes the rest of the option out of the control at 360 px.
+ */
+function composeTeamMemberLabel(name: string, tags: string[]): string {
+  if (tags.length === 0) return name
+  const shown = tags.slice(0, 3)
+  const remainder = tags.length - shown.length
+  const specializations = remainder > 0 ? `${shown.join(', ')} +${remainder}` : shown.join(', ')
+  return `${name} — ${specializations}`
+}
+
+function toTeamMemberOptions(items: StaffTeamMemberListItem[]): CrudFieldOption[] {
+  const options: CrudFieldOption[] = []
+  for (const item of items) {
+    const id = typeof item.id === 'string' ? item.id : null
+    const name = readDisplayName(item)
+    if (!id || !name) continue
+    options.push({ value: id, label: composeTeamMemberLabel(name, readTags(item.tags)) })
+  }
+  return options
+}
+
 const OPTION_PAGE_SIZE = 50
 
-/** Active staff team members, for the optional lead-carer field. */
+/**
+ * Active staff team members, for the optional lead-carer field.
+ *
+ * Each option shows the member's specializations alongside their name, so the operator can
+ * pick the right carer without leaving the form to look them up.
+ */
 export async function loadTeamMemberOptions(query?: string): Promise<CrudFieldOption[]> {
   const params = new URLSearchParams({ pageSize: String(OPTION_PAGE_SIZE), isActive: 'true' })
   if (query && query.trim().length > 0) params.set('search', query.trim())
   const data = await readApiResultOrThrow<ListResponse<StaffTeamMemberListItem>>(
     `/api/staff/team-members?${params.toString()}`,
   )
-  return toOptions(data?.items ?? [])
+  return toTeamMemberOptions(data?.items ?? [])
 }
 
 /**
@@ -80,7 +131,11 @@ export async function resolveTeamMemberLabel(id: string): Promise<string> {
     `/api/staff/team-members?ids=${encodeURIComponent(id)}&pageSize=1`,
   )
   const first = (data?.items ?? [])[0]
-  return (first && readDisplayName(first)) || id
+  if (!first) return id
+  const name = readDisplayName(first)
+  // Same label shape as the option list, so the selected value does not visibly change once
+  // the field resolves it.
+  return name ? composeTeamMemberLabel(name, readTags(first.tags)) : id
 }
 
 /**

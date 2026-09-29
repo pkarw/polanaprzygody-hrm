@@ -12,6 +12,7 @@ import {
   Patient,
   PatientAddress,
   PatientAttachmentLink,
+  PatientContactLink,
   PatientDiagnosis,
   PatientDocumentLink,
 } from '../data/entities'
@@ -39,6 +40,7 @@ import {
 
 const PATIENT_ENTITY_ID = 'patient:patient' as const
 const PATIENT_ADDRESS_ENTITY_ID = 'patient:patient_address' as const
+const PATIENT_CONTACT_LINK_ENTITY_ID = 'patient:patient_contact_link' as const
 
 /**
  * Event payload for every patient write.
@@ -183,16 +185,23 @@ async function resolveIdempotentPatient(
 }
 
 /**
- * Creates a patient together with its first address, atomically.
+ * Creates a patient together with its first address and any guardians, atomically.
  *
  * "Atomically" is a requirement, not an optimization: the spec says an active patient
  * always has exactly one primary address, so a record that committed without its address
  * would be born violating its own invariant, and no later write would be obliged to fix it.
- * Both rows are therefore written in one transaction through `runCrudCommandWrite`, with
+ * Every row is therefore written in one transaction through `runCrudCommandWrite`, with
  * the custom fields and the event emitted only after it commits.
  *
+ * `contacts` extends that same transaction to the guardians, contacts and payers supplied with
+ * the record. A child in care usually arrives with a parent, and requiring the operator to save
+ * and then navigate to a second screen is how that information gets lost. Every referenced
+ * person is validated before the transaction opens, so one inactive guardian refuses the whole
+ * create rather than committing a record whose guardian silently went missing. The list stays
+ * optional — the spec is explicit that a patient may have no CRM contacts at all.
+ *
  * The record id is generated here rather than left to the database default because
- * `patient_number` embeds it and the address needs it in the same transaction.
+ * `patient_number` embeds it and the children need it in the same transaction.
  */
 const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
   id: 'patient.patients.create',
@@ -214,6 +223,7 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       description: parsed.description ?? null,
       ownerTeamMemberId: parsed.ownerTeamMemberId ?? null,
       primaryAddress: parsed.primaryAddress,
+      contacts: parsed.contacts ?? null,
       customFields: parsed.customFields ?? null,
     })
 
@@ -222,6 +232,15 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
 
     if (parsed.ownerTeamMemberId) {
       await referenceService(ctx).requireActiveTeamMember(parsed.ownerTeamMemberId, scope)
+    }
+
+    // Every guardian/contact is validated BEFORE the transaction opens. One inactive or
+    // out-of-scope person must refuse the whole create rather than commit a patient whose
+    // guardian silently went missing — the record and the people responsible for it are
+    // entered as one fact.
+    const contacts = parsed.contacts ?? []
+    for (const contact of contacts) {
+      await referenceService(ctx).requireActiveCrmPerson(contact.customerEntityId, scope)
     }
 
     const encryption = tryResolveEncryptionService(ctx)
@@ -314,6 +333,36 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
             })
             phaseEm.persist(address)
           },
+          // Guardians, contacts and payers supplied with the record, in the same transaction.
+          // A child in care usually arrives with a parent, and losing that while the operator
+          // navigates to a second screen is the failure this avoids.
+          async ({ em: phaseEm }) => {
+            for (const contact of contacts) {
+              const contactColumns = await encryptSensitiveFields(
+                PATIENT_CONTACT_LINK_ENTITY_ID,
+                { relationshipLabel: contact.relationshipLabel ?? null },
+                scope,
+                encryption,
+              )
+              const link = phaseEm.create(PatientContactLink, {
+                tenantId: scope.tenantId,
+                organizationId: scope.organizationId,
+                patientId,
+                customerEntityId: contact.customerEntityId,
+                isGuardian: contact.isGuardian,
+                isContact: contact.isContact,
+                isPayer: contact.isPayer,
+                isPrimaryContact: contact.isPrimaryContact,
+                ...contactColumns,
+                createdAt: now,
+                updatedAt: now,
+                createdByUserId: actorUserId,
+                updatedByUserId: actorUserId,
+                deletedAt: null,
+              })
+              phaseEm.persist(link)
+            }
+          },
         ],
         sideEffect: () => ({
           entity: patient,
@@ -387,6 +436,19 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
         deletedAt: null,
       } as FilterQuery<PatientAddress>,
       { deletedAt, updatedAt: deletedAt },
+    )
+    // Contact links created with the record are tombstoned with it. Leaving one active would
+    // keep occupying the active-pair partial unique index and block re-linking the same person
+    // to a corrected record.
+    await em.nativeUpdate(
+      PatientContactLink,
+      {
+        patientId: id,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        deletedAt: null,
+      } as FilterQuery<PatientContactLink>,
+      { deletedAt, updatedAt: deletedAt, isPrimaryContact: false },
     )
   },
 }

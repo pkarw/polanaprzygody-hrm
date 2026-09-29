@@ -133,6 +133,30 @@ function hasOwnContactChannel(value: { email?: string | null; phone?: string | n
   return Boolean(value.email) || Boolean(value.phone)
 }
 
+/**
+ * A guardian / contact / payer supplied while creating the patient.
+ *
+ * Declared before `patientCreateSchema` because a child in care usually arrives with a parent,
+ * and making the operator save the record and then open a second tab to record who the
+ * guardian is loses that information exactly when it is at hand. The same invariants as the
+ * standalone contact link apply, checked here so the payload is rejected before any row is
+ * written rather than half-way through the transaction.
+ */
+export const patientCreateContactSchema = z
+  .object({
+    customerEntityId: z.string().uuid(),
+    isGuardian: z.boolean().optional().default(false),
+    isContact: z.boolean().optional().default(false),
+    isPayer: z.boolean().optional().default(false),
+    isPrimaryContact: z.boolean().optional().default(false),
+    relationshipLabel: clearableText(120).optional(),
+  })
+  .refine(hasAnyRole, { message: 'Select at least one role', path: ['isContact'] })
+  .refine(primaryImpliesContact, {
+    message: 'A primary contact must also be a contact',
+    path: ['isPrimaryContact'],
+  })
+
 export const patientCreateSchema = z
   .object({
     firstName: requiredText(120),
@@ -143,6 +167,12 @@ export const patientCreateSchema = z
     description: clearableText(20_000).optional(),
     ownerTeamMemberId: z.string().uuid().nullish(),
     primaryAddress: primaryAddressSchema,
+    /**
+     * Optional, because a patient may legitimately have no CRM contacts at all — the spec is
+     * explicit about that, so an empty or absent list is a valid record rather than a skipped
+     * step. The technical cap keeps one request bounded; it is not a domain limit.
+     */
+    contacts: z.array(patientCreateContactSchema).max(20).optional(),
     customFields: z.record(z.string(), z.unknown()).optional(),
     clientRequestId: z.string().uuid(),
   })
@@ -150,6 +180,24 @@ export const patientCreateSchema = z
     message: 'Provide at least an email address or a phone number',
     path: ['email'],
   })
+  // The patient must have their OWN channel even when a guardian is recorded here. A parent's
+  // details may be entered into the patient's fields deliberately, but they are not fetched
+  // from the guardian's CRM record in their place — that is the spec's rule, and this refine is
+  // what stops the contact list from silently substituting for it.
+  .refine(
+    (value) => {
+      const primaries = (value.contacts ?? []).filter((contact) => contact.isPrimaryContact)
+      return primaries.length <= 1
+    },
+    { message: 'At most one contact can be the primary contact', path: ['contacts'] },
+  )
+  .refine(
+    (value) => {
+      const ids = (value.contacts ?? []).map((contact) => contact.customerEntityId)
+      return new Set(ids).size === ids.length
+    },
+    { message: 'The same person cannot be linked twice', path: ['contacts'] },
+  )
 
 /**
  * Patient update.

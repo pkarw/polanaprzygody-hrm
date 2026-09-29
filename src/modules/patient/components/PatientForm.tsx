@@ -5,6 +5,12 @@ import { createCrud } from '@open-mercato/ui/backend/utils/crud'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import { loadTeamMemberOptions, resolveTeamMemberLabel } from './referencePickers'
+import {
+  PatientContactsDraftField,
+  createEmptyContactDraft,
+  isContactDraftComplete,
+  type PatientContactDraft,
+} from './PatientContactsDraftField'
 
 const LIST_HREF = '/backend/patient/patients'
 
@@ -45,6 +51,14 @@ export type PatientCreateFormValues = {
   address_region: string | null
   address_postalCode: string | null
   address_country: string
+  /**
+   * Guardians, contacts and payers entered alongside the record.
+   *
+   * Held as one form value rather than flattened fields because the count is open-ended. They
+   * are submitted with the patient and written in the same transaction, so a child's parent is
+   * recorded at the moment it is known instead of on a second screen.
+   */
+  contacts: PatientContactDraft[]
 } & Record<`cf_${string}`, unknown>
 
 /** Empty string from a cleared input means "no value", not the empty string. */
@@ -119,6 +133,30 @@ function useIdentityFields(t: Translate): CrudField[] {
 }
 
 /**
+ * The repeatable guardian editor, as a single custom field.
+ *
+ * `rendersOwnError` is not set: the field never produces a validation error of its own, because
+ * an incomplete row is dropped on submit rather than blocking the save. The server still
+ * enforces every invariant on what is actually sent.
+ */
+function useContactsField(t: Translate): CrudField {
+  return React.useMemo<CrudField>(
+    () => ({
+      id: 'contacts',
+      label: t('patient.patients.groups.contacts'),
+      type: 'custom',
+      component: ({ value, setValue }) => (
+        <PatientContactsDraftField
+          value={Array.isArray(value) ? (value as PatientContactDraft[]) : []}
+          onChange={(next) => setValue(next)}
+        />
+      ),
+    }),
+    [t],
+  )
+}
+
+/**
  * The first-address fields.
  *
  * City and country are `required` here and optional on later addresses, mirroring the API:
@@ -171,7 +209,11 @@ export function PatientCreateForm() {
   const t = useT()
   const identityFields = useIdentityFields(t)
   const addressFields = usePrimaryAddressFields(t)
-  const fields = React.useMemo(() => [...identityFields, ...addressFields], [identityFields, addressFields])
+  const contactsField = useContactsField(t)
+  const fields = React.useMemo(
+    () => [...identityFields, ...addressFields, contactsField],
+    [identityFields, addressFields, contactsField],
+  )
 
   const clientRequestId = React.useMemo(() => crypto.randomUUID(), [])
 
@@ -207,6 +249,12 @@ export function PatientCreateForm() {
         ],
       },
       {
+        id: 'contacts',
+        title: t('patient.patients.groups.contacts'),
+        column: 1,
+        fields: ['contacts'],
+      },
+      {
         id: 'custom',
         title: t('patient.patients.groups.custom'),
         column: 2,
@@ -230,6 +278,10 @@ export function PatientCreateForm() {
       // Pre-filling a country would quietly decide a fact about the patient; the operator
       // enters it, and the field says what format is expected.
       address_country: '',
+      // One empty guardian row up front, because that is the common case for a child in care.
+      // It is dropped on submit if left untouched, so an adult patient with no guardian costs
+      // the operator nothing.
+      contacts: [createEmptyContactDraft()],
     }),
     [],
   )
@@ -278,6 +330,21 @@ export function PatientCreateForm() {
             postalCode: orNull(values.address_postalCode),
             country: values.address_country,
           },
+          // Incomplete rows are dropped rather than refused: leaving a half-filled guardian row
+          // behind is a normal way to finish this form, and it must not block the patient from
+          // being created. The server re-validates every row that is actually sent.
+          contacts: (Array.isArray(values.contacts) ? values.contacts : [])
+            .filter(isContactDraftComplete)
+            .map((draft) => ({
+              customerEntityId: draft.customerEntityId,
+              isGuardian: draft.isGuardian,
+              isContact: draft.isContact,
+              isPayer: draft.isPayer,
+              isPrimaryContact: draft.isPrimaryContact,
+              relationshipLabel: draft.relationshipLabel.trim().length > 0
+                ? draft.relationshipLabel.trim()
+                : null,
+            })),
           clientRequestId,
           ...customFieldEntries,
         })
