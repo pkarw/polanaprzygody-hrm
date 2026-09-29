@@ -217,7 +217,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     delete: {
       commandId: 'patient.addresses.delete',
       // DELETE is handed `{ body, query }` rather than the body; see the helper.
-      mapInput: ({ raw }) => buildDeleteCommandInput(raw),
+      mapInput: ({ raw, ctx }) => buildDeleteCommandInput(raw, ctx.request),
       response: ({ result }) => ({
         ok: true as const,
         id: String((result as { id: string }).id),

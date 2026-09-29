@@ -62,7 +62,7 @@ describe('patient delete routes flatten the factory DELETE input', () => {
   it.each(routes)('$file declares mapInput on its delete action', ({ source }) => {
     const action = readDeleteAction(source)
     if (action === null) return
-    expect(action).toContain('buildDeleteCommandInput(raw)')
+    expect(action).toContain('buildDeleteCommandInput(raw, ctx.request)')
   })
 
   describe('buildDeleteCommandInput', () => {
@@ -83,6 +83,27 @@ describe('patient delete routes flatten the factory DELETE input', () => {
       expect(buildDeleteCommandInput({ body: { id: 'body' }, query: { id: 'query' } })).toEqual({
         id: 'body',
       })
+    })
+
+    it('falls back to the optimistic-lock header, which is how the framework sends the version', () => {
+      const request = new Request('http://localhost/api/patient/patients?id=c', {
+        method: 'DELETE',
+        headers: { 'x-om-ext-optimistic-lock-expected-updated-at': '2026-02-02T00:00:00.000Z' },
+      })
+      expect(buildDeleteCommandInput({ body: {}, query: { id: 'c' } }, request)).toEqual({
+        id: 'c',
+        expectedUpdatedAt: '2026-02-02T00:00:00.000Z',
+      })
+    })
+
+    it('prefers an explicit payload version over the header', () => {
+      const request = new Request('http://localhost/api/patient/patients', {
+        method: 'DELETE',
+        headers: { 'x-om-ext-optimistic-lock-expected-updated-at': 'from-header' },
+      })
+      expect(
+        buildDeleteCommandInput({ body: { id: 'c', expectedUpdatedAt: 'from-body' } }, request),
+      ).toEqual({ id: 'c', expectedUpdatedAt: 'from-body' })
     })
 
     it('survives a missing or malformed wrapper rather than throwing into the route', () => {
