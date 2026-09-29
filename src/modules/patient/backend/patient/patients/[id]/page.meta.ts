@@ -1,8 +1,11 @@
 /**
  * The patient card.
  *
- * `navHidden` — reached from the register list, per the spec's rule that create and detail
- * stay out of navigation.
+ * `navHidden` — reached from the register list. Unlike the sibling create page, this one
+ * could not appear in the sidebar even without the flag: `buildAdminNav` skips every route
+ * whose href contains a dynamic segment (`[id]`), because a nav entry needs a concrete URL
+ * and there is no patient to point at until one is already open. The flag is kept so the
+ * intent is explicit rather than incidental.
  *
  * `requireFeatures` is `patient.patients.view` only. The card itself is a records surface;
  * the clinical tabs it hosts check `patient.clinical.view` for themselves, so a reception
