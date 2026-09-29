@@ -16,14 +16,21 @@ import { describe, expect, it } from '@jest/globals'
  *    or `<module>_<pluralized segment>`.
  * 3. Otherwise fall back to the pluralized segment alone.
  *
- * Step 1 is what actually resolves this module's entities, and step 2 cannot rescue two of them:
- * the engine's pluralizer returns a name ending in `s` UNCHANGED, so `patient_address` and
- * `patient_diagnosis` never become `patient_addresses` / `patient_diagnoses`. Their tables match
- * none of the scan candidates.
+ * **Step 2 never matches on this framework version.** `engine.ts` does
+ * `const allMeta: any[] = metadata.getAll?.() ?? []` and iterates it, but `getAll()` returns
+ * MikroORM's `#metadataMap`, which is a `Map`. Iterating a `Map` yields `[key, value]` pairs, so
+ * `meta?.tableName` is always `undefined` and the scan can never hit. (Reported upstream; the same
+ * package already ships a correct normalizer in `lib/db/entityMetadata.ts` that the engine does
+ * not use.)
  *
- * That makes the class names load-bearing. `toPascalCase(segment) === className` is the single
- * invariant keeping these entities reachable, and this suite pins it — a class rename that breaks
- * it would send reads to a table that does not exist, exactly as the outage did.
+ * So step 1 is the ONLY working path, for every entity — not merely for the awkward ones. That
+ * makes the class names load-bearing: `toPascalCase(segment) === className` is the single
+ * invariant keeping any of these tables reachable, and this suite pins it. A class rename that
+ * breaks it sends reads to a table that does not exist, exactly as the outage did.
+ *
+ * The pluralizer compounds it. It returns a name ending in `s` UNCHANGED, so even if step 2 were
+ * repaired, `patient_address` and `patient_diagnosis` would still never become
+ * `patient_addresses` / `patient_diagnoses`.
  *
  * The outage itself was not a naming defect: the metadata was simply absent from a dev server
  * bootstrapped before `yarn generate` registered the module and before the migration ran, so
@@ -104,14 +111,15 @@ describe('patient entity table naming', () => {
   )
 
   /**
-   * Which entities the metadata SCAN could rescue, and which it could not.
+   * How much protection would remain if the class-name lookup ever stopped working.
    *
-   * Recorded rather than merely asserted, because it is the non-obvious half: the pluralizer
-   * leaves a name ending in `s` untouched, so an address and a diagnosis can never be found by
-   * table-name scanning. They depend entirely on the class-name lookup above, which is why that
-   * assertion matters more here than it would in a module whose nouns pluralize normally.
+   * The honest answer on this version is none, because the table-name scan is dead code. But even
+   * once that is repaired upstream, two of these tables still could not be found by scanning: the
+   * pluralizer leaves a name ending in `s` untouched, so `patient_address` and `patient_diagnosis`
+   * never become their real tables. Recording which entities are in that group means a future
+   * rename that moves another one into it is a visible, deliberate change.
    */
-  it('records that address and diagnosis tables are unreachable by table-name scanning', () => {
+  it('records which tables a repaired table-name scan still could not find', () => {
     const scanCandidates = (className: string) => {
       const segment = toEntitySegment(className)
       return [`patient_${segment}`, pluralizeBaseName(segment), `patient_${pluralizeBaseName(segment)}`]
@@ -122,7 +130,7 @@ describe('patient entity table naming', () => {
       .sort()
     expect(unscannable).toEqual(['PatientAddress', 'PatientDiagnosis'])
 
-    // `Patient` IS scannable, through `patient_` + `patients`.
+    // `patient_patients` is at least among the candidates a repaired scan would try.
     const patient = declared.find((entry) => entry.className === 'Patient')
     expect(patient?.tableName).toBe('patient_patients')
     expect(scanCandidates('Patient')).toContain('patient_patients')

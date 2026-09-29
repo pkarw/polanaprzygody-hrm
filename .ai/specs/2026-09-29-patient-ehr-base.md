@@ -465,7 +465,15 @@ Pełna bramka przechodzi: `yarn generate && yarn typecheck && yarn lint && yarn 
 yarn test && yarn build`. Testy jednostkowe: 10 zestawów, 115 przypadków — w tym odwrócona
 asercja SEC-ATT i oracle nazewnictwa tabel, dopisane po realnej awarii
 `relation "patients" does not exist` (nieaktualny rejestr w serwerze deweloperskim; wymagany
-restart po `yarn generate` i migracji).
+restart po `yarn generate` i migracji — sam HMR nie wystarcza, bo metadane ORM i cache
+`entityTableCache` powstają raz na proces).
+
+Przy tej okazji potwierdzono defekt frameworka, zgłoszony do
+[open-mercato#6725](https://github.com/open-mercato/open-mercato/issues/6725): drugi krok
+rozwiązywania nazwy tabeli w `query/engine.ts` iteruje `metadata.getAll()` jak tablicę, podczas gdy
+MikroORM zwraca `Map`, więc skan nigdy nie trafia. W efekcie **jedyną działającą ścieżką jest
+wyszukanie po nazwie klasy**, a nazwy klas w `data/entities.ts` są nośne — pilnuje tego
+`src/modules/patient/__tests__/entityTableResolution.test.ts`.
 
 **Testy integracyjne PAT-T01–PAT-T12 zostały napisane, ale nie zostały uruchomione.** Pliki są w
 `src/modules/patient/__integration__/`, przechodzą typecheck i są wykrywane przez discovery.
