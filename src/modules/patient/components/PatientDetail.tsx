@@ -24,6 +24,7 @@ import { PatientAddressesSection } from './PatientAddressesSection'
 import { PatientContactsSection } from './PatientContactsSection'
 import { PatientDiagnosesSection } from './PatientDiagnosesSection'
 import { PatientDocumentsSection } from './PatientDocumentsSection'
+import { PatientFilesSection } from './PatientFilesSection'
 import { useClinicalAccess } from './useClinicalAccess'
 
 const LIST_HREF = '/backend/patient/patients'
@@ -34,11 +35,11 @@ const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
  * and so a 409 that reloads the record does not silently drop the operator back to the first
  * tab.
  */
-const TABS = ['data', 'addresses', 'contacts', 'diagnoses', 'documents'] as const
+const TABS = ['data', 'addresses', 'contacts', 'diagnoses', 'documents', 'files'] as const
 type TabId = (typeof TABS)[number]
 
 /** Tabs that require `patient.clinical.view`; absent entirely for a records-only operator. */
-const CLINICAL_TABS: readonly TabId[] = ['diagnoses', 'documents']
+const CLINICAL_TABS: readonly TabId[] = ['diagnoses', 'documents', 'files']
 
 function isTabId(value: string | null): value is TabId {
   return value !== null && (TABS as readonly string[]).includes(value)
@@ -331,6 +332,7 @@ export function PatientDetail({ id }: { id: string }) {
             <>
               <TabsTrigger value="diagnoses">{t('patient.patients.tabs.diagnoses')}</TabsTrigger>
               <TabsTrigger value="documents">{t('patient.patients.tabs.documents')}</TabsTrigger>
+              <TabsTrigger value="files">{t('patient.patients.tabs.files')}</TabsTrigger>
             </>
           ) : null}
         </TabsList>
@@ -396,6 +398,12 @@ export function PatientDetail({ id }: { id: string }) {
             </TabsContent>
             <TabsContent value="documents">
               <PatientDocumentsSection patientId={id} readOnly={isArchived} onMutated={reload} />
+            </TabsContent>
+            <TabsContent value="files">
+              {/* Present even though storage is disabled on this installation: an operator looking
+                  for the feature needs to learn WHY it is absent, and a deployment that stored
+                  links on a previously enabled host must still be able to detach them. */}
+              <PatientFilesSection patientId={id} readOnly={isArchived} onMutated={reload} />
             </TabsContent>
           </>
         ) : null}
