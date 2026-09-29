@@ -132,10 +132,10 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 1: Module foundation and data model
 
-- [ ] 1.1 Module skeleton and registration
-- [ ] 1.2 Entities for all six patient tables
-- [ ] 1.3 Validators and encryption maps
-- [ ] 1.4 Generated migration and snapshot review
+- [x] 1.1 Module skeleton and registration — 56e12ba
+- [x] 1.2 Entities for all six patient tables — 66a2d56
+- [x] 1.3 Validators and encryption maps — 66a2d56
+- [x] 1.4 Generated migration and snapshot review — 66a2d56
 
 ### Phase 2: Commands, references and the record API
 
