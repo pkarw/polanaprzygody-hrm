@@ -3,6 +3,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { CustomerEntity } from '@open-mercato/core/modules/customers/data/entities'
 import { StaffTeamMember } from '@open-mercato/core/modules/staff/data/entities'
+import { User } from '@open-mercato/core/modules/auth/data/entities'
 
 /**
  * Resolves the scalar references this module stores into display names.
@@ -54,6 +55,15 @@ export type ResolvedReference = {
 export type PatientReferenceService = {
   resolveCrmPeople(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
   resolveTeamMembers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
+  /**
+   * Resolves authentication users to a display name, for a diagnosis author.
+   *
+   * Tenant-scoped only, deliberately: `users.organization_id` is nullable and a clinician may
+   * be attached to a different organization of the same tenant, so filtering by organization
+   * would blank the author on perfectly legitimate entries. Crossing the tenant boundary is
+   * still refused.
+   */
+  resolveUsers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
   /** Throws 422 unless the id is an active CRM person in scope. */
   requireActiveCrmPerson(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
   /** Throws 422 unless the id is an active staff team member in scope. */
@@ -138,6 +148,45 @@ export function createPatientReferenceService({ em }: { em: EntityManager }): Pa
     return resolved
   }
 
+  async function resolveUsers(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<Map<string, ResolvedReference>> {
+    const wanted = normalizeIds(ids)
+    const resolved = new Map<string, ResolvedReference>()
+    if (wanted.length === 0) return resolved
+
+    // `name` and `email` are both covered by the auth module's encryption map, so this read
+    // must go through the decrypting helper or it would return ciphertext to the UI.
+    const rows = await findWithDecryption(
+      em,
+      User,
+      {
+        id: { $in: wanted },
+        tenantId: scope.tenantId,
+      } as FilterQuery<User>,
+      undefined,
+      { tenantId: scope.tenantId, organizationId: scope.organizationId },
+    )
+
+    for (const row of rows) {
+      // Falls back to the email only when no name is set. A uuid is never used as a label.
+      const name =
+        (typeof row.name === 'string' && row.name.length > 0 ? row.name : null) ??
+        (typeof row.email === 'string' && row.email.length > 0 ? row.email : null)
+      if (!name) continue
+      resolved.set(String(row.id), {
+        id: String(row.id),
+        displayName: name,
+        // A deactivated or deleted account does not make an authored entry less valid, so an
+        // author is always reported as available; the flag exists for references a write path
+        // may re-select, which an author never is.
+        isAvailable: true,
+      })
+    }
+    return resolved
+  }
+
   /**
    * 422, not 404, for both `require*` helpers.
    *
@@ -164,5 +213,11 @@ export function createPatientReferenceService({ em }: { em: EntityManager }): Pa
     return resolved
   }
 
-  return { resolveCrmPeople, resolveTeamMembers, requireActiveCrmPerson, requireActiveTeamMember }
+  return {
+    resolveCrmPeople,
+    resolveTeamMembers,
+    resolveUsers,
+    requireActiveCrmPerson,
+    requireActiveTeamMember,
+  }
 }

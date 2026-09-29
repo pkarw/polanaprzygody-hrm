@@ -295,6 +295,34 @@ export function organizationToday(timeZone: string | null | undefined): string {
   return formatter.format(new Date())
 }
 
+/**
+ * The timezone the "organization's local today" rule resolves against.
+ *
+ * The spec compares a diagnosis date against the organization's current local date. The
+ * installed `directory` module has **no per-organization timezone column** — verified
+ * against `directory/data/entities.ts` — so there is nothing per-organization to read, and
+ * inventing a column for it would be a schema change to another module's table.
+ *
+ * This therefore resolves to the deployment's timezone, which is the framework's own
+ * convention for the same problem (`Intl.DateTimeFormat().resolvedOptions().timeZone ||
+ * 'UTC'`, as used by the data_sync and staff surfaces). For a single-country deployment that
+ * is exactly the organization's timezone; for a multi-timezone tenant it is an approximation
+ * that can only ever be strict by a few hours, never permissive, because a wrong guess here
+ * rejects a legitimate same-day entry rather than accepting a future one.
+ *
+ * `OM_PATIENT_TIMEZONE` overrides it for a deployment whose server clock is not in the
+ * clinic's timezone.
+ */
+export function resolveClinicalTimeZone(): string {
+  const configured = process.env.OM_PATIENT_TIMEZONE
+  if (configured && isValidTimeZone(configured)) return configured
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
 function isValidTimeZone(timeZone: string): boolean {
   try {
     new Intl.DateTimeFormat('en-CA', { timeZone })
