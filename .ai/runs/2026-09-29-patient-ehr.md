@@ -153,10 +153,10 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 4: Diagnoses and documents
 
-- [ ] 4.1 Diagnosis commands and routes
-- [ ] 4.2 Document-link commands and routes
-- [ ] 4.3 Diagnoses tab
-- [ ] 4.4 Documents tab
+- [x] 4.1 Diagnosis commands and routes — 1d50b8e
+- [x] 4.2 Document-link commands and routes — d78e5d3
+- [x] 4.3 Diagnoses tab — 5a986dc
+- [x] 4.4 Documents tab — 5a986dc
 
 ### Phase 5: Clinical files
 
