@@ -8,7 +8,7 @@ import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { Alert } from '@open-mercato/ui/primitives/alert'
 import { Input } from '@open-mercato/ui/primitives/input'
-import { Label } from '@open-mercato/ui/primitives/label'
+import { FieldLabel, Label } from '@open-mercato/ui/primitives/label'
 import {
   Dialog,
   DialogContent,
@@ -438,7 +438,9 @@ function DocumentDialog({
 
           {mode === 'create' ? (
             <div className="space-y-1">
-              <Label htmlFor="patient-document-title">{t('patient.patients.documents.titleLabel')}</Label>
+              <FieldLabel htmlFor="patient-document-title" required>
+                {t('patient.patients.documents.titleLabel')}
+              </FieldLabel>
               <Input
                 id="patient-document-title"
                 value={title}
@@ -449,7 +451,7 @@ function DocumentDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>{t('patient.patients.documents.selectLabel')}</Label>
+              <FieldLabel required>{t('patient.patients.documents.selectLabel')}</FieldLabel>
               {/* One searchable combobox, the same control the contact picker uses: the
                   operator types and chooses in one place instead of typing into a search box
                   above a separate select. `allowCustomValues` stays off, so the submitted

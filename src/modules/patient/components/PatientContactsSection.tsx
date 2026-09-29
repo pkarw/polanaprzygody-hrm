@@ -16,7 +16,7 @@ import {
 } from '@open-mercato/ui/primitives/dialog'
 import { CheckboxField } from '@open-mercato/ui/primitives/checkbox-field'
 import { Input } from '@open-mercato/ui/primitives/input'
-import { Label } from '@open-mercato/ui/primitives/label'
+import { FieldLabel, Label } from '@open-mercato/ui/primitives/label'
 import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { SectionHeader } from '@open-mercato/ui/backend/SectionHeader'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
@@ -394,7 +394,7 @@ function ContactDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>{t('patient.patients.contacts.person')}</Label>
+              <FieldLabel required>{t('patient.patients.contacts.person')}</FieldLabel>
               {/*
                 One searchable combobox, the same control the create form uses for guardians.
                 A separate search box above a select made the operator type in one field and

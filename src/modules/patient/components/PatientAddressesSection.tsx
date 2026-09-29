@@ -69,6 +69,36 @@ export function PatientAddressesSection({
     [onActionChange],
   )
 
+  /**
+   * The row's current version, re-read when the section does not have one.
+   *
+   * The shared section builds the tile for a freshly created address from the payload it
+   * just submitted, and that object carries no `updatedAt` — so editing or deleting an
+   * address without leaving the tab sent `expectedUpdatedAt: null` and the command refused
+   * the write with a 400. Re-reading the row supplies the version the section never held.
+   *
+   * This is a read-then-write, but not a lost-update: the server still compares the token
+   * under the row lock, so a value that went stale between the read and the write comes
+   * back as a 409 the operator is told about, exactly as if the tile had carried it.
+   */
+  const resolveVersion = React.useCallback(
+    async (id: string, updatedAt?: string | null): Promise<string | null> => {
+      if (typeof updatedAt === 'string' && updatedAt.length > 0) return updatedAt
+      try {
+        const params = new URLSearchParams({ patientId, id, pageSize: '1' })
+        const payload = await readApiResultOrThrow<PatientPagedResponse<PatientAddressItem>>(
+          `/api/patient/addresses?${params.toString()}`,
+        )
+        return payload?.items?.[0]?.updatedAt ?? null
+      } catch {
+        // Let the write go ahead without a token: the command answers with the same
+        // validation error it would have, rather than this read inventing a failure.
+        return null
+      }
+    },
+    [patientId],
+  )
+
   const dataAdapter = React.useMemo<AddressDataAdapter>(
     () => ({
       list: async ({ entityId }) => {
@@ -115,8 +145,9 @@ export function PatientAddressesSection({
       },
 
       update: async ({ id, payload, updatedAt }) => {
+        const version = await resolveVersion(id, updatedAt)
         try {
-          await withScopedApiRequestHeaders(buildOptimisticLockHeader(updatedAt ?? null), () =>
+          await withScopedApiRequestHeaders(buildOptimisticLockHeader(version), () =>
             apiCallOrThrow(
               '/api/patient/addresses',
               {
@@ -125,7 +156,7 @@ export function PatientAddressesSection({
                 // `expectedUpdatedAt` travels in the body as well as the header: the command
                 // requires the token in its own input, so a caller that reaches the command
                 // by another path still cannot skip the version check.
-                body: JSON.stringify({ id, expectedUpdatedAt: updatedAt ?? null, ...payload }),
+                body: JSON.stringify({ id, expectedUpdatedAt: version, ...payload }),
               },
               { errorMessage: t('patient.patients.addresses.error', 'Could not save the address.') },
             ),
@@ -140,14 +171,15 @@ export function PatientAddressesSection({
       },
 
       delete: async ({ id, updatedAt }) => {
+        const version = await resolveVersion(id, updatedAt)
         try {
-          await withScopedApiRequestHeaders(buildOptimisticLockHeader(updatedAt ?? null), () =>
+          await withScopedApiRequestHeaders(buildOptimisticLockHeader(version), () =>
             apiCallOrThrow(
               '/api/patient/addresses',
               {
                 method: 'DELETE',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ id, expectedUpdatedAt: updatedAt ?? null }),
+                body: JSON.stringify({ id, expectedUpdatedAt: version }),
               },
               // The server refuses the last address of an active record, and the primary one
               // while others remain. Both arrive as a 409 whose message names the remedy.
@@ -161,7 +193,7 @@ export function PatientAddressesSection({
         }
       },
     }),
-    [onMutated, t],
+    [onMutated, resolveVersion, t],
   )
 
   return (

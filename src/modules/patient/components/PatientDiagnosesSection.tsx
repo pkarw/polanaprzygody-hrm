@@ -7,7 +7,7 @@ import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { Alert } from '@open-mercato/ui/primitives/alert'
 import { Input } from '@open-mercato/ui/primitives/input'
-import { Label } from '@open-mercato/ui/primitives/label'
+import { FieldLabel, Label } from '@open-mercato/ui/primitives/label'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import {
   Dialog,
@@ -406,9 +406,9 @@ function DiagnosisDialog({
 
           {mode === 'void' ? (
             <div className="space-y-1">
-              <Label htmlFor="patient-diagnosis-reason">
+              <FieldLabel htmlFor="patient-diagnosis-reason" required>
                 {t('patient.patients.diagnoses.reason')}
-              </Label>
+              </FieldLabel>
               <Textarea
                 id="patient-diagnosis-reason"
                 value={reason}
@@ -422,7 +422,9 @@ function DiagnosisDialog({
           ) : (
             <>
               <div className="space-y-1">
-                <Label htmlFor="patient-diagnosis-title">{t('patient.patients.diagnoses.title')}</Label>
+                <FieldLabel htmlFor="patient-diagnosis-title" required>
+                  {t('patient.patients.diagnoses.title')}
+                </FieldLabel>
                 <Input
                   id="patient-diagnosis-title"
                   value={title}
@@ -432,7 +434,9 @@ function DiagnosisDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="patient-diagnosis-date">{t('patient.patients.diagnoses.date')}</Label>
+                <FieldLabel htmlFor="patient-diagnosis-date" required>
+                  {t('patient.patients.diagnoses.date')}
+                </FieldLabel>
                 <Input
                   id="patient-diagnosis-date"
                   type="date"
@@ -445,9 +449,9 @@ function DiagnosisDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="patient-diagnosis-description">
+                <FieldLabel htmlFor="patient-diagnosis-description" required>
                   {t('patient.patients.diagnoses.descriptionLabel')}
-                </Label>
+                </FieldLabel>
                 <Textarea
                   id="patient-diagnosis-description"
                   value={description}
