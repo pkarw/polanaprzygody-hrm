@@ -13,6 +13,12 @@ import {
   planPolanaCatalog,
   seedPolanaCatalog,
 } from './catalog-bootstrap'
+import {
+  createResourceBootstrapDependencies,
+  planPolanaResources,
+  seedPolanaResources,
+} from './resource-bootstrap'
+import { planPolanaOrganization, seedPolanaOrganization } from './organization-bootstrap'
 
 function parseArgs(rest: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {}
@@ -107,6 +113,50 @@ const installCatalog: ModuleCli = {
   },
 }
 
-const commands = [reconcileCrm, installCatalog]
+const INSTALL_WORKSPACE_CONFIRMATION = 'install-polana-workspace'
+
+/**
+ * Applies to an already-installed database what `setup.ts` applies at install
+ * time: the Polana workspace identity plus the gabinet resources that replace
+ * the core `resources` example set.
+ */
+const installWorkspace: ModuleCli = {
+  command: 'install-workspace',
+  async run(rest) {
+    const args = parseArgs(rest)
+    const tenantId = typeof args.tenant === 'string' ? args.tenant : ''
+    const organizationId = typeof args.organization === 'string' ? args.organization : ''
+    if (!tenantId || !organizationId) {
+      throw new Error(`Usage: mercato polana_bootstrap install-workspace --tenant <id> --organization <id> [--execute --confirm ${INSTALL_WORKSPACE_CONFIRMATION}]`)
+    }
+    if (process.env.NODE_ENV === 'production') throw new Error('Workspace installation is disabled in production')
+    const scope: BootstrapScope = { tenantId, organizationId }
+    const container = await createRequestContainer() as AppContainer
+    try {
+      const em = container.resolve('em') as EntityManager
+      const dependencies = createResourceBootstrapDependencies(em, container)
+      const plan = {
+        organization: await planPolanaOrganization(em, scope),
+        resources: await planPolanaResources(dependencies, scope),
+      }
+      console.log(JSON.stringify({ mode: 'dry-run', scope, plan }, null, 2))
+      if (args.execute !== true) return
+      if (args.confirm !== INSTALL_WORKSPACE_CONFIRMATION) {
+        throw new Error(`--confirm must equal ${INSTALL_WORKSPACE_CONFIRMATION}`)
+      }
+      const result = {
+        organization: await seedPolanaOrganization(em, container, scope),
+        resources: await seedPolanaResources(dependencies, scope),
+      }
+      console.log(JSON.stringify({ mode: 'execute', scope, result }, null, 2))
+      console.log('Run `yarn mercato reindex` to refresh the query index for the renamed tenant.')
+    } finally {
+      const disposable = container as unknown as { dispose?: () => Promise<void> }
+      await disposable.dispose?.()
+    }
+  },
+}
+
+const commands = [reconcileCrm, installCatalog, installWorkspace]
 
 export default commands

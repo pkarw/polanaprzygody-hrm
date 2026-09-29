@@ -40,6 +40,7 @@ import {
 type ResourceRecord = { id: string; name: string; resourceTypeId: string | null }
 type ResourceTypeRecord = { id: string; name: string }
 type ResourceTagRecord = { id: string; slug: string }
+type TagAssignmentRecord = { tagId: string; resourceId: string }
 type RuleSetRecord = { id: string; name: string }
 
 export type ResourceCustomFieldValues = Record<string, string | number | boolean | string[] | null>
@@ -51,7 +52,7 @@ export type ResourceBootstrapDependencies = {
   listResourceTypes(scope: BootstrapScope): Promise<ResourceTypeRecord[]>
   listResourceTags(scope: BootstrapScope): Promise<ResourceTagRecord[]>
   listAvailabilityRuleSets(scope: BootstrapScope): Promise<RuleSetRecord[]>
-  countTagAssignments(tagId: string, scope: BootstrapScope): Promise<number>
+  listTagAssignments(scope: BootstrapScope): Promise<TagAssignmentRecord[]>
   execute(commandId: string, input: Record<string, unknown>, scope: BootstrapScope): Promise<unknown>
   setResourceFields(recordId: string, values: ResourceCustomFieldValues, scope: BootstrapScope): Promise<void>
 }
@@ -169,13 +170,14 @@ async function run(
     summary.removedResources += 1
   }
 
+  const survivingResources = resources.filter((resource) => !removedResourceIds.has(resource.id))
+
   const legacyTypeNames = new Set<string>(LEGACY_RESOURCE_TYPE_NAMES.map((name) => name.toLowerCase()))
   const resourceTypes = await dependencies.listResourceTypes(scope)
   // `resourceTypes.delete` refuses a type that still has live resources, so only
   // the types left orphaned by the removal above are dropped.
   const survivingTypeIds = new Set(
-    resources
-      .filter((resource) => !removedResourceIds.has(resource.id))
+    survivingResources
       .map((resource) => resource.resourceTypeId)
       .filter((id): id is string => typeof id === 'string'),
   )
@@ -191,10 +193,19 @@ async function run(
   const legacyTagSlugs = new Set<string>(LEGACY_RESOURCE_TAG_SLUGS.map((slug) => slug.toLowerCase()))
   const resourceTags = await dependencies.listResourceTags(scope)
   const legacyTags = resourceTags.filter((tag) => legacyTagSlugs.has(tag.slug.toLowerCase()))
+  // Deleting a resource only soft-deletes it; its tag assignments stay behind.
+  // Orphan detection therefore has to ignore assignments pointing at anything
+  // this run removed, or no legacy tag would ever look unused.
+  const survivingResourceIds = new Set(survivingResources.map((resource) => resource.id))
+  const assignments = legacyTags.length > 0 ? await dependencies.listTagAssignments(scope) : []
+  const liveTagIds = new Set(
+    assignments
+      .filter((assignment) => survivingResourceIds.has(assignment.resourceId))
+      .map((assignment) => assignment.tagId),
+  )
   for (const tag of legacyTags) {
     // A tag reused by a resource the operator created stays; only orphans go.
-    const assignments = await dependencies.countTagAssignments(tag.id, scope)
-    if (assignments > 0) continue
+    if (liveTagIds.has(tag.id)) continue
     plan.resourceTagsToRemove.push(tag.slug)
     if (write) await dependencies.execute('resources.resourceTags.delete', { id: tag.id }, scope)
     summary.removedResourceTags += 1
@@ -284,7 +295,6 @@ async function run(
   }
 
   // 5. The gabinets themselves.
-  const survivingResources = resources.filter((resource) => !removedResourceIds.has(resource.id))
   const resourceByName = new Map(survivingResources.map((resource) => [resource.name.toLowerCase(), resource]))
   for (const fixture of POLANA_RESOURCES) {
     const refs = {
@@ -448,7 +458,14 @@ export function createResourceBootstrapDependencies(
       id: item.id,
       name: item.name,
     })),
-    countTagAssignments: async (tagId, scope) => em.count(ResourcesResourceTagAssignment, { ...scope, tag: tagId }),
+    listTagAssignments: async (scope) => (
+      await em.find(ResourcesResourceTagAssignment, { ...scope }, { populate: ['resource', 'tag'] })
+    ).flatMap((item) => {
+      const tagId = typeof item.tag === 'string' ? item.tag : item.tag?.id
+      const resourceId = typeof item.resource === 'string' ? item.resource : item.resource?.id
+      if (!tagId || !resourceId) return []
+      return [{ tagId, resourceId }]
+    }),
     execute: async (commandId, input, scope) => (
       await commandBus.execute(commandId, { input, ctx: commandContext(container, scope) })
     ).result,
