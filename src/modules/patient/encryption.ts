@@ -15,10 +15,14 @@ import type { ModuleEncryptionMap } from '@open-mercato/shared/modules/encryptio
  * accepts in exchange:
  *
  * - The patient list sorts by `patient_number`, `created_at` and `status` — never by
- *   name. Name search is exact-match through the hashed token index.
- * - Name, contact and address columns are projected only on single-record reads, so a
- *   grid page does not buy a per-row decrypt for data it does not render.
- * - No CSV export carries clinical content. The spec lists a clinical CSV as a non-goal.
+ *   name. Name search is exact-match through the hashed token index, never `ilike`.
+ * - The list DOES project the name and contact columns, because the grid renders them, and
+ *   accepts the per-row decrypt that costs. What it does not project is `description`:
+ *   nothing in a list renders it, so decrypting it per row would be pure cost over the
+ *   module's longest free-text field.
+ * - No CSV export at all. The spec lists a clinical CSV as a non-goal, and the columns a
+ *   grid renders are exactly the ones an export would copy out to a file nobody
+ *   re-encrypts.
  *
  * What is deliberately NOT encrypted, and why:
  *
