@@ -438,6 +438,10 @@ Zachowanie hosta jest zapisane jako **wykonywalna asercja** w
 zastano, więc wersja hosta, która to naprawi, **zepsuje ten test** i wymusi ponowną ocenę fazy.
 Bramkę otwiera wyłącznie `OM_PATIENT_CLINICAL_FILES_ENABLED` (domyślnie wyłączona).
 
+Blokada zgłoszona jako
+[mercato-sandboxes#563](https://github.com/open-mercato/mercato-sandboxes/issues/563) —
+z dowodami w kodzie i opisem kontraktu, który odblokowałby fazę.
+
 **PAT-AC06 nie może zostać zamknięte na tej wersji hosta.** Pozostałe kryteria: AC01–AC03, AC05
 zrealizowane; AC04 zrealizowane w części klinicznej (diagnozy), bez plików; AC07 zrealizowane w
 zakresie izolacji, szyfrowania, współbieżności i audytu — patrz uwaga o testach poniżej.
