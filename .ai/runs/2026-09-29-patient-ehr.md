@@ -160,8 +160,8 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 5: Clinical files
 
-- [ ] 5.1 Attachment links, upload/file routes and the Files tab behind the SEC-ATT gate
-- [ ] 5.2 PAT-T09 denial probe
+- [x] 5.1 Attachment links, upload/file routes and the Files tab behind the SEC-ATT gate — c5041a7
+- [x] 5.2 PAT-T09 denial probe — c5041a7
 
 ### Phase 6: Coverage and the full gate
 
