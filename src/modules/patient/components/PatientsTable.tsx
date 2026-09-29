@@ -12,7 +12,7 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { deleteCrud, fetchCrudList } from '@open-mercato/ui/backend/utils/crud'
-import { withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
+import { apiCallOrThrow, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
@@ -143,7 +143,9 @@ export default function PatientsTable() {
           setPage(1)
         }}
         searchPlaceholder={t('patient.patients.filters.search')}
-        searchAlign="right"
+        // Left is the framework default and what every other list in this installation
+        // renders: search on the left, "Filters" pushed to the right.
+        searchAlign="left"
         filters={[
           {
             id: 'status',
@@ -186,6 +188,60 @@ export default function PatientsTable() {
                 id: 'patient.patients.open',
                 label: t('patient.patients.actions.open'),
                 href: `${LIST_HREF}/${row.id}`,
+              },
+              {
+                // Archiving reaches the record from the list because the detail page's
+                // header carries the record form's actions instead. Restoring is offered
+                // on the archived record itself as well, from its own notice.
+                id: 'patient.patients.archive',
+                label:
+                  row.status === 'archived'
+                    ? t('patient.patients.actions.restore')
+                    : t('patient.patients.actions.archive'),
+                onSelect: async () => {
+                  const archived = row.status !== 'archived'
+                  const confirmed = await confirm({
+                    title: archived
+                      ? t('patient.patients.confirm.archive.title')
+                      : t('patient.patients.confirm.restore.title'),
+                    description: archived
+                      ? t('patient.patients.confirm.archive.body')
+                      : t('patient.patients.confirm.restore.body'),
+                  })
+                  if (!confirmed) return
+                  try {
+                    await withScopedApiRequestHeaders(
+                      buildOptimisticLockHeader(row.updatedAt),
+                      () =>
+                        apiCallOrThrow(
+                          `/api/patient/patients/${encodeURIComponent(row.id)}/archive`,
+                          {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ archived, expectedUpdatedAt: row.updatedAt }),
+                          },
+                        ),
+                    )
+                    flash(
+                      archived
+                        ? t('patient.patients.flash.archived')
+                        : t('patient.patients.flash.restored'),
+                      'success',
+                    )
+                    queryClient.invalidateQueries({ queryKey: ['patient.patients'] })
+                  } catch (err) {
+                    if (surfaceRecordConflict(err, t)) {
+                      queryClient.invalidateQueries({ queryKey: ['patient.patients'] })
+                      return
+                    }
+                    flash(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : t('patient.patients.error.load'),
+                      'error',
+                    )
+                  }
+                },
               },
               {
                 id: 'patient.patients.delete',

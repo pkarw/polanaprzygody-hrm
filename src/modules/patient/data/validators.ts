@@ -173,7 +173,6 @@ export const patientCreateSchema = z
      * step. The technical cap keeps one request bounded; it is not a domain limit.
      */
     contacts: z.array(patientCreateContactSchema).max(20).optional(),
-    customFields: z.record(z.string(), z.unknown()).optional(),
     clientRequestId: z.string().uuid(),
   })
   .refine(hasOwnContactChannel, {
@@ -213,6 +212,11 @@ export const patientCreateSchema = z
  * The contact-channel rule is NOT re-checked here. It needs the stored row to decide
  * (clearing `email` is fine when a `phone` is already on record), so the command
  * enforces it against the merged result.
+ *
+ * Custom fields are absent from this schema and from `patientCreateSchema` on purpose:
+ * the commands run the payload through `parseWithCustomFields`, which peels `cf_<key>`
+ * entries (and a `customFields` object) off before the schema sees them. Declaring a
+ * `customFields` key here as well would be dead — the splitter has already consumed it.
  */
 export const patientUpdateSchema = z.object({
   id: z.string().uuid(),
@@ -224,7 +228,6 @@ export const patientUpdateSchema = z.object({
   phone: phoneSchema.optional(),
   description: clearableText(20_000).optional(),
   ownerTeamMemberId: z.string().uuid().nullish(),
-  customFields: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const patientArchiveSchema = z.object({

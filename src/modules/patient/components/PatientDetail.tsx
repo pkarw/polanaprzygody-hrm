@@ -7,6 +7,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { Alert } from '@open-mercato/ui/primitives/alert'
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@open-mercato/ui/primitives/tabs'
+import { FormActionButtons } from '@open-mercato/ui/backend/forms'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { apiCallOrThrow, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
@@ -29,6 +30,16 @@ import { useClinicalAccess } from './useClinicalAccess'
 
 const LIST_HREF = '/backend/patient/patients'
 const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
+
+/**
+ * The record form's DOM id.
+ *
+ * The save button lives in the page header rather than inside the form, so it reaches the
+ * form through the HTML `form` attribute. That is what lets the actions sit at the top of
+ * the page, above the tabs, while `CrudForm` still owns submission, validation, the
+ * optimistic-lock header and the redirect.
+ */
+const FORM_ID = 'patient-detail-form'
 
 /**
  * Tab ids. Kept in the URL so a reload, a bookmark or a shared link lands on the same tab —
@@ -101,6 +112,10 @@ export function PatientDetail({ id }: { id: string }) {
   const [isNotFound, setIsNotFound] = React.useState(false)
   const [isTransitioning, setIsTransitioning] = React.useState(false)
   const [reloadToken, setReloadToken] = React.useState(0)
+  // Mirrors the form's in-flight state into the header, which is where the save button now
+  // lives. `CrudForm` awaits `onSubmit`, so wrapping it is enough to drive the spinner.
+  const [isSaving, setIsSaving] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
 
   const clinicalAccess = useClinicalAccess(id)
   // `unknown` keeps the clinical tabs hidden until the probe answers, so they do not flash in
@@ -262,6 +277,43 @@ export function PatientDetail({ id }: { id: string }) {
     [confirm, record, reload, t],
   )
 
+  /**
+   * Deletes the record from the page header.
+   *
+   * Owned here rather than by `CrudForm` because the button no longer lives inside the
+   * form. The version travels in the body — `updatedAt` is not a top-level delete option —
+   * and a record that already carries documentation comes back as a 409 naming archiving
+   * as the alternative, which `surfaceRecordConflict` renders.
+   */
+  const handleDelete = React.useCallback(async () => {
+    if (!record) return
+    const confirmed = await confirm({
+      title: t('patient.patients.confirm.delete.title'),
+      description: t('patient.patients.confirm.delete.body'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+    setIsDeleting(true)
+    try {
+      await deleteCrud('patient/patients', {
+        id,
+        body: { id, expectedUpdatedAt: record.updatedAt ?? null },
+      })
+      router.push(deleteRedirect)
+    } catch (err) {
+      if (surfaceRecordConflict(err, t)) {
+        reload()
+        return
+      }
+      flash(
+        err instanceof Error && err.message ? err.message : t('patient.patients.error.load'),
+        'error',
+      )
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [confirm, deleteRedirect, id, record, reload, router, t])
+
   if (isNotFound) {
     return (
       <RecordNotFoundState
@@ -303,24 +355,45 @@ export function PatientDetail({ id }: { id: string }) {
           </div>
           <p className="text-sm text-muted-foreground">{loaded?.patientNumber}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => router.push(LIST_HREF)}>
-            {t('patient.patients.actions.backToList')}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!loaded || isTransitioning}
-            onClick={() => void toggleArchive(!isArchived)}
-          >
-            {isArchived ? t('patient.patients.actions.restore') : t('patient.patients.actions.archive')}
-          </Button>
-        </div>
+        {/* The record's own actions, at the top of the page rather than under the tabs.
+            `submit.formId` reaches the form through the HTML `form` attribute, so `CrudForm`
+            keeps ownership of validation, the optimistic-lock header and the redirect. They
+            are hidden on the sub-resource tabs, where there is no record form to submit. */}
+        {activeTab === 'data' ? (
+          <FormActionButtons
+            showDelete
+            onDelete={() => void handleDelete()}
+            isDeleting={isDeleting}
+            deleteLabel={t('patient.patients.actions.delete')}
+            cancelHref={LIST_HREF}
+            submit={{
+              formId: FORM_ID,
+              pending: isSaving,
+              label: t('patient.patients.actions.save'),
+            }}
+          />
+        ) : null}
       </div>
 
       {isArchived ? (
         // States the consequence rather than just the status: history stays readable, new
         // entries are refused. That is exactly what the server enforces.
-        <Alert variant="warning">{t('patient.patients.archivedNotice')}</Alert>
+        //
+        // Restore lives here rather than in the page header: it is the one action this
+        // notice exists to offer, and an operator who is not looking at an archived record
+        // has no use for it.
+        <Alert variant="warning">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>{t('patient.patients.archivedNotice')}</span>
+            <Button
+              variant="outline"
+              disabled={!loaded || isTransitioning}
+              onClick={() => void toggleArchive(false)}
+            >
+              {t('patient.patients.actions.restore')}
+            </Button>
+          </div>
+        </Alert>
       ) : null}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} variant="underline">
@@ -343,39 +416,41 @@ export function PatientDetail({ id }: { id: string }) {
             fields={fields}
             groups={groups}
             initialValues={initialValues}
-            submitLabel={t('patient.patients.actions.save')}
-            cancelHref={LIST_HREF}
+            formId={FORM_ID}
+            // The action bar is rendered in the page header instead, so the form drops its
+            // own header and footer. `trackDirtyWhenEmbedded` keeps the unsaved-changes
+            // guard, which an embedded form otherwise leaves to its host.
+            embedded
+            trackDirtyWhenEmbedded
+            hideFooterActions
             successRedirect={successRedirect}
-            deleteRedirect={deleteRedirect}
             isLoading={isLoading}
             loadingMessage={t('patient.common.loading')}
             // Archiving does not freeze the card's own fields — the spec keeps history
             // readable and allows correcting a mistyped name — but it does block the
             // sub-resources, which their own sections enforce.
             onSubmit={async (values) => {
-              await updateCrud('patient/patients', {
-                id: values.id,
-                expectedUpdatedAt: values.updatedAt ?? null,
-                firstName: values.firstName,
-                lastName: values.lastName,
-                // Explicit null clears; `undefined` would leave the column untouched, and
-                // the two must not collapse.
-                birthDate: orNull(values.birthDate),
-                email: orNull(values.email),
-                phone: orNull(values.phone),
-                description: orNull(values.description),
-                ownerTeamMemberId: orNull(values.ownerTeamMemberId),
-                ...extractCustomFieldEntries(values as Record<string, unknown>),
-              })
-            }}
-            onDelete={async () => {
-              // `deleteCrud` carries the version in the body because `updatedAt` is not a
-              // top-level delete option. A record with documentation is refused with a 409
-              // naming archiving as the alternative.
-              await deleteCrud('patient/patients', {
-                id,
-                body: { id, expectedUpdatedAt: initialValues.updatedAt ?? null },
-              })
+              setIsSaving(true)
+              try {
+                await updateCrud('patient/patients', {
+                  id: values.id,
+                  expectedUpdatedAt: values.updatedAt ?? null,
+                  firstName: values.firstName,
+                  lastName: values.lastName,
+                  // Explicit null clears; `undefined` would leave the column untouched, and
+                  // the two must not collapse.
+                  birthDate: orNull(values.birthDate),
+                  email: orNull(values.email),
+                  phone: orNull(values.phone),
+                  description: orNull(values.description),
+                  ownerTeamMemberId: orNull(values.ownerTeamMemberId),
+                  // Every `cf_<key>` the operator filled in. The command splits them back
+                  // out of the payload before its own schema runs.
+                  ...extractCustomFieldEntries(values as Record<string, unknown>),
+                })
+              } finally {
+                setIsSaving(false)
+              }
             }}
           />
         </TabsContent>

@@ -3,6 +3,7 @@ import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
+import { parseWithCustomFields } from '@open-mercato/shared/lib/commands/helpers'
 import { runCrudCommandWrite } from '@open-mercato/shared/lib/commands/runCrudCommandWrite'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig, CrudIndexerConfig } from '@open-mercato/shared/lib/crud/types'
@@ -207,7 +208,11 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
   id: 'patient.patients.create',
   isUndoable: true,
   async execute(rawInput, ctx) {
-    const parsed = patientCreateSchema.parse(rawInput)
+    // `parseWithCustomFields` peels the custom-field payload off BEFORE the strict schema
+    // runs. The form posts each value as a top-level `cf_<key>`, and a plain
+    // `schema.parse` would drop every one of them silently — the record would save and the
+    // custom fields would simply never be written.
+    const { parsed, custom } = parseWithCustomFields(patientCreateSchema, rawInput)
     const scope = requirePatientScope(ctx)
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
@@ -224,7 +229,7 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       ownerTeamMemberId: parsed.ownerTeamMemberId ?? null,
       primaryAddress: parsed.primaryAddress,
       contacts: parsed.contacts ?? null,
-      customFields: parsed.customFields ?? null,
+      customFields: Object.keys(custom).length > 0 ? custom : null,
     })
 
     const replayed = await resolveIdempotentPatient(em, parsed.clientRequestId, digest, scope)
@@ -291,7 +296,7 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
         entityId: PATIENT_ENTITY_ID,
         action: 'created',
         scope,
-        customFields: parsed.customFields,
+        customFields: custom,
         events: patientCrudEvents,
         indexer: patientCrudIndexer,
         syncOrigin: ctx.syncOrigin,
@@ -475,7 +480,9 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     return { before: serializePatient(existing) }
   },
   async execute(rawInput, ctx) {
-    const parsed = patientUpdateSchema.parse(rawInput)
+    // Same split as create: the edit form posts `cf_<key>` alongside the record's own
+    // fields, and they must survive the strict parse to reach `customFields` below.
+    const { parsed, custom } = parseWithCustomFields(patientUpdateSchema, rawInput)
     const scope = requirePatientScope(ctx)
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
@@ -526,7 +533,7 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
       entityId: PATIENT_ENTITY_ID,
       action: 'updated',
       scope,
-      customFields: parsed.customFields,
+      customFields: custom,
       events: patientCrudEvents,
       indexer: patientCrudIndexer,
       syncOrigin: ctx.syncOrigin,

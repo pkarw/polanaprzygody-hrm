@@ -10,6 +10,7 @@ import {
   extractAllCustomFieldEntries,
 } from '@open-mercato/shared/lib/crud/custom-fields'
 import type { CustomFieldSet } from '@open-mercato/shared/modules/entities'
+import { CustomFieldDef } from '@open-mercato/core/modules/entities/data/entities'
 import {
   archived_at,
   birth_date,
@@ -91,6 +92,83 @@ if (patientCe?.fields?.length) {
   baseFieldSets.push({ entity: patientCe.id, fields: patientCe.fields, source: 'patient' })
 }
 const cfSel = buildCustomFieldSelectorsForEntity(ENTITY_ID, baseFieldSets)
+
+/**
+ * Custom-field keys for the CURRENT request.
+ *
+ * `cfSel.keys` only knows what `ce.ts` declares in code, and this module declares no
+ * built-in fields at all — every patient custom field is defined at runtime through
+ * "Manage fields". Projecting `cfSel.keys` alone therefore asks the query engine for
+ * nothing, and the edit form renders every custom field empty no matter what is stored.
+ *
+ * So the keys are discovered per request from the definitions visible in the caller's
+ * scope, and published on the per-request `CrudCtx` the factory creates. The WeakMap is
+ * keyed by that context, so one request never sees another's projection and the entry is
+ * collected with it.
+ */
+const requestCustomFieldKeys = new WeakMap<CrudCtx, string[]>()
+
+function customFieldKeysFor(ctx: CrudCtx): string[] {
+  return requestCustomFieldKeys.get(ctx) ?? cfSel.keys
+}
+
+function definitionPriority(def: CustomFieldDef): number {
+  const config = def.configJson
+  if (!config || typeof config !== 'object') return 0
+  const priority = (config as Record<string, unknown>).priority
+  return typeof priority === 'number' ? priority : 0
+}
+
+/**
+ * The organizations this request may read, or `null` for "not restricted".
+ *
+ * A definition may be tenant-wide (`organization_id is null`) or scoped to one
+ * organization, so both have to be admissible — but only the ones this caller is actually
+ * scoped to, which is why the selected organization is the fallback rather than a wildcard.
+ */
+function resolveScopedOrganizationIds(ctx: CrudCtx): string[] | null {
+  if (ctx.organizationIds === null) return null
+  const declared = (ctx.organizationIds ?? []).filter(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  )
+  if (declared.length > 0) return Array.from(new Set(declared))
+  const selected = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
+  return selected ? [selected] : []
+}
+
+async function discoverCustomFieldKeys(ctx: CrudCtx): Promise<string[]> {
+  const em = ctx.container.resolve<EntityManager>('em')
+  const tenantId = ctx.auth?.tenantId ?? null
+  const scopedOrgIds = resolveScopedOrganizationIds(ctx)
+
+  const defs = await em.find(CustomFieldDef, {
+    entityId: ENTITY_ID,
+    $and: [
+      ...(scopedOrgIds === null
+        ? []
+        : scopedOrgIds.length > 0
+          ? [{ $or: [{ organizationId: { $in: scopedOrgIds } }, { organizationId: null }] }]
+          : [{ organizationId: null }]),
+      { $or: [{ tenantId }, { tenantId: null }] },
+    ],
+  })
+
+  // A tenant- or organization-specific definition overrides the global one for the same key.
+  const byKey = new Map<string, CustomFieldDef>()
+  const specificity = (def: CustomFieldDef) => (def.tenantId ? 2 : 0) + (def.organizationId ? 1 : 0)
+  for (const def of defs) {
+    const existing = byKey.get(def.key)
+    if (!existing || specificity(def) > specificity(existing)) byKey.set(def.key, def)
+  }
+
+  const tombstonedKeys = new Set(defs.filter((def) => !!def.deletedAt).map((def) => def.key))
+  const keysFromDefs = Array.from(byKey.values())
+    .filter((def) => def.isActive !== false && !def.deletedAt && !tombstonedKeys.has(def.key))
+    .sort((left, right) => definitionPriority(left) - definitionPriority(right))
+    .map((def) => def.key)
+
+  return Array.from(new Set([...cfSel.keys, ...keysFromDefs]))
+}
 
 /**
  * `updated_at` is part of every projection because it IS the optimistic-lock token:
@@ -222,10 +300,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   list: {
     schema: querySchema,
     entityId: ENTITY_ID,
-    fields: (query: Query) => [
+    fields: (query: Query, ctx: CrudCtx) => [
       ...baseListFields,
       ...(isSingleRecordRequest(query) ? [descriptionField, birth_date, archived_at] : []),
-      ...cfSel.keys.map((key) => `cf:${key}`),
+      ...customFieldKeysFor(ctx).map((key) => `cf:${key}`),
     ],
     sortFieldMap,
     buildFilters: async (q: Query, ctx): Promise<Where<PatientRow>> => {
@@ -283,6 +361,20 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     allowCsv: false,
   },
   hooks: {
+    /**
+     * Publishes the request's custom-field keys before `fields` is consulted, so the
+     * projection includes fields an operator defined at runtime.
+     *
+     * Failing soft is deliberate: a discovery error must degrade to the code-declared
+     * selectors and still return the record, not turn a readable patient into an error.
+     */
+    beforeList: async (_query: Query, ctx: CrudCtx) => {
+      try {
+        requestCustomFieldKeys.set(ctx, await discoverCustomFieldKeys(ctx))
+      } catch {
+        // Fall back to the code-declared selectors.
+      }
+    },
     /**
      * Resolves the lead-carer display names for the whole page in a single query.
      *
