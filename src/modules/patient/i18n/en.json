@@ -76,6 +76,7 @@
   "patient.patients.confirm.restore.title": "Restore this patient record?",
   "patient.patients.contacts.add": "Link a contact",
   "patient.patients.contacts.addDraft": "Add another person",
+  "patient.patients.contacts.clearPerson": "Clear the selected person",
   "patient.patients.contacts.confirmUnlink.body": "Only the link to this patient is removed. The person's CRM record is not changed or deleted.",
   "patient.patients.contacts.confirmUnlink.title": "Unlink this contact?",
   "patient.patients.contacts.description": "People from the CRM linked to this patient. A patient may have none, and the same person may be linked to several patients.",

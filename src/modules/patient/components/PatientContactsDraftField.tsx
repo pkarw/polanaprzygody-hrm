@@ -1,19 +1,14 @@
 "use client"
 import * as React from 'react'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { Input } from '@open-mercato/ui/primitives/input'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { CheckboxField } from '@open-mercato/ui/primitives/checkbox-field'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@open-mercato/ui/primitives/select'
+import { ComboboxInput } from '@open-mercato/ui/backend/inputs/ComboboxInput'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
-import type { CrudFieldOption } from '@open-mercato/ui/backend/CrudForm'
-import { loadCrmPersonOptions } from './referencePickers'
+import { loadCrmPersonOptions, resolveCrmPersonContact, resolveCrmPersonLabel } from './referencePickers'
 
 /**
  * A draft guardian / contact / payer, as the create form holds it before the record exists.
@@ -66,30 +61,46 @@ export function isContactDraftComplete(draft: PatientContactDraft): boolean {
 export function PatientContactsDraftField({
   value,
   onChange,
+  formValues,
+  setFormValue,
 }: {
   value: PatientContactDraft[]
   onChange: (next: PatientContactDraft[]) => void
+  /** The enclosing form's current values, used to decide whether a field is still empty. */
+  formValues?: Record<string, unknown>
+  /** Writes into a sibling field of the enclosing form. */
+  setFormValue?: (id: string, next: unknown) => void
 }) {
   const t = useT()
-  const [query, setQuery] = React.useState('')
-  const [options, setOptions] = React.useState<CrudFieldOption[]>([])
 
-  React.useEffect(() => {
-    let cancelled = false
-    loadCrmPersonOptions(query)
-      .then((next) => {
-        if (!cancelled) setOptions(next)
-      })
-      .catch(() => {
-        // An operator without `customers.people.view` gets an empty picker rather than an
-        // error: the option source inherits the customers module's own ACL, and a patient with
-        // no contacts is a valid record.
-        if (!cancelled) setOptions([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [query])
+  /**
+   * Copies a newly chosen guardian's contact details into the patient's OWN empty fields.
+   *
+   * The spec permits a parent's contact details to be entered deliberately for a child, and
+   * forbids fetching them dynamically *in place of* the patient's data. This is the first: a
+   * one-time copy triggered by the operator picking that person, and only into a field that is
+   * still empty. Anything the operator typed is never overwritten, nothing is re-read later, and
+   * the copied values stay fully editable — the patient's fields remain the patient's own.
+   */
+  const seedPatientContactFrom = React.useCallback(
+    async (customerEntityId: string) => {
+      if (!customerEntityId || !setFormValue) return
+      const emailIsEmpty = !String(formValues?.email ?? '').trim()
+      const phoneIsEmpty = !String(formValues?.phone ?? '').trim()
+      // Nothing to fill — skip the request entirely rather than fetching and discarding.
+      if (!emailIsEmpty && !phoneIsEmpty) return
+      try {
+        const contact = await resolveCrmPersonContact(customerEntityId)
+        if (!contact) return
+        if (emailIsEmpty && contact.email) setFormValue('email', contact.email)
+        if (phoneIsEmpty && contact.phone) setFormValue('phone', contact.phone)
+      } catch {
+        // Prefilling is a convenience; failing to read the person must not disturb the form the
+        // operator is filling in.
+      }
+    },
+    [formValues, setFormValue],
+  )
 
   const update = React.useCallback(
     (index: number, patch: Partial<PatientContactDraft>) => {
@@ -118,58 +129,78 @@ export function PatientContactsDraftField({
     [value],
   )
 
+  /**
+   * Per-row option source.
+   *
+   * Each row searches on its own, so the query belongs to the control the operator is typing in
+   * rather than to a separate box above the list — with one shared box it was never clear which
+   * row a search applied to, and picking for a second guardian meant retyping.
+   *
+   * People already chosen in other rows are filtered out here rather than after selection, so the
+   * duplicate the server would reject with a 409 is simply not offered.
+   */
+  const loadOptionsExcludingTaken = React.useCallback(
+    async (selectedId: string, query?: string) => {
+      try {
+        const options = await loadCrmPersonOptions(query)
+        return options.filter(
+          (option) => option.value === selectedId || !takenIds.includes(option.value),
+        )
+      } catch {
+        // An operator without `customers.people.view` gets an empty picker rather than an error:
+        // the option source inherits the customers module's own ACL, and a patient with no
+        // contacts is a valid record.
+        return []
+      }
+    },
+    [takenIds],
+  )
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">{t('patient.patients.contacts.draftHint')}</p>
 
-      <div className="space-y-1">
-        <Label htmlFor="patient-contact-draft-search">{t('patient.patients.contacts.searchPerson')}</Label>
-        <Input
-          id="patient-contact-draft-search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t('patient.patients.contacts.searchPerson')}
-        />
-      </div>
-
       {value.map((draft, index) => {
-        const available = options.filter(
-          (option) => option.value === draft.customerEntityId || !takenIds.includes(option.value),
-        )
         return (
           <div key={index} className="space-y-3 rounded-md border p-3">
-            <div className="flex items-start justify-between gap-2">
+            {/* `items-end` so the icon button sits on the select's baseline rather than floating
+                level with the label above it. */}
+            <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1 space-y-1">
                 <Label htmlFor={`patient-contact-draft-${index}`}>
                   {t('patient.patients.contacts.person')}
                 </Label>
-                <Select
+                {/* A searchable combobox rather than a plain select: the operator types into the
+                    control they are filling in, and `allowCustomValues` stays off so the value is
+                    always a real CRM id and never free text the server would reject. */}
+                <ComboboxInput
                   value={draft.customerEntityId}
-                  onValueChange={(next) => update(index, { customerEntityId: next })}
-                >
-                  <SelectTrigger
-                    id={`patient-contact-draft-${index}`}
-                    aria-label={t('patient.patients.contacts.person')}
-                  >
-                    <SelectValue placeholder={t('patient.patients.contacts.selectPerson')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {available.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(next) => {
+                    update(index, { customerEntityId: next })
+                    void seedPatientContactFrom(next)
+                  }}
+                  placeholder={t('patient.patients.contacts.selectPerson')}
+                  loadSuggestions={(query) => loadOptionsExcludingTaken(draft.customerEntityId, query)}
+                  // Renders a already-chosen person by name on re-open, instead of leaving the
+                  // control looking empty until it is searched again.
+                  resolveLabel={resolveCrmPersonLabel}
+                  allowCustomValues={false}
+                  clearable
+                  clearLabel={t('patient.patients.contacts.clearPerson')}
+                />
               </div>
-              <Button
+              {/* Icon-only, so it carries both an `aria-label` and a `title`: the guide requires
+                  every icon-only control to be named for assistive tech, and the tooltip gives
+                  sighted users the same word the text button used to show. */}
+              <IconButton
                 type="button"
                 variant="outline"
+                aria-label={t('patient.patients.contacts.removeDraft')}
+                title={t('patient.patients.contacts.removeDraft')}
                 onClick={() => onChange(value.filter((_, position) => position !== index))}
-                // Icon-free text button so the control is self-describing without an aria-label.
               >
-                {t('patient.patients.contacts.removeDraft')}
-              </Button>
+                <Trash2 className="size-4" aria-hidden="true" />
+              </IconButton>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">

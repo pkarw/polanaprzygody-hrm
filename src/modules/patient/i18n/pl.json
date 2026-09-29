@@ -76,6 +76,7 @@
   "patient.patients.confirm.restore.title": "Przywrócić tę kartę pacjenta?",
   "patient.patients.contacts.add": "Powiąż kontakt",
   "patient.patients.contacts.addDraft": "Dodaj kolejną osobę",
+  "patient.patients.contacts.clearPerson": "Wyczyść wybraną osobę",
   "patient.patients.contacts.confirmUnlink.body": "Usuwane jest tylko powiązanie z tym pacjentem. Rekord osoby w CRM nie zostaje zmieniony ani usunięty.",
   "patient.patients.contacts.confirmUnlink.title": "Odpiąć ten kontakt?",
   "patient.patients.contacts.description": "Osoby z CRM powiązane z tym pacjentem. Pacjent może nie mieć żadnej, a ta sama osoba może być powiązana z wieloma pacjentami.",

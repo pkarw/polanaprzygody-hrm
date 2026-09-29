@@ -5,6 +5,7 @@ import { createCrud } from '@open-mercato/ui/backend/utils/crud'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import { loadTeamMemberOptions, resolveTeamMemberLabel } from './referencePickers'
+import { CountrySelectField } from './CountrySelectField'
 import {
   PatientContactsDraftField,
   createEmptyContactDraft,
@@ -139,20 +140,28 @@ function useIdentityFields(t: Translate): CrudField[] {
  * an incomplete row is dropped on submit rather than blocking the save. The server still
  * enforces every invariant on what is actually sent.
  */
-function useContactsField(t: Translate): CrudField {
+function useContactsField(): CrudField {
   return React.useMemo<CrudField>(
     () => ({
       id: 'contacts',
-      label: t('patient.patients.groups.contacts'),
+      // Intentionally blank. The enclosing group already renders "Guardians and contacts" as its
+      // heading, and repeating it as a field label printed the same title twice, one above the
+      // other. `CrudForm` skips a label whose trimmed length is zero, so this removes the
+      // duplicate without leaving an empty element behind.
+      label: '',
       type: 'custom',
-      component: ({ value, setValue }) => (
+      component: ({ value, setValue, values, setFormValue }) => (
         <PatientContactsDraftField
           value={Array.isArray(value) ? (value as PatientContactDraft[]) : []}
           onChange={(next) => setValue(next)}
+          // Lets a chosen guardian seed the patient's own empty email/phone, without ever
+          // overwriting something the operator typed.
+          formValues={values}
+          setFormValue={setFormValue}
         />
       ),
     }),
-    [t],
+    [],
   )
 }
 
@@ -184,11 +193,16 @@ function usePrimaryAddressFields(t: Translate): CrudField[] {
       {
         id: 'address_country',
         label: t('patient.patients.address.country'),
-        type: 'text',
+        // A picker over the installed ISO country dictionary, with flags, rather than a
+        // two-letter text box the operator has to know the code for.
+        type: 'custom',
         required: true,
-        maxLength: 2,
-        placeholder: t('patient.patients.address.countryPlaceholder'),
-        description: t('patient.patients.address.countryHint'),
+        component: ({ value, setValue }) => (
+          <CountrySelectField
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => setValue(next)}
+          />
+        ),
       },
     ],
     [t],
@@ -209,7 +223,7 @@ export function PatientCreateForm() {
   const t = useT()
   const identityFields = useIdentityFields(t)
   const addressFields = usePrimaryAddressFields(t)
-  const contactsField = useContactsField(t)
+  const contactsField = useContactsField()
   const fields = React.useMemo(
     () => [...identityFields, ...addressFields, contactsField],
     [identityFields, addressFields, contactsField],

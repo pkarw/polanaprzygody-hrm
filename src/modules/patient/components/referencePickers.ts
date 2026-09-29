@@ -41,6 +41,16 @@ type CrmPersonListItem = {
   id?: unknown
   display_name?: unknown
   displayName?: unknown
+  primary_email?: unknown
+  primary_phone?: unknown
+}
+
+/** The contact details copied from a guardian when the patient's own fields are still empty. */
+export type CrmPersonContact = {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
 }
 
 type ListResponse<T> = { items?: T[] }
@@ -146,10 +156,79 @@ export async function resolveTeamMemberLabel(id: string): Promise<string> {
  * person, and storing that one instead is the exact confusion the spec calls out.
  */
 export async function loadCrmPersonOptions(query?: string): Promise<CrudFieldOption[]> {
-  const params = new URLSearchParams({ pageSize: String(OPTION_PAGE_SIZE), isActive: 'true' })
-  if (query && query.trim().length > 0) params.set('search', query.trim())
+  const term = query?.trim() ?? ''
+
+  const params = new URLSearchParams({ pageSize: String(OPTION_PAGE_SIZE) })
+  if (term.length > 0) params.set('search', term)
   const data = await readApiResultOrThrow<ListResponse<CrmPersonListItem>>(
     `/api/customers/people?${params.toString()}`,
   )
-  return toOptions(data?.items ?? [])
+  const options = toOptions(data?.items ?? [])
+  if (term.length === 0 || options.length > 0) return options
+
+  /**
+   * Fallback: filter a page client-side when the server-side search returns nothing.
+   *
+   * `customers` encrypts `display_name`, so the people route's `$ilike` compares a plaintext
+   * pattern against ciphertext and matches nothing unless the search index happens to be
+   * populated for this tenant. The operator then types a name they can plainly see in the list
+   * and gets no results — which is exactly the failure this repairs.
+   *
+   * Re-fetching WITHOUT `search` returns rows whose `display_name` the API has already decrypted,
+   * so a case-insensitive substring test over the labels does what the operator expected. It is
+   * bounded by the same page size: for a CRM larger than one page this narrows less than a
+   * working index would, so the server search is still attempted first rather than replaced.
+   */
+  const unfiltered = await readApiResultOrThrow<ListResponse<CrmPersonListItem>>(
+    `/api/customers/people?pageSize=${OPTION_PAGE_SIZE}`,
+  )
+  const needle = term.toLocaleLowerCase()
+  return toOptions(unfiltered?.items ?? []).filter((option) =>
+    option.label.toLocaleLowerCase().includes(needle),
+  )
+}
+
+/**
+ * Resolves one already-chosen CRM person to their display label.
+ *
+ * Needed by the combobox so a guardian picked earlier renders by name when the form is reopened,
+ * instead of the control looking empty until the operator searches again.
+ */
+export async function resolveCrmPersonLabel(id: string): Promise<string> {
+  if (!id) return ''
+  const data = await readApiResultOrThrow<ListResponse<CrmPersonListItem>>(
+    `/api/customers/people?ids=${encodeURIComponent(id)}&pageSize=1`,
+  )
+  const first = (data?.items ?? [])[0]
+  return (first && readDisplayName(first)) || id
+}
+
+/** Reads a string field that may arrive in either casing, treating blank as absent. */
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+/**
+ * Fetches a CRM person's own contact details.
+ *
+ * Used to offer a guardian's email and phone as a starting point for a child's record. The spec
+ * allows a parent's contact details to be entered deliberately into the patient's own fields, and
+ * forbids fetching them dynamically *instead of* the patient's data — so this is a ONE-TIME copy
+ * triggered by the operator selecting that person, written only into fields that are still empty,
+ * and fully editable afterwards. Nothing re-reads it later, and no link is kept: the patient's
+ * fields remain the patient's own.
+ */
+export async function resolveCrmPersonContact(id: string): Promise<CrmPersonContact | null> {
+  if (!id) return null
+  const data = await readApiResultOrThrow<ListResponse<CrmPersonListItem>>(
+    `/api/customers/people?ids=${encodeURIComponent(id)}&pageSize=1`,
+  )
+  const first = (data?.items ?? [])[0]
+  if (!first || typeof first.id !== 'string') return null
+  return {
+    id: first.id,
+    name: readDisplayName(first),
+    email: readText(first.primary_email),
+    phone: readText(first.primary_phone),
+  }
 }
