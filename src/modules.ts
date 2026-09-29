@@ -172,7 +172,25 @@ export const enabledModules: ModuleEntry[] = [
   // Patient register (spec PAT, `.ai/specs/2026-09-29-patient-ehr-base.md`). Owns its
   // own record, addresses, CRM contact links, diagnoses and documentation links; reads
   // CRM people, staff team members and documents through their owners' APIs only.
-  { id: 'patient', from: '@app' },
+  {
+    id: 'patient',
+    from: '@app',
+    overrides: {
+      nav: {
+        // Puts "Opieka"/"Care" at the top of the backend sidebar. `defaultGroupOrder` in
+        // `auth/lib/backendChrome.tsx` ranks every group it lists ahead of every group it
+        // does not, so without this override the patient register would sort after the
+        // shipped groups no matter what `pageOrder` it declares. `groupOrder` PREPENDS the
+        // ids it names, so listing only this one leaves the shipped ordering otherwise
+        // untouched — nothing else is demoted by omission.
+        //
+        // The id is the untranslated group key, never the rendered label, so the position
+        // holds in every locale. This is a default: an operator's own sidebar arrangement,
+        // and a role-level one, still win over it.
+        groupOrder: ['patient.nav.group'],
+      },
+    },
+  },
 ]
 
 enabledModules.push({
