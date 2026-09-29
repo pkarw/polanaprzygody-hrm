@@ -474,7 +474,7 @@ Poza pierwotnym zakresem dokumentu, na wyraźną prośbę użytkownika:
 ### Weryfikacja
 
 Pełna bramka przechodzi: `yarn generate && yarn typecheck && yarn lint && yarn ds:check &&
-yarn test && yarn build`. Testy jednostkowe: 10 zestawów, 115 przypadków — w tym odwrócona
+yarn test && yarn build`. Testy jednostkowe: 16 zestawów, 179 przypadków — w tym odwrócona
 asercja SEC-ATT i oracle nazewnictwa tabel, dopisane po realnej awarii
 `relation "patients" does not exist` (nieaktualny rejestr w serwerze deweloperskim; wymagany
 restart po `yarn generate` i migracji — sam HMR nie wystarcza, bo metadane ORM i cache
@@ -486,6 +486,36 @@ rozwiązywania nazwy tabeli w `query/engine.ts` iteruje `metadata.getAll()` jak 
 MikroORM zwraca `Map`, więc skan nigdy nie trafia. W efekcie **jedyną działającą ścieżką jest
 wyszukanie po nazwie klasy**, a nazwy klas w `data/entities.ts` są nośne — pilnuje tego
 `src/modules/patient/__tests__/entityTableResolution.test.ts`.
+
+### Przejście przez moduł w przeglądarce
+
+Na wyraźną prośbę użytkownika („use the preview on 3000 and click thru all the module") całość
+przeklikano w uruchomionej aplikacji (Playwright/Chromium na `localhost:3000`, konto `admin`,
+UI po polsku). Każda akcja została doprowadzona do skutku i zweryfikowana po stronie danych,
+a nie tylko po widoku: 15/15 kroków przechodzi.
+
+Lista: render i stronicowanie listy → sortowanie po „Utworzono" → filtr statusu → wyszukiwanie →
+utworzenie karty z opiekunem → edycja i zapis karty → dodanie drugiego adresu → promocja adresu
+na główny → usunięcie adresu → powiązanie i odpięcie kontaktu → dodanie, skorygowanie i
+unieważnienie diagnozy → utworzenie i odpięcie dokumentu → odmowa na zakładce Pliki → archiwizacja
+z listy i przywrócenie z karty → usunięcie karty oraz odmowa 409 `patient_not_empty`, gdy karta ma
+dokumentację.
+
+Przebieg ujawnił defekty, których cała bramka statyczna nie widziała — żaden jej krok nie wykonuje
+zapytania SQL ani nie wywołuje trasy:
+
+| Defekt | Skutek dla operatora | Naprawa |
+|---|---|---|
+| Pola niestandardowe nie były ani zapisywane, ani projektowane | Wartość atrybutu znikała bez śladu | `parseWithCustomFields` w komendach; odkrywanie kluczy per żądanie w trasie |
+| Wyszukiwarka mapowała się na `patientNumber` z równością dokładną | „P-2" i każde nazwisko nie dawały wyników | `resolvePatientSearchIds`: substring po numerze + indeks tokenów + ograniczony fallback |
+| Każde DELETE kończyło się 400 | Odpięcie kontaktu, dokumentu, usunięcie adresu i karty nie działały | `buildDeleteCommandInput` — fabryka podaje DELETE `{ body, query }`, nie samo body |
+| Zakładka Adresy nie miała akcji dodania | Adresu nie dało się dodać ani edytować z UI | Sekcja renderuje własny nagłówek i akcję zgłoszoną przez `onActionChange` |
+| ~50 kluczy i18n sekcji adresów nie istniało | Edytor adresu po angielsku w polskim UI | Klucze uzupełnione |
+| Pola wymagane w dialogach bez oznaczenia | Wyłączony „Zapisz" bez informacji, czego brakuje | `FieldLabel required` |
+
+Regresje utrwalone jako wykonywalne oracle: `deleteInputMapping.test.ts` (każda trasa z akcją
+`delete` musi mapować wejście) obok istniejących `lockInsideTransaction.test.ts` i
+`entityTableResolution.test.ts`.
 
 **Testy integracyjne PAT-T01–PAT-T12 zostały napisane, ale nie zostały uruchomione.** Pliki są w
 `src/modules/patient/__integration__/`, przechodzą typecheck i są wykrywane przez discovery.
