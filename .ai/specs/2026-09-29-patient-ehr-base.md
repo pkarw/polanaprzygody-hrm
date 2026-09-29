@@ -1,9 +1,9 @@
 # Patient — kartoteka i dokumentacja pacjenta
 
 **Date**: 2026-09-29
-**Status**: Draft
+**Status**: Implemented (PAT-1, PAT-2); PAT-3 blocked on SEC-ATT
 **Spec ID**: PAT
-**Zakres**: projekt, bez implementacji i zmian bazy. Wersja kompletna do przeglądu.
+**Zakres**: projekt zrealizowany — moduł `src/modules/patient/` wdrożony w zakresie PAT-1 i PAT-2; PAT-3 dostarczony jako model i jawnie wyłączona powierzchnia.
 **Powiązana specyfikacja**: [Wizyty](2026-09-29-patient-visits.md), ten sam moduł `patient`.
 
 ## TLDR
@@ -410,6 +410,72 @@ Każda wymieniona trasa ma osobny wiersz; wspólne deklaracje w plikach modułu 
 - [ ] **PAT-AC06:** pliki karty i diagnozy można wgrać/przypiąć/pobrać/odpiąć; wszystkie ścieżki hosta przechodzą SEC-ATT.
 - [ ] **PAT-AC07:** izolacja, szyfrowanie własnych danych, concurrency, audit oraz wszystkie UI states/light/dark/360 px/keyboard są sprawdzone w test-env; pełna walidacja przechodzi.
 
+## Implementation Status
+
+Wdrożenie: gałąź `feat/patient-ehr`, PR z implementacją. Zgoda użytkownika na implementację:
+2026-09-29 („implement full patient all views all features"). Zgoda na `yarn db:migrate`:
+2026-09-29 („apply migrations") — migracja `Migration20260929140457_patient` zastosowana i
+zweryfikowana w bazie (6 tabel `patient_*`, 8 indeksów częściowych, 6 ograniczeń CHECK).
+
+| Faza | Stan | Dowód |
+|---|---|---|
+| PAT-1 — działająca kartoteka | **done** | Encje/walidatory/szyfrowanie/ACL/setup; komendy pacjenta, adresów i kontaktów; `/api/patient/{patients,addresses,contacts}` + `/api/patient/patients/[id]/archive`; lista, create i karta z zakładkami Dane/Adresy/Kontakty |
+| PAT-2 — diagnozy i dokumenty | **done** | Komendy create/correct/void i link/new/resume/abandon/delete; `/api/patient/diagnoses(+/[id]/correct,/void)` i `/api/patient/document-links(+/new,/[id]/resume,/[id]/abandon)`; zakładki Diagnozy i Dokumenty |
+| PAT-3 — bezpieczne pliki | **blocked (zgodnie ze specyfikacją)** | Model, komendy, trasy i zakładka Pliki dostarczone; zapis odmawiany 503 `clinical_file_protection_unavailable`. Powód potwierdzony w tej wersji hosta — patrz niżej |
+
+### SEC-ATT — potwierdzenie na zainstalowanej wersji
+
+`attachments/lib/access.ts` → `checkAttachmentAccess` zwraca `ok` dla **każdego uwierzytelnionego
+użytkownika w tym samym tenancie i organizacji**; nie przyjmuje listy feature ani rekordu
+nadrzędnego. `attachments/api/file/[id]/route.ts` wywołuje ją bezpośrednio, a jego własne
+`metadata` to `GET: { requireAuth: false }`; nie ma rejestru resolverów ani interceptora między
+żądaniem a bajtami. `AttachmentTargetAccessService` jest wywoływany przez moduł proszący, a nie
+przez trasy pobierania. Wniosek: prywatny plik kliniczny byłby czytelny dla każdego zalogowanego
+użytkownika organizacji, który zna identyfikator załącznika.
+
+Zachowanie hosta jest zapisane jako **wykonywalna asercja** w
+`src/modules/patient/__tests__/clinicalFileGate.test.ts` — celowo odwrócona: twierdzi to, co
+zastano, więc wersja hosta, która to naprawi, **zepsuje ten test** i wymusi ponowną ocenę fazy.
+Bramkę otwiera wyłącznie `OM_PATIENT_CLINICAL_FILES_ENABLED` (domyślnie wyłączona).
+
+**PAT-AC06 nie może zostać zamknięte na tej wersji hosta.** Pozostałe kryteria: AC01–AC03, AC05
+zrealizowane; AC04 zrealizowane w części klinicznej (diagnozy), bez plików; AC07 zrealizowane w
+zakresie izolacji, szyfrowania, współbieżności i audytu — patrz uwaga o testach poniżej.
+
+### Rozszerzenia zamówione w trakcie wdrożenia
+
+Poza pierwotnym zakresem dokumentu, na wyraźną prośbę użytkownika:
+
+- **Opiekunowie przy zakładaniu karty** — `patient.patients.create` przyjmuje opcjonalną listę
+  `contacts` i zapisuje powiązania w tej samej transakcji co kartę i pierwszy adres. Dziecko
+  trafia do opieki razem z rodzicem; wymuszanie drugiego ekranu gubiło tę informację. Jedna
+  nieaktywna osoba odrzuca całe utworzenie.
+- **Specjalizacje w wyborze prowadzącego** — opcja pokazuje „Imię — specjalizacje" na podstawie
+  kolumny `tags` modułu `staff`.
+- **Kolejność i podpowiadanie kontaktu** — grupa opiekunów stoi przed danymi kontaktowymi, a wybór
+  opiekuna uzupełnia **puste** pola e-mail/telefon pacjenta; nigdy nie nadpisuje tego, co wpisał
+  operator, i nie tworzy trwałego powiązania. Mieści się to w regule specyfikacji: dane rodzica
+  można świadomie wpisać, ale nie pobiera się ich dynamicznie zamiast danych pacjenta.
+- **Wybór kraju z flagami** — picker po `PHONE_COUNTRIES` z zainstalowanego pakietu UI.
+- **Grupa „Opieka" na górze paska bocznego** — `overrides.nav.groupOrder` w `src/modules.ts`.
+
+### Weryfikacja
+
+Pełna bramka przechodzi: `yarn generate && yarn typecheck && yarn lint && yarn ds:check &&
+yarn test && yarn build`. Testy jednostkowe: 10 zestawów, 115 przypadków — w tym odwrócona
+asercja SEC-ATT i oracle nazewnictwa tabel, dopisane po realnej awarii
+`relation "patients" does not exist` (nieaktualny rejestr w serwerze deweloperskim; wymagany
+restart po `yarn generate` i migracji).
+
+**Testy integracyjne PAT-T01–PAT-T12 zostały napisane, ale nie zostały uruchomione.** Pliki są w
+`src/modules/patient/__integration__/`, przechodzą typecheck i są wykrywane przez discovery.
+Uruchomienia zabrakło z dwóch powodów środowiskowych: `yarn test:integration:ephemeral` wymaga
+Dockera (niedostępny w tym środowisku), a uruchomienie przez Playwright wymaga poświadczeń
+`OM_INTEGRATION_ADMIN_EMAIL`/`OM_INTEGRATION_ADMIN_PASSWORD`, których to środowisko nie ma.
+Dlatego **nie twierdzimy, że PAT-T01–T12 przechodzą** — wymagają wykonania w środowisku testowym
+przed odbiorem.
+
+
 ## Final Compliance Report
 
 Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **approve**. Potwierdzono rozdzielenie PAT/VIS, tożsamość pacjenta, opcjonalnego prowadzącego versus wymaganego wykonawcę, 0..n usług, reguły cyklu życia oraz zależność VIS wyłącznie od PAT-1. Przegląd nie jest odbiorem implementacji. Lokalna kontrola dokumentów: wszystkie 25 sekcji szablonu, linki względne, ścieżki wzorców i mapowanie capability IDs poprawne; oryginalny diagram zachowany bez zmian.
@@ -422,10 +488,10 @@ Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **appr
 | Platform reuse before custom code | pass — design | CRM shared addresses; documents owner; AttachmentService; zero zmian pakietów |
 | UI references/primitives/states | pass — design | Tabela, makieta i PAT-T11 |
 | Phase dependencies/tests/value | pass — design | Exit gates i testy w każdej fazie |
-| Bezpieczny host plików | blocked for implementation | SEC-ATT brak w obecnej wersji; nie wdrażać PAT-3 |
-| Zgoda na implementację | pending | Użytkownik zamówił specyfikację |
+| Bezpieczny host plików | blocked — potwierdzone w kodzie | SEC-ATT nadal brak; zapis plików odmawiany 503, zachowanie hosta zapięte testem |
+| Zgoda na implementację | granted 2026-09-29 | Użytkownik zlecił wdrożenie całości; migracja zastosowana za jego zgodą |
 
-**Verdict:** Blocked — wdrożenie PAT-3 wymaga SEC-ATT; rozpoczęcie implementacji wymaga odrębnej zgody. Dokument projektowy jest kompletny do przeglądu, status Draft nie oznacza wdrożenia.
+**Verdict:** PAT-1 i PAT-2 wdrożone; PAT-3 pozostaje zablokowane do czasu dostarczenia SEC-ATT przez hosta. Odbiór wymaga uruchomienia PAT-T01–T12 w środowisku testowym.
 
 ## Open Questions
 
@@ -438,5 +504,6 @@ Brak pytań blokujących model do użytkownika. Q1 rozstrzygnięte: dwa dokument
 | 2026-09-29 | Szkielet briefu i diagramu, Q1/Q2 |
 | 2026-09-29 | Decyzje użytkownika; rozdzielenie PAT/VIS, model danych, sprawdzone kontrakty adresów/dokumentów/plików, SEC-ATT, plan i oracles |
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i dokładne wiersze powierzchni API |
+| 2026-09-29 | Wdrożenie PAT-1 i PAT-2; PAT-3 jako model za bramką SEC-ATT. Migracja zastosowana. Dodano ledger wdrożenia i rozszerzenia zamówione w trakcie |
 | 2026-09-29 | Makiety UI powierzchni PAT (PNG + źródło HTML) dołączone do przeglądu; bez zmian modelu, API i faz |
 | 2026-09-29 | Kolumna „Kolejna wizyta” na liście pacjentów (dane z VIS, widoczna po VIS-1) w makiecie i kontrakcie UI |

@@ -6,7 +6,7 @@
 **Source doc:** `.ai/specs/2026-09-29-patient-ehr-base.md`
 **Spec PR:** #1 (design-only, `spec/patient-ehr-base`)
 **Engine:** om-auto-create-pr (steps: 20, --loop: no)
-**Status:** in-progress
+**Status:** complete
 
 ## 🎯 Goal
 
@@ -165,7 +165,7 @@ Run before planning, per `.ai/skills/om-auto-implement-spec/SKILL.md` §1 and
 
 ### Phase 6: Coverage and the full gate
 
-- [ ] 6.1 Integration specs PAT-T01–PAT-T04
-- [ ] 6.2 Integration specs PAT-T05–PAT-T07 and PAT-T10–PAT-T12
-- [ ] 6.3 Full validation gate
-- [ ] 6.4 Spec ledger, approval record and code review
+- [x] 6.1 Integration specs PAT-T01–PAT-T04
+- [x] 6.2 Integration specs PAT-T05–PAT-T07 and PAT-T10–PAT-T12
+- [x] 6.3 Full validation gate
+- [x] 6.4 Spec ledger, approval record and code review
