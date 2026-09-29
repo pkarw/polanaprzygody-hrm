@@ -1,0 +1,76 @@
+{
+  "patient.nav.group": "Opieka",
+  "patient.nav.patients": "Pacjenci",
+
+  "patient.patients.title": "Pacjenci",
+  "patient.patients.description": "Kartoteka pacjentów, ich własne dane kontaktowe, adresy i dokumentacja.",
+  "patient.patients.create.title": "Dodaj pacjenta",
+  "patient.patients.create.description": "Karta i jej pierwszy adres zapisują się razem.",
+  "patient.patients.detail.title": "Pacjent",
+
+  "patient.patients.actions.add": "Dodaj pacjenta",
+  "patient.patients.actions.save": "Zapisz",
+  "patient.patients.actions.archive": "Archiwizuj",
+  "patient.patients.actions.restore": "Przywróć",
+  "patient.patients.actions.delete": "Usuń",
+  "patient.patients.actions.open": "Otwórz",
+
+  "patient.patients.columns.number": "Numer",
+  "patient.patients.columns.name": "Imię i nazwisko",
+  "patient.patients.columns.contact": "Kontakt",
+  "patient.patients.columns.owner": "Prowadzący",
+  "patient.patients.columns.status": "Status",
+  "patient.patients.columns.createdAt": "Utworzono",
+
+  "patient.patients.filters.status": "Status",
+  "patient.patients.filters.search": "Szukaj po numerze lub dokładnych danych",
+
+  "patient.patients.status.active": "Aktywny",
+  "patient.patients.status.archived": "Zarchiwizowany",
+
+  "patient.patients.fields.firstName": "Imię",
+  "patient.patients.fields.lastName": "Nazwisko",
+  "patient.patients.fields.birthDate": "Data urodzenia",
+  "patient.patients.fields.email": "E-mail",
+  "patient.patients.fields.phone": "Telefon",
+  "patient.patients.fields.description": "Opis",
+  "patient.patients.fields.descriptionHint": "Notatka organizacyjna widoczna dla każdego, kto może otworzyć kartę. Treści kliniczne wpisuj w diagnozie.",
+  "patient.patients.fields.ownerTeamMember": "Prowadzący",
+  "patient.patients.fields.ownerTeamMemberHint": "Opcjonalny. Nie nadaje dostępu i nie jest osobą realizującą wizytę.",
+
+  "patient.patients.groups.identity": "Dane",
+  "patient.patients.groups.contact": "Dane kontaktowe",
+  "patient.patients.groups.primaryAddress": "Pierwszy adres",
+  "patient.patients.groups.custom": "Pola dodatkowe",
+
+  "patient.patients.tabs.data": "Dane i pola dodatkowe",
+  "patient.patients.tabs.addresses": "Adresy",
+  "patient.patients.tabs.contacts": "Kontakty",
+  "patient.patients.tabs.diagnoses": "Diagnozy",
+  "patient.patients.tabs.documents": "Dokumenty",
+  "patient.patients.tabs.files": "Pliki",
+
+  "patient.patients.validation.contactRequired": "Podaj co najmniej e-mail albo telefon.",
+  "patient.patients.validation.birthDateFuture": "Data urodzenia nie może być w przyszłości.",
+
+  "patient.patients.empty.title": "Nie ma jeszcze żadnej karty",
+  "patient.patients.empty.body": "Dodaj pierwszą kartę, aby rozpocząć kartotekę.",
+
+  "patient.common.loading": "Ładowanie…",
+  "patient.common.retry": "Spróbuj ponownie",
+  "patient.common.error": "Nie udało się wczytać tej sekcji.",
+  "patient.common.forbidden": "Nie masz dostępu do tych informacji.",
+  "patient.common.notFound": "Ten rekord jest niedostępny.",
+  "patient.common.conflict": "Ktoś inny zmienił ten rekord. Wczytaj aktualną wersję — Twoje dane zostały zachowane.",
+  "patient.common.reload": "Wczytaj aktualną wersję",
+  "patient.common.cancel": "Anuluj",
+  "patient.common.confirm": "Potwierdź",
+  "patient.common.unavailableReference": "Niedostępny",
+  "patient.common.required": "Wymagane",
+
+  "patient.audit.patients.create": "Utwórz pacjenta",
+  "patient.audit.patients.update": "Aktualizuj pacjenta",
+  "patient.audit.patients.archive": "Archiwizuj pacjenta",
+  "patient.audit.patients.restore": "Przywróć pacjenta",
+  "patient.audit.patients.delete": "Usuń pacjenta"
+}

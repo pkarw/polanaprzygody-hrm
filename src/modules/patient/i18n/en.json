@@ -1,0 +1,76 @@
+{
+  "patient.nav.group": "Care",
+  "patient.nav.patients": "Patients",
+
+  "patient.patients.title": "Patients",
+  "patient.patients.description": "Patient records, their own contact details, addresses and documentation.",
+  "patient.patients.create.title": "Add patient",
+  "patient.patients.create.description": "The record and its first address are saved together.",
+  "patient.patients.detail.title": "Patient",
+
+  "patient.patients.actions.add": "Add patient",
+  "patient.patients.actions.save": "Save",
+  "patient.patients.actions.archive": "Archive",
+  "patient.patients.actions.restore": "Restore",
+  "patient.patients.actions.delete": "Delete",
+  "patient.patients.actions.open": "Open",
+
+  "patient.patients.columns.number": "Number",
+  "patient.patients.columns.name": "Name",
+  "patient.patients.columns.contact": "Contact",
+  "patient.patients.columns.owner": "Lead carer",
+  "patient.patients.columns.status": "Status",
+  "patient.patients.columns.createdAt": "Created",
+
+  "patient.patients.filters.status": "Status",
+  "patient.patients.filters.search": "Search by number or exact details",
+
+  "patient.patients.status.active": "Active",
+  "patient.patients.status.archived": "Archived",
+
+  "patient.patients.fields.firstName": "First name",
+  "patient.patients.fields.lastName": "Last name",
+  "patient.patients.fields.birthDate": "Date of birth",
+  "patient.patients.fields.email": "Email",
+  "patient.patients.fields.phone": "Phone",
+  "patient.patients.fields.description": "Notes",
+  "patient.patients.fields.descriptionHint": "Organisational notes visible to anyone who can view the record. Clinical content belongs in a diagnosis.",
+  "patient.patients.fields.ownerTeamMember": "Lead carer",
+  "patient.patients.fields.ownerTeamMemberHint": "Optional. Does not grant access and is not the person who performs a visit.",
+
+  "patient.patients.groups.identity": "Details",
+  "patient.patients.groups.contact": "Contact details",
+  "patient.patients.groups.primaryAddress": "First address",
+  "patient.patients.groups.custom": "Additional fields",
+
+  "patient.patients.tabs.data": "Details and additional fields",
+  "patient.patients.tabs.addresses": "Addresses",
+  "patient.patients.tabs.contacts": "Contacts",
+  "patient.patients.tabs.diagnoses": "Diagnoses",
+  "patient.patients.tabs.documents": "Documents",
+  "patient.patients.tabs.files": "Files",
+
+  "patient.patients.validation.contactRequired": "Provide at least an email address or a phone number.",
+  "patient.patients.validation.birthDateFuture": "The date of birth cannot be in the future.",
+
+  "patient.patients.empty.title": "No patient records yet",
+  "patient.patients.empty.body": "Add the first record to start the register.",
+
+  "patient.common.loading": "Loading…",
+  "patient.common.retry": "Try again",
+  "patient.common.error": "Could not load this section.",
+  "patient.common.forbidden": "You do not have access to this information.",
+  "patient.common.notFound": "This record is not available.",
+  "patient.common.conflict": "Someone else changed this record. Reload the current version — your input has been kept.",
+  "patient.common.reload": "Load the current version",
+  "patient.common.cancel": "Cancel",
+  "patient.common.confirm": "Confirm",
+  "patient.common.unavailableReference": "Unavailable",
+  "patient.common.required": "Required",
+
+  "patient.audit.patients.create": "Create patient",
+  "patient.audit.patients.update": "Update patient",
+  "patient.audit.patients.archive": "Archive patient",
+  "patient.audit.patients.restore": "Restore patient",
+  "patient.audit.patients.delete": "Delete patient"
+}

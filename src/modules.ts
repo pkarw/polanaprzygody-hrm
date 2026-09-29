@@ -169,6 +169,10 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'customer_accounts', from: '@open-mercato/core' },
   { id: 'portal', from: '@open-mercato/core' },
   { id: 'ratelimit_probe', from: '@app' },
+  // Patient register (spec PAT, `.ai/specs/2026-09-29-patient-ehr-base.md`). Owns its
+  // own record, addresses, CRM contact links, diagnoses and documentation links; reads
+  // CRM people, staff team members and documents through their owners' APIs only.
+  { id: 'patient', from: '@app' },
 ]
 
 enabledModules.push({
