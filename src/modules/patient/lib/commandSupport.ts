@@ -52,6 +52,50 @@ export function requireActorUserId(ctx: CommandRuntimeContext): string {
 }
 
 /**
+ * How long a patient write may wait for the aggregate row lock before giving up.
+ *
+ * Postgres waits for a row lock FOREVER by default, and this deployment sets no global
+ * `lock_timeout` (`DB_LOCK_TIMEOUT_MS` is unset). Without a bound, a single holder — another
+ * clinician mid-save, or a transaction left open by an abandoned request until
+ * `idle_in_transaction_session_timeout` reaps it two minutes later — turns the next write to
+ * the same patient into a request that never answers. The operator does not see a conflict;
+ * they see the proxy in front of the app give up, which is an opaque 502 in the save dialog
+ * with nothing written and nothing to act on.
+ *
+ * Five seconds is longer than any healthy patient write (each one is a handful of statements
+ * against locked rows) and far shorter than any front-end read timeout, so a genuinely
+ * contended save fails as a conflict the clinician can retry rather than as a dead request.
+ * Override with `PATIENT_LOCK_WAIT_TIMEOUT_MS`; `0` restores the unbounded database default.
+ */
+const PATIENT_LOCK_WAIT_TIMEOUT_DEFAULT_MS = 5_000
+
+export function resolvePatientLockWaitTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number.parseInt(env.PATIENT_LOCK_WAIT_TIMEOUT_MS ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return PATIENT_LOCK_WAIT_TIMEOUT_DEFAULT_MS
+  return parsed
+}
+
+/** Postgres `lock_not_available` — raised when `lock_timeout` elapses waiting for a row lock. */
+const PG_LOCK_NOT_AVAILABLE = '55P03'
+
+/**
+ * Walks the driver error chain looking for the lock-timeout SQLSTATE.
+ *
+ * MikroORM wraps driver errors, and how deeply depends on the code path, so the code is
+ * looked for on the error itself and on every `previous`/`cause` below it rather than at one
+ * fixed depth.
+ */
+export function isLockWaitTimeout(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth += 1) {
+    const candidate = current as { code?: unknown; previous?: unknown; cause?: unknown }
+    if (candidate.code === PG_LOCK_NOT_AVAILABLE) return true
+    current = candidate.previous ?? candidate.cause
+  }
+  return false
+}
+
+/**
  * Locks the patient row and returns it, or 404s.
  *
  * `LockMode.PESSIMISTIC_WRITE` is a `SELECT … FOR UPDATE`, and taking it *before* the
@@ -62,24 +106,56 @@ export function requireActorUserId(ctx: CommandRuntimeContext): string {
  * diagnosis-chain correction and the archive/delete precondition checks. Every command
  * that touches a patient's children takes it on the patient first, so the lock order is
  * always patient → child and two commands cannot deadlock by approaching from opposite ends.
+ *
+ * The wait is bounded (see {@link PATIENT_LOCK_WAIT_TIMEOUT_DEFAULT_MS}) and a timeout is
+ * reported as a 409 rather than a 500: nothing was written, the request is safe to repeat,
+ * and the create commands carry a `clientRequestId`, so a retry resolves to one entry.
+ * `SET LOCAL` scopes the bound to the current transaction, so it is reverted on commit or
+ * rollback and never leaks to the next user of the pooled connection — which is also why
+ * every caller must already be inside the transaction (`lockInsideTransaction.test.ts`).
  */
 export async function lockPatient(
   em: EntityManager,
   patientId: string,
   scope: PatientScope,
 ): Promise<Patient> {
-  const patient = await em.findOne(
-    Patient,
-    {
-      id: patientId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      deletedAt: null,
-    } as FilterQuery<Patient>,
-    { lockMode: LockMode.PESSIMISTIC_WRITE },
-  )
+  await applyLockWaitBound(em)
+  let patient: Patient | null
+  try {
+    patient = await em.findOne(
+      Patient,
+      {
+        id: patientId,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        deletedAt: null,
+      } as FilterQuery<Patient>,
+      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    )
+  } catch (error) {
+    if (isLockWaitTimeout(error)) {
+      throw new CrudHttpError(409, {
+        error: 'This patient record is being changed right now; try again in a moment',
+        code: 'patient_locked',
+      })
+    }
+    throw error
+  }
   if (!patient) throw new CrudHttpError(404, { error: 'Patient not found' })
   return patient
+}
+
+/**
+ * Bounds the row-lock wait for the rest of the enclosing transaction.
+ *
+ * `set_config` rather than a `SET LOCAL` string so the value stays a bound parameter — the
+ * `SET` statement takes no placeholders, and building it by concatenation would put a
+ * configuration value into SQL text.
+ */
+async function applyLockWaitBound(em: EntityManager): Promise<void> {
+  const timeoutMs = resolvePatientLockWaitTimeoutMs()
+  if (timeoutMs <= 0) return
+  await em.execute('select set_config(?, ?, true)', ['lock_timeout', `${timeoutMs}ms`])
 }
 
 /** An archived record accepts no new entries, but stays readable. */

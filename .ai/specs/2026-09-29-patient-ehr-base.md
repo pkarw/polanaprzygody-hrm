@@ -512,10 +512,42 @@ zapytania SQL ani nie wywołuje trasy:
 | Zakładka Adresy nie miała akcji dodania | Adresu nie dało się dodać ani edytować z UI | Sekcja renderuje własny nagłówek i akcję zgłoszoną przez `onActionChange` |
 | ~50 kluczy i18n sekcji adresów nie istniało | Edytor adresu po angielsku w polskim UI | Klucze uzupełnione |
 | Pola wymagane w dialogach bez oznaczenia | Wyłączony „Zapisz" bez informacji, czego brakuje | `FieldLabel required` |
+| Oczekiwanie na blokadę wiersza pacjenta było nieograniczone | „Request failed (502)" przy zapisie diagnozy: żądanie nie odpowiadało, dopóki trwała cudza transakcja | `lockPatient` ustawia `lock_timeout` na czas transakcji i zwraca 409 `patient_locked` |
 
 Regresje utrwalone jako wykonywalne oracle: `deleteInputMapping.test.ts` (każda trasa z akcją
-`delete` musi mapować wejście) obok istniejących `lockInsideTransaction.test.ts` i
-`entityTableResolution.test.ts`.
+`delete` musi mapować wejście) i `lockWaitBound.test.ts` (oczekiwanie na blokadę jest ograniczone
+przed jej pobraniem, a przekroczenie limitu to 409, nie 500) obok istniejących
+`lockInsideTransaction.test.ts` i `entityTableResolution.test.ts`.
+
+### Nieograniczone oczekiwanie na blokadę agregatu (2026-09-30)
+
+Zgłoszenie z przeglądarki: dialog „Dodaj diagnozę" kończył się `Request failed (502)`, bez zapisu.
+Trasa `POST /api/patient/diagnoses` sama w sobie działa — odtworzenie żądania 1:1 wobec działającej
+aplikacji zwraca 201 i wiersz w bazie. Komunikat pochodził z bramy dev-runtime przed aplikacją:
+`{"error":{"code":"upstream_unavailable"}}`, czyli „żądanie nie doczekało się odpowiedzi", a nie
+odpowiedź trasy.
+
+Przyczyna: `lockPatient` pobiera `SELECT … FOR UPDATE` na wierszu pacjenta, Postgres czeka na
+blokadę wiersza domyślnie **bez limitu**, a to wdrożenie nie ustawia globalnego `lock_timeout`
+(`DB_LOCK_TIMEOUT_MS` jest wyłączone). Wystarczyła jedna transakcja trzymająca ten wiersz —
+równoległy zapis albo transakcja porzuconego żądania, którą `idle_in_transaction_session_timeout`
+sprząta dopiero po dwóch minutach — aby każdy następny zapis tego pacjenta stał się żądaniem bez
+odpowiedzi. Dotyczyło to wszystkich zapisów agregatu, nie tylko diagnoz.
+
+Odtworzenie i dowód naprawy (psql trzyma `FOR UPDATE` na wierszu pacjenta, równolegle `POST`
+diagnozy):
+
+| Stan | Wynik |
+|---|---|
+| przed naprawą | brak odpowiedzi przez 40 s (klient rezygnuje; przeglądarka pokazuje 502) |
+| po naprawie | `409 {"code":"patient_locked"}` po 5,17 s |
+| po zwolnieniu blokady | `201` |
+
+Limit jest ustawiany przez `set_config('lock_timeout', …, true)` — `SET LOCAL`, więc obowiązuje
+tylko w bieżącej transakcji i nie wycieka do kolejnego użytkownika połączenia z puli. Domyślnie
+5 s, zmienne przez `PATIENT_LOCK_WAIT_TIMEOUT_MS` (`0` przywraca zachowanie bazy). 409 jest
+bezpieczne do ponowienia: nic nie zostało zapisane, a komendy tworzące niosą `clientRequestId`,
+więc powtórzenie rozwiązuje się do jednego wpisu.
 
 **Testy integracyjne PAT-T01–PAT-T12 zostały napisane, ale nie zostały uruchomione.** Pliki są w
 `src/modules/patient/__integration__/`, przechodzą typecheck i są wykrywane przez discovery.
@@ -557,3 +589,4 @@ Brak pytań blokujących model do użytkownika. Q1 rozstrzygnięte: dwa dokument
 | 2026-09-29 | Wdrożenie PAT-1 i PAT-2; PAT-3 jako model za bramką SEC-ATT. Migracja zastosowana. Dodano ledger wdrożenia i rozszerzenia zamówione w trakcie |
 | 2026-09-29 | Makiety UI powierzchni PAT (PNG + źródło HTML) dołączone do przeglądu; bez zmian modelu, API i faz |
 | 2026-09-29 | Kolumna „Kolejna wizyta” na liście pacjentów (dane z VIS, widoczna po VIS-1) w makiecie i kontrakcie UI |
+| 2026-09-30 | Ograniczone oczekiwanie na blokadę wiersza pacjenta; przekroczenie limitu to 409 `patient_locked`, a nie żądanie bez odpowiedzi. Bez zmian modelu, API i faz |
