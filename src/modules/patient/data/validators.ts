@@ -480,6 +480,35 @@ export const patientVisitAvailabilityCheckQuerySchema = z.object({
   }
 })
 
+const PATIENT_VISIT_CALENDAR_MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1_000
+
+export const patientVisitCalendarQuerySchema = z.object({
+  from: patientVisitInstantSchema,
+  to: patientVisitInstantSchema,
+  teamMemberId: z.string().uuid().optional(),
+  resourceId: z.string().uuid().optional(),
+  patientId: z.string().uuid().optional(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']).optional(),
+}).strict().superRefine((value, ctx) => {
+  const from = Date.parse(value.from)
+  const to = Date.parse(value.to)
+  if (to <= from) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range end must be later than its start',
+    })
+    return
+  }
+  if (to - from > PATIENT_VISIT_CALENDAR_MAX_RANGE_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range cannot exceed 62 days',
+    })
+  }
+})
+
 export const patientVisitCreateSchema = z
   .object({
     ...visitScheduleFields,

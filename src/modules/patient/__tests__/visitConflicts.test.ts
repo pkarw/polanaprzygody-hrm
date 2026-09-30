@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals'
 import {
   evaluateVisitConflicts,
+  redactVisitConflictsForRead,
   worstVisitConflictSeverity,
   type VisitConflictDraft,
   type VisitSubjectAvailability,
@@ -103,6 +104,26 @@ describe('evaluateVisitConflicts', () => {
     ])
     expect(conflicts[0]?.reasonLabel).toBe('Approved leave')
     expect(worstVisitConflictSeverity(conflicts)).toBe('blocking')
+  })
+
+  it('keeps an absence blocking but redacts its staff-owned reason and source for readers without access', () => {
+    const [raw] = evaluateVisitConflicts({
+      draft: draft(),
+      subjects: [member({ unavailableWindows: [{
+        start: at(9), end: at(12), reasonKind: 'leave', reasonLabel: 'Medical leave',
+      }] })],
+      overlappingVisits: [],
+    })
+    const [redacted] = redactVisitConflictsForRead(raw ? [raw] : [], {
+      exposeMemberReason: false,
+      exposeResourceReason: false,
+    })
+    expect(redacted).toMatchObject({ code: 'member_unavailable', severity: 'blocking' })
+    expect(redacted).not.toHaveProperty('reasonLabel')
+    expect(redactVisitConflictsForRead(raw ? [raw] : [], {
+      exposeMemberReason: true,
+      exposeResourceReason: false,
+    })[0]).toEqual(raw)
   })
 
   it('reports no schedule as info and outside schedule as warning', () => {

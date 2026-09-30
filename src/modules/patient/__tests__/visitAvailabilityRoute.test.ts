@@ -58,6 +58,7 @@ describe('visit availability-check route', () => {
     expect(source).toContain('ctx.selectedOrganizationId ?? ctx.auth?.orgId')
     expect(source).toContain("canViewHostReason(ctx, scope, 'staff.view')")
     expect(source).toContain("canViewHostReason(ctx, scope, 'resources.view')")
+    expect(source).toContain('redactVisitConflictsForRead(')
     expect(source).not.toContain('tenantId: parsed')
     expect(source).not.toContain('organizationId: parsed')
   })

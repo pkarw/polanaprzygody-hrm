@@ -10,6 +10,7 @@ import type {
 import type { PatientReferenceService } from '../../../lib/patientReferenceService'
 import {
   evaluateVisitConflicts,
+  redactVisitConflictsForRead,
   worstVisitConflictSeverity,
 } from '../../../lib/visitConflicts'
 import {
@@ -126,7 +127,10 @@ export async function GET(request: Request) {
         excludeVisitId: parsed.excludeVisitId,
       }),
     ])
-    const conflicts = evaluateVisitConflicts({ draft, subjects, overlappingVisits })
+    const conflicts = redactVisitConflictsForRead(
+      evaluateVisitConflicts({ draft, subjects, overlappingVisits }),
+      { exposeMemberReason, exposeResourceReason },
+    )
     return NextResponse.json({
       conflicts,
       worstSeverity: worstVisitConflictSeverity(conflicts),

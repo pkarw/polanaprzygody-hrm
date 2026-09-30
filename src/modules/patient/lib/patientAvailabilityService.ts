@@ -265,9 +265,15 @@ export function createPatientAvailabilityService(
       }))
     },
     async getSubjectAvailability(query) {
-      const memberRuleSetId = query.teamMember
-        ? await readMemberRuleSetId(query.scope, query.teamMember.id)
-        : null
+      let memberRuleSetId: string | null = null
+      let memberRuleSetUnknown = false
+      if (query.teamMember) {
+        try {
+          memberRuleSetId = await readMemberRuleSetId(query.scope, query.teamMember.id)
+        } catch {
+          memberRuleSetUnknown = true
+        }
+      }
       let resourceState: { isActive: boolean; ruleSetId: string | null } | null = null
       if (query.resource) {
         resourceState = await readResource(query.scope, query.resource.id)
@@ -291,16 +297,22 @@ export function createPatientAvailabilityService(
       try {
         const rules = await queryRules(query.scope, [...directIds, ...ruleSetIds])
         return [
-          ...(query.teamMember ? [mergeSubject(
-            'member',
-            query.teamMember.id,
-            query.teamMember.name,
-            rules.filter((rule) => rule.subjectType === 'member' && rule.subjectId === query.teamMember?.id),
-            rules.filter((rule) => rule.subjectType === 'ruleset' && rule.subjectId === memberRuleSetId),
-            query,
-            undefined,
-            query.teamMember.exposeReason,
-          )] : []),
+          ...(query.teamMember ? [memberRuleSetUnknown
+            ? mergeSubject(
+                'member', query.teamMember.id, query.teamMember.name, [], [],
+                { ...query, plannerAvailabilityService: null }, undefined,
+                query.teamMember.exposeReason,
+              )
+            : mergeSubject(
+                'member',
+                query.teamMember.id,
+                query.teamMember.name,
+                rules.filter((rule) => rule.subjectType === 'member' && rule.subjectId === query.teamMember?.id),
+                rules.filter((rule) => rule.subjectType === 'ruleset' && rule.subjectId === memberRuleSetId),
+                query,
+                undefined,
+                query.teamMember.exposeReason,
+              )] : []),
           ...(query.resource ? [mergeSubject(
             'resource',
             query.resource.id,

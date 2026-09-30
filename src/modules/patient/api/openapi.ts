@@ -36,6 +36,57 @@ export const patientVisitAvailabilityCheckResponseSchema = z.object({
   checkedAt: z.string(),
 })
 
+export const patientVisitCalendarItemSchema = z.object({
+  id: z.string().uuid(),
+  patientId: z.string().uuid(),
+  patientName: z.string().nullable(),
+  teamMemberId: z.string().uuid(),
+  teamMemberName: z.string(),
+  resourceId: z.string().uuid().nullable(),
+  resourceName: z.string().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string().nullable(),
+  timeZone: z.string(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  confirmedAt: z.string().nullable(),
+  isSettled: z.boolean(),
+  conflictOverrideAt: z.string().nullable(),
+  conflictOverrideCodes: z.array(z.enum(VISIT_CONFLICT_CODES)).nullable(),
+  updatedAt: z.string(),
+})
+
+export const patientVisitAvailabilityLaneWindowSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['availability', 'exception']),
+  from: z.string(),
+  to: z.string(),
+  reasonLabel: z.string().optional(),
+})
+
+export const patientVisitAvailabilityLaneSchema = z.object({
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+  hasSchedule: z.boolean(),
+  isActive: z.boolean().optional(),
+  unknown: z.boolean(),
+  windows: z.array(patientVisitAvailabilityLaneWindowSchema),
+})
+
+export const patientVisitCalendarDegradationSchema = z.object({
+  code: z.literal('availability_unknown'),
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+})
+
+export const patientVisitCalendarResponseSchema = z.object({
+  items: z.array(patientVisitCalendarItemSchema),
+  lanes: z.array(patientVisitAvailabilityLaneSchema),
+  degraded: z.array(patientVisitCalendarDegradationSchema),
+  range: z.object({ from: z.string(), to: z.string() }),
+})
+
 export const patientCreatedSchema = z.object({
   id: z.string().uuid(),
   patientNumber: z.string().optional(),

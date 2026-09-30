@@ -65,6 +65,29 @@ export type VisitConflictDraft = {
   endsAt?: Date | null
 }
 
+export function redactVisitConflictsForRead(
+  conflicts: VisitConflict[],
+  access: { exposeMemberReason: boolean; exposeResourceReason: boolean },
+): VisitConflict[] {
+  return conflicts.map((conflict) => {
+    const canExpose = conflict.subjectType === 'member'
+      ? access.exposeMemberReason
+      : access.exposeResourceReason
+    if (canExpose) return conflict
+    const { reasonLabel: _reasonLabel, ...publicConflict } = conflict
+    if (conflict.code === 'member_absence') {
+      return {
+        ...publicConflict,
+        code: 'member_unavailable',
+        // The write remains blocked, but the read response does not reveal whether the
+        // unavailable window came from leave, sickness, or another staff-owned reason.
+        severity: 'blocking',
+      }
+    }
+    return publicConflict
+  })
+}
+
 const severityByCode: Record<VisitConflictCode, VisitConflictSeverity> = {
   member_absence: 'blocking',
   member_unavailable: 'warning',

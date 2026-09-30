@@ -17,7 +17,7 @@
 | 1 | 1.3 | Enforce conflicts and exact acknowledgements in visit commands | inline | done | 9a4ff75 |
 | 1 | 1.4 | Expose the scoped availability-check API and OpenAPI contract | inline | done | 77b9687 |
 | 1 | 1.5 | Add shared availability and override UI to the VIS form | inline | done | 16fb62e |
-| 2 | 2.1 | Expose the bounded calendar API with availability lanes | inline | todo | — |
+| 2 | 2.1 | Expose the bounded calendar API with availability lanes | inline | done | 5232508 |
 | 2 | 2.2 | Build the reusable calendar visit dialog on the VIS form | inline | todo | — |
 | 2 | 2.3 | Deliver the ScheduleView calendar, filters, navigation, and list links | inline | todo | — |
 | 2 | 2.4 | Complete VCAL-T01–T10 integration and browser coverage | dispatch | todo | — |
