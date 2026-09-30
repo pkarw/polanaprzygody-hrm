@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from '@jest/globals'
+import { beforeAll, describe, expect, it, jest } from '@jest/globals'
 import { commandRegistry } from '@open-mercato/shared/lib/commands'
 import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 
@@ -37,6 +37,21 @@ describe('visit command registry', () => {
     }
   })
 
+  it('registers explicit non-undoable lifecycle handlers', () => {
+    for (const id of [
+      'patient.visits.confirm',
+      'patient.visits.unconfirm',
+      'patient.visits.transition',
+      'patient.visits.settle',
+      'patient.visits.unsettle',
+    ]) {
+      const handler = commandRegistry.get(id)
+      expect(handler).not.toBeNull()
+      expect(handler?.isUndoable).toBe(false)
+      expect(handler?.undo).toBeUndefined()
+    }
+  })
+
   it('fails closed before touching dependencies when tenant or organization scope is absent', async () => {
     const handler = commandRegistry.get<Record<string, unknown>, unknown>('patient.visits.create')
     await expect(handler?.execute(createInput, context({ auth: null }))).rejects.toMatchObject({ status: 400 })
@@ -51,5 +66,33 @@ describe('visit command registry', () => {
       auth: { sub: '', tenantId: 'tenant-1', orgId: 'org-1' },
       selectedOrganizationId: 'org-1',
     }))).rejects.toMatchObject({ status: 401 })
+  })
+
+  it.each([
+    ['patient.visits.confirm', { id: createInput.patientId, expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }, ['patient.visits.manage']],
+    ['patient.visits.transition', { id: createInput.patientId, expectedUpdatedAt: '2026-09-30T09:00:00.000Z', status: 'planned', reason: 'Correction' }, ['patient.visits.manage', 'patient.visits.correct']],
+    ['patient.visits.settle', { id: createInput.patientId, expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }, ['patient.visits.settle']],
+  ] as const)('fails closed at command-level ACL for %s', async (id, input, required) => {
+    const userHasAllFeatures = jest.fn<(
+      userId: string,
+      requiredFeatures: string[],
+      scope: { tenantId: string | null; organizationId: string | null },
+    ) => Promise<boolean>>(async () => false)
+    const resolve = jest.fn((token: string) => {
+      if (token === 'rbacService') return { userHasAllFeatures }
+      throw new Error(`[internal] Unexpected dependency ${token}`)
+    })
+    const handler = commandRegistry.get<Record<string, unknown>, unknown>(id)
+    await expect(handler?.execute(input, context({
+      container: { resolve } as unknown as CommandRuntimeContext['container'],
+      auth: { sub: 'user-1', tenantId: 'tenant-1', orgId: 'org-1' },
+      selectedOrganizationId: 'org-1',
+    }))).rejects.toMatchObject({ status: 403, body: { code: 'visit_action_forbidden' } })
+    expect(userHasAllFeatures).toHaveBeenCalledWith(
+      'user-1',
+      [...required],
+      { tenantId: 'tenant-1', organizationId: 'org-1' },
+    )
+    expect(resolve).toHaveBeenCalledTimes(1)
   })
 })

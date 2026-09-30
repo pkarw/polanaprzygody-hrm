@@ -1,7 +1,11 @@
 import { describe, expect, it } from '@jest/globals'
 import {
   patientVisitCreateSchema,
+  patientVisitConfirmationActionSchema,
   patientVisitListQuerySchema,
+  patientVisitSettleSchema,
+  patientVisitTransitionSchema,
+  patientVisitUnsettleSchema,
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { features } from '../acl'
@@ -67,6 +71,22 @@ describe('patient visit contracts', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, tenantId: uuid(7) }).success).toBe(false)
     expect(patientVisitUpdateSchema.safeParse({ id: uuid(1), expectedUpdatedAt: 'v', status: 'completed' }).success).toBe(false)
     expect(patientVisitUpdateSchema.safeParse({ id: uuid(1), expectedUpdatedAt: 'v', isSettled: true }).success).toBe(false)
+  })
+
+  it('keeps lifecycle payloads strict and requires reasons only for destructive corrections', () => {
+    const versioned = { id: uuid(1), expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }
+    expect(patientVisitConfirmationActionSchema.safeParse(versioned).success).toBe(true)
+    expect(patientVisitConfirmationActionSchema.safeParse({ ...versioned, confirmed: true }).success).toBe(false)
+    expect(patientVisitTransitionSchema.safeParse({ ...versioned, status: 'completed' }).success).toBe(true)
+    expect(patientVisitTransitionSchema.safeParse({ ...versioned, status: 'completed', reason: 'extra' }).success).toBe(false)
+    for (const status of ['planned', 'cancelled', 'no_show'] as const) {
+      expect(patientVisitTransitionSchema.safeParse({ ...versioned, status }).success).toBe(false)
+      expect(patientVisitTransitionSchema.safeParse({ ...versioned, status, reason: 'Operator reason' }).success).toBe(true)
+    }
+    expect(patientVisitSettleSchema.safeParse(versioned).success).toBe(true)
+    expect(patientVisitSettleSchema.safeParse({ ...versioned, reason: 'Advance recorded' }).success).toBe(true)
+    expect(patientVisitUnsettleSchema.safeParse(versioned).success).toBe(false)
+    expect(patientVisitUnsettleSchema.safeParse({ ...versioned, reason: 'Correction' }).success).toBe(true)
   })
 
   it('validates half-open list ranges', () => {

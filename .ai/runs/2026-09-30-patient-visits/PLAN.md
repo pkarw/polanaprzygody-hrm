@@ -16,7 +16,7 @@
 | 1 | 1.3 | Expose visit CRUD API, OpenAPI, and next-visit projection | inline | done | 358afd2 |
 | 1 | 1.4 | Deliver VIS-1 list, forms, patient surfaces, translations, and focused tests | inline | done | 912756e |
 | 1 | 1.5 | Align the visit form entity contract found during browser verification | inline | done | c400204 |
-| 2 | 2.1 | Implement confirmation, lifecycle, and settlement commands | inline | todo | — |
+| 2 | 2.1 | Implement confirmation, lifecycle, and settlement commands | inline | done | 845aac7 |
 | 2 | 2.2 | Expose guarded lifecycle action routes and integration coverage | inline | todo | — |
 | 2 | 2.3 | Deliver lifecycle dialogs, read-only states, and settlement UI | inline | todo | — |
 | 2 | 2.4 | Complete VIS acceptance, concurrency, security, and browser coverage | inline | todo | — |

@@ -6,12 +6,20 @@ const visitsSource = readFileSync(path.join(__dirname, '..', 'commands', 'visits
 const patientsSource = readFileSync(path.join(__dirname, '..', 'commands', 'patients.ts'), 'utf8')
 
 describe('visit command invariants', () => {
-  it('registers exactly one aggregate CRUD command per public write', () => {
+  it('registers aggregate CRUD and explicit lifecycle commands', () => {
     expect(visitsSource).toContain("id: 'patient.visits.create'")
     expect(visitsSource).toContain("id: 'patient.visits.update'")
     expect(visitsSource).toContain("id: 'patient.visits.delete'")
-    expect(visitsSource.match(/registerCommand\(/g)).toHaveLength(3)
+    for (const id of [
+      'patient.visits.confirm',
+      'patient.visits.unconfirm',
+      'patient.visits.transition',
+      'patient.visits.settle',
+      'patient.visits.unsettle',
+    ]) expect(visitsSource).toContain(`id: '${id}'`)
+    expect(visitsSource.match(/registerCommand\(/g)).toHaveLength(8)
     expect(visitsSource.match(/isUndoable: true/g)).toHaveLength(3)
+    expect(visitsSource).toContain('isUndoable: false')
   })
 
   it('uses the parent-first lock order and compares visit versions under that transaction', () => {
@@ -62,6 +70,31 @@ describe('visit command invariants', () => {
   it('never indexes care usage globally and emits generic CRUD only through the post-commit pipeline', () => {
     expect(visitsSource).not.toContain('CrudIndexerConfig')
     expect(visitsSource).toContain('events: patientVisitCrudEvents')
-    expect(visitsSource.match(/emitPatientEvent\('patient\.visit\.unconfirmed'/g)).toHaveLength(1)
+    const updateBody = visitsSource.slice(
+      visitsSource.indexOf('const updateVisitCommand'),
+      visitsSource.indexOf('const deleteVisitCommand'),
+    )
+    expect(updateBody.match(/emitPatientEvent\('patient\.visit\.unconfirmed'/g)).toHaveLength(1)
+  })
+
+  it('guards lifecycle actions in the command, serializes one visit version, and emits only dedicated events', () => {
+    const start = visitsSource.indexOf('async function executeVisitLifecycleAction')
+    const end = visitsSource.indexOf('function createVisitLifecycleCommand', start)
+    const body = visitsSource.slice(start, end)
+    const featureCheck = body.indexOf('requireVisitFeatures(')
+    const patientLock = body.indexOf('lockPatient(phaseEm')
+    const visitLock = body.indexOf('lockVisit(phaseEm')
+    const versionCheck = body.indexOf('assertExpectedVersion(')
+    expect(featureCheck).toBeGreaterThan(-1)
+    expect(patientLock).toBeGreaterThan(featureCheck)
+    expect(visitLock).toBeGreaterThan(patientLock)
+    expect(versionCheck).toBeGreaterThan(visitLock)
+    expect(body).not.toContain('events: patientVisitCrudEvents')
+    expect(body).toContain("emitPatientEvent('patient.visit.confirmed'")
+    expect(body).toContain("emitPatientEvent('patient.visit.status_changed'")
+    expect(body).toContain("emitPatientEvent('patient.visit.settlement_changed'")
+    expect(visitsSource).toContain("['patient.visits.manage', 'patient.visits.correct']")
+    expect(visitsSource).toContain("return ['patient.visits.settle']")
+    expect(visitsSource).not.toMatch(/from ['\"]@open-mercato\/(?:[^'\"]*\/)?(?:sales|payment)/)
   })
 })

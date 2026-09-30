@@ -526,6 +526,51 @@ export const patientVisitDeleteSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
 }).strict()
 
+const patientVisitActionBase = {
+  id: z.string().uuid(),
+  expectedUpdatedAt: z.string().min(1),
+}
+
+const patientVisitActionReasonSchema = z.string().trim().min(1).max(2_000)
+
+/** Commands are split by action so a caller cannot smuggle the target state. */
+export const patientVisitConfirmationActionSchema = z.object(patientVisitActionBase).strict()
+
+export const patientVisitTransitionSchema = z
+  .object({
+    ...patientVisitActionBase,
+    status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+    reason: patientVisitActionReasonSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const reasonRequired = value.status === 'planned' || value.status === 'cancelled' || value.status === 'no_show'
+    if (reasonRequired && !value.reason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A reason is required for this visit status change',
+        path: ['reason'],
+      })
+    }
+    if (value.status === 'completed' && value.reason !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A completion does not accept a reason',
+        path: ['reason'],
+      })
+    }
+  })
+
+export const patientVisitSettleSchema = z.object({
+  ...patientVisitActionBase,
+  reason: patientVisitActionReasonSchema.optional(),
+}).strict()
+
+export const patientVisitUnsettleSchema = z.object({
+  ...patientVisitActionBase,
+  reason: patientVisitActionReasonSchema,
+}).strict()
+
 const patientVisitListQueryFields = {
   id: z.string().uuid().optional(),
   ids: z.string().optional(),
@@ -560,3 +605,4 @@ export type PatientDiagnosisCreateInput = z.infer<typeof patientDiagnosisCreateS
 export type PatientDiagnosisCorrectInput = z.infer<typeof patientDiagnosisCorrectSchema>
 export type PatientVisitCreateInput = z.infer<typeof patientVisitCreateSchema>
 export type PatientVisitUpdateInput = z.infer<typeof patientVisitUpdateSchema>
+export type PatientVisitTransitionInput = z.infer<typeof patientVisitTransitionSchema>

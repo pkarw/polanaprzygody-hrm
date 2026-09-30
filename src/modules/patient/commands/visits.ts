@@ -4,15 +4,19 @@ import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { runCrudCommandWrite } from '@open-mercato/shared/lib/commands/runCrudCommandWrite'
-import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
+import { conflict, CrudHttpError, forbidden } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { Patient, PatientVisit, PatientVisitService, type PatientVisitStatus } from '../data/entities'
 import {
   patientVisitCreateSchema,
+  patientVisitConfirmationActionSchema,
   patientVisitDeleteSchema,
   patientVisitInstantMatchesTimeZone,
+  patientVisitSettleSchema,
+  patientVisitTransitionSchema,
+  patientVisitUnsettleSchema,
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { emitPatientEvent } from '../events'
@@ -1102,6 +1106,363 @@ const deleteVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   },
 }
 
+type VisitLifecycleOperation = 'confirm' | 'unconfirm' | 'transition' | 'settle' | 'unsettle'
+
+type VisitLifecycleInput = {
+  id: string
+  expectedUpdatedAt: string
+  status?: PatientVisitStatus
+  reason?: string
+}
+
+type VisitLifecycleAuditSnapshot = {
+  id: string
+  patientId: string
+  status: PatientVisitStatus
+  statusChangedAt: string
+  statusChangedByUserId: string
+  confirmedAt: string | null
+  confirmedByUserId: string | null
+  isSettled: boolean
+  settledAt: string | null
+  settledByUserId: string | null
+  updatedAt: string
+  tenantId: string
+  organizationId: string
+}
+
+type VisitLifecycleCommandDefinition = {
+  id: string
+  operation: VisitLifecycleOperation
+  labelKey: string
+  label: string
+  parse(input: Record<string, unknown>): VisitLifecycleInput
+}
+
+function codedConflict(message: string, code: string): CrudHttpError {
+  const error = conflict(message)
+  error.body.code = code
+  return error
+}
+
+function codedForbidden(message: string, code: string): CrudHttpError {
+  const error = forbidden(message)
+  error.body.code = code
+  return error
+}
+
+function lifecycleSnapshot(visit: PatientVisit, scope: PatientScope): VisitLifecycleAuditSnapshot {
+  return {
+    id: String(visit.id),
+    patientId: String(visit.patientId),
+    status: visit.status,
+    statusChangedAt: visit.statusChangedAt.toISOString(),
+    statusChangedByUserId: String(visit.statusChangedByUserId),
+    confirmedAt: visit.confirmedAt?.toISOString() ?? null,
+    confirmedByUserId: visit.confirmedByUserId ?? null,
+    isSettled: Boolean(visit.isSettled),
+    settledAt: visit.settledAt?.toISOString() ?? null,
+    settledByUserId: visit.settledByUserId ?? null,
+    updatedAt: visit.updatedAt.toISOString(),
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+  }
+}
+
+function lifecycleFeatures(
+  operation: VisitLifecycleOperation,
+  input: VisitLifecycleInput,
+): string[] {
+  if (operation === 'settle' || operation === 'unsettle') return ['patient.visits.settle']
+  if (operation === 'transition' && input.status === 'planned') {
+    return ['patient.visits.manage', 'patient.visits.correct']
+  }
+  return ['patient.visits.manage']
+}
+
+async function requireVisitFeatures(
+  ctx: CommandRuntimeContext,
+  scope: PatientScope,
+  required: string[],
+): Promise<void> {
+  const userId = requireActorUserId(ctx)
+  let rbac: ScopedRbacService
+  try {
+    rbac = ctx.container.resolve('rbacService') as ScopedRbacService
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'The authorization service required for visit actions is unavailable',
+      code: 'visit_authorization_unavailable',
+    })
+  }
+  if (!(await rbac.userHasAllFeatures(userId, required, scope))) {
+    throw codedForbidden('You do not have permission to perform this visit action', 'visit_action_forbidden')
+  }
+}
+
+/**
+ * Pure transition oracle shared by the command and its table-driven tests.
+ * Time never changes a visit automatically; it only gates explicit completion/no-show.
+ */
+export function assertPatientVisitTransition(
+  current: PatientVisitStatus,
+  target: PatientVisitStatus,
+  startsAt: Date,
+  now: Date,
+): void {
+  if (target === 'planned') {
+    if (current === 'planned') {
+      throw codedConflict('This visit is already planned', 'visit_status_unchanged')
+    }
+    return
+  }
+  if (current !== 'planned') {
+    throw codedConflict('Only a planned visit can be closed', 'visit_transition_not_allowed')
+  }
+  if ((target === 'completed' || target === 'no_show') && startsAt.getTime() > now.getTime()) {
+    throw new CrudHttpError(422, {
+      error: target === 'completed'
+        ? 'A visit cannot be completed before its start time'
+        : 'A patient cannot be marked absent before the visit start time',
+      code: target === 'completed' ? 'visit_completion_before_start' : 'visit_no_show_before_start',
+    })
+  }
+}
+
+function lifecycleChanges(
+  definition: VisitLifecycleCommandDefinition,
+  input: VisitLifecycleInput,
+  before: VisitLifecycleAuditSnapshot | undefined,
+): Record<string, unknown> {
+  if (definition.operation === 'confirm' || definition.operation === 'unconfirm') {
+    return { confirmed: { from: Boolean(before?.confirmedAt), to: definition.operation === 'confirm' } }
+  }
+  if (definition.operation === 'settle' || definition.operation === 'unsettle') {
+    return {
+      isSettled: { from: Boolean(before?.isSettled), to: definition.operation === 'settle' },
+      reasonProvided: Boolean(input.reason),
+    }
+  }
+  return {
+    status: { from: before?.status ?? null, to: input.status ?? null },
+    reasonProvided: Boolean(input.reason),
+  }
+}
+
+async function executeVisitLifecycleAction(
+  input: VisitLifecycleInput,
+  ctx: CommandRuntimeContext,
+  operation: VisitLifecycleOperation,
+): Promise<PatientVisit> {
+  const scope = requirePatientScope(ctx)
+  const actorUserId = requireActorUserId(ctx)
+  await requireVisitFeatures(ctx, scope, lifecycleFeatures(operation, input))
+
+  const rootEm = ctx.container.resolve('em') as EntityManager
+  const current = await loadVisitDecrypted(rootEm.fork(), input.id, scope)
+  const em = rootEm.fork()
+  const encryption = tryResolveEncryptionService(ctx)
+  const encryptedReason: Record<string, unknown> = input.reason
+    ? await encryptSensitiveFields(
+      VISIT_ENTITY_ID,
+      operation === 'settle' || operation === 'unsettle'
+        ? { settlementReason: input.reason }
+        : { statusReason: input.reason },
+      scope,
+      encryption,
+    )
+    : {}
+
+  let patient!: Patient
+  let visit!: PatientVisit
+  let updatedAt!: Date
+  let confirmationCleared = false
+  const wallClockNow = new Date()
+
+  await runCrudCommandWrite<PatientVisit>({
+    ctx,
+    em,
+    entityId: VISIT_ENTITY_ID,
+    action: 'updated',
+    scope,
+    syncOrigin: ctx.syncOrigin,
+    phases: [
+      async ({ em: phaseEm }) => {
+        patient = await lockPatient(phaseEm, String(current.patientId), scope)
+        visit = await lockVisit(phaseEm, input.id, scope)
+        assertExpectedVersion(input.expectedUpdatedAt, visit.updatedAt, VISIT_ENTITY_ID)
+        updatedAt = nextUpdatedAt(patient.updatedAt > visit.updatedAt ? patient.updatedAt : visit.updatedAt)
+      },
+      ({ em: phaseEm }) => {
+        if (operation === 'confirm' || operation === 'unconfirm') {
+          if (visit.status !== 'planned') {
+            throw codedConflict(
+              'Confirmation can only be changed for a planned visit',
+              'visit_confirmation_not_applicable',
+            )
+          }
+          const shouldConfirm = operation === 'confirm'
+          if (Boolean(visit.confirmedAt) === shouldConfirm) {
+            throw codedConflict('The visit confirmation already has this value', 'visit_confirmation_unchanged')
+          }
+          visit.confirmedAt = shouldConfirm ? updatedAt : null
+          visit.confirmedByUserId = shouldConfirm ? actorUserId : null
+        } else if (operation === 'transition') {
+          const target = input.status
+          if (!target) throw new Error('[internal] Missing parsed visit target status')
+          assertPatientVisitTransition(visit.status, target, visit.startsAt, wallClockNow)
+          confirmationCleared = target === 'planned' && Boolean(visit.confirmedAt)
+          visit.status = target
+          visit.statusReason = input.reason
+            ? String(encryptedReason.statusReason)
+            : null
+          visit.statusChangedAt = updatedAt
+          visit.statusChangedByUserId = actorUserId
+          if (target === 'planned') {
+            visit.confirmedAt = null
+            visit.confirmedByUserId = null
+          }
+        } else {
+          const shouldSettle = operation === 'settle'
+          if (visit.isSettled === shouldSettle) {
+            throw codedConflict('The visit settlement already has this value', 'visit_settlement_unchanged')
+          }
+          visit.isSettled = shouldSettle
+          visit.settledAt = shouldSettle ? updatedAt : null
+          visit.settledByUserId = shouldSettle ? actorUserId : null
+          visit.settlementReason = input.reason
+            ? String(encryptedReason.settlementReason)
+            : null
+        }
+        visit.updatedAt = updatedAt
+        visit.updatedByUserId = actorUserId
+        phaseEm.persist(visit)
+      },
+      ({ em: phaseEm }) => {
+        patient.updatedAt = updatedAt
+        patient.updatedByUserId = actorUserId
+        phaseEm.persist(patient)
+      },
+    ],
+    sideEffect: () => ({
+      entity: visit,
+      identifiers: { id: input.id, tenantId: scope.tenantId, organizationId: scope.organizationId },
+    }),
+  })
+
+  const eventPayload = {
+    id: input.id,
+    patientId: String(visit.patientId),
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    updatedAt: updatedAt.toISOString(),
+  }
+  if (operation === 'confirm') {
+    await emitPatientEvent('patient.visit.confirmed', eventPayload)
+  } else if (operation === 'unconfirm') {
+    await emitPatientEvent('patient.visit.unconfirmed', eventPayload)
+  } else if (operation === 'transition') {
+    await emitPatientEvent('patient.visit.status_changed', { ...eventPayload, status: visit.status })
+    if (confirmationCleared) await emitPatientEvent('patient.visit.unconfirmed', eventPayload)
+  } else {
+    await emitPatientEvent('patient.visit.settlement_changed', { ...eventPayload, isSettled: visit.isSettled })
+  }
+  return await loadVisitDecrypted(em, input.id, scope)
+}
+
+function createVisitLifecycleCommand(
+  definition: VisitLifecycleCommandDefinition,
+): CommandHandler<Record<string, unknown>, PatientVisit> {
+  return {
+    id: definition.id,
+    // Reversal is an explicit, reasoned domain action (unconfirm/reopen/unsettle),
+    // never a generic undo that could bypass its dedicated feature or transition rule.
+    isUndoable: false,
+    async prepare(rawInput, ctx) {
+      const input = definition.parse(rawInput)
+      const scope = requirePatientScope(ctx)
+      requireActorUserId(ctx)
+      await requireVisitFeatures(ctx, scope, lifecycleFeatures(definition.operation, input))
+      const em = (ctx.container.resolve('em') as EntityManager).fork()
+      const visit = await loadVisitDecrypted(em, input.id, scope)
+      return { before: lifecycleSnapshot(visit, scope) }
+    },
+    async execute(rawInput, ctx) {
+      const input = definition.parse(rawInput)
+      return await executeVisitLifecycleAction(input, ctx, definition.operation)
+    },
+    async captureAfter(_rawInput, result, ctx) {
+      return lifecycleSnapshot(result, requirePatientScope(ctx))
+    },
+    async buildLog({ input: rawInput, result, snapshots }) {
+      const input = definition.parse(rawInput)
+      const { translate } = await resolveTranslations()
+      return {
+        actionLabel: translate(definition.labelKey, definition.label),
+        resourceKind: 'patient.patient_visit',
+        resourceId: String(result.id),
+        parentResourceKind: 'patient.patient',
+        parentResourceId: String(result.patientId),
+        tenantId: String(result.tenantId),
+        organizationId: String(result.organizationId),
+        snapshotBefore: snapshots.before ?? null,
+        snapshotAfter: snapshots.after ?? null,
+        // Free-text reasons remain only in encrypted entity fields; audit records presence only.
+        changes: lifecycleChanges(
+          definition,
+          input,
+          snapshots.before as VisitLifecycleAuditSnapshot | undefined,
+        ),
+      }
+    },
+  }
+}
+
+const confirmVisitCommand = createVisitLifecycleCommand({
+  id: 'patient.visits.confirm',
+  operation: 'confirm',
+  labelKey: 'patient.audit.visits.confirm',
+  label: 'Confirm visit',
+  parse: (input) => patientVisitConfirmationActionSchema.parse(input),
+})
+
+const unconfirmVisitCommand = createVisitLifecycleCommand({
+  id: 'patient.visits.unconfirm',
+  operation: 'unconfirm',
+  labelKey: 'patient.audit.visits.unconfirm',
+  label: 'Unconfirm visit',
+  parse: (input) => patientVisitConfirmationActionSchema.parse(input),
+})
+
+const transitionVisitCommand = createVisitLifecycleCommand({
+  id: 'patient.visits.transition',
+  operation: 'transition',
+  labelKey: 'patient.audit.visits.transition',
+  label: 'Change visit status',
+  parse: (input) => patientVisitTransitionSchema.parse(input),
+})
+
+const settleVisitCommand = createVisitLifecycleCommand({
+  id: 'patient.visits.settle',
+  operation: 'settle',
+  labelKey: 'patient.audit.visits.settle',
+  label: 'Mark visit as manually settled',
+  parse: (input) => patientVisitSettleSchema.parse(input),
+})
+
+const unsettleVisitCommand = createVisitLifecycleCommand({
+  id: 'patient.visits.unsettle',
+  operation: 'unsettle',
+  labelKey: 'patient.audit.visits.unsettle',
+  label: 'Remove manual visit settlement',
+  parse: (input) => patientVisitUnsettleSchema.parse(input),
+})
+
 registerCommand(createVisitCommand)
 registerCommand(updateVisitCommand)
 registerCommand(deleteVisitCommand)
+registerCommand(confirmVisitCommand)
+registerCommand(unconfirmVisitCommand)
+registerCommand(transitionVisitCommand)
+registerCommand(settleVisitCommand)
+registerCommand(unsettleVisitCommand)
