@@ -275,8 +275,13 @@ export function createPatientAvailabilityService(
         }
       }
       let resourceState: { isActive: boolean; ruleSetId: string | null } | null = null
+      let resourceStateUnknown = false
       if (query.resource) {
-        resourceState = await readResource(query.scope, query.resource.id)
+        try {
+          resourceState = await readResource(query.scope, query.resource.id)
+        } catch {
+          resourceStateUnknown = true
+        }
       }
       if (!plannerEnabled() || !query.plannerAvailabilityService) {
         return [
@@ -286,7 +291,8 @@ export function createPatientAvailabilityService(
           )] : []),
           ...(query.resource ? [mergeSubject(
             'resource', query.resource.id, query.resource.name, [], [], query,
-            resourceState?.isActive ?? false, query.resource.exposeReason,
+            resourceStateUnknown ? undefined : resourceState?.isActive ?? false,
+            query.resource.exposeReason,
           )] : []),
         ]
       }
@@ -313,16 +319,22 @@ export function createPatientAvailabilityService(
                 undefined,
                 query.teamMember.exposeReason,
               )] : []),
-          ...(query.resource ? [mergeSubject(
-            'resource',
-            query.resource.id,
-            query.resource.name,
-            rules.filter((rule) => rule.subjectType === 'resource' && rule.subjectId === query.resource?.id),
-            rules.filter((rule) => rule.subjectType === 'ruleset' && rule.subjectId === resourceState?.ruleSetId),
-            query,
-            resourceState?.isActive ?? false,
-            query.resource.exposeReason,
-          )] : []),
+          ...(query.resource ? [resourceStateUnknown
+            ? mergeSubject(
+                'resource', query.resource.id, query.resource.name, [], [],
+                { ...query, plannerAvailabilityService: null }, undefined,
+                query.resource.exposeReason,
+              )
+            : mergeSubject(
+                'resource',
+                query.resource.id,
+                query.resource.name,
+                rules.filter((rule) => rule.subjectType === 'resource' && rule.subjectId === query.resource?.id),
+                rules.filter((rule) => rule.subjectType === 'ruleset' && rule.subjectId === resourceState?.ruleSetId),
+                query,
+                resourceState?.isActive ?? false,
+                query.resource.exposeReason,
+              )] : []),
         ]
       } catch {
         return [
@@ -332,7 +344,8 @@ export function createPatientAvailabilityService(
           )] : []),
           ...(query.resource ? [mergeSubject(
             'resource', query.resource.id, query.resource.name, [], [],
-            { ...query, plannerAvailabilityService: null }, resourceState?.isActive ?? false,
+            { ...query, plannerAvailabilityService: null },
+            resourceStateUnknown ? undefined : resourceState?.isActive ?? false,
             query.resource.exposeReason,
           )] : []),
         ]

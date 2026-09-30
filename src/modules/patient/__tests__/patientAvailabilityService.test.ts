@@ -128,6 +128,22 @@ describe('patientAvailabilityService', () => {
     expect(result).toMatchObject({ subjectType: 'member', unknown: true, hasSchedule: false })
   })
 
+  it('degrades a resource-state lookup failure without inventing an inactive-resource block', async () => {
+    const query = jest.fn(async (entityId: string, _options: unknown) => {
+      if (entityId === 'resources:resources_resource') throw new Error('resource availability read failed')
+      return queryResult([])
+    })
+    const service = createPatientAvailabilityService({ find: jest.fn() } as never, { query } as never)
+    const [result] = await service.getSubjectAvailability({
+      scope,
+      range,
+      resource: { id: resourceId, name: 'Gabinet 2' },
+      plannerAvailabilityService: { getMergedAvailabilityWindows: () => [] },
+    })
+    expect(result).toMatchObject({ subjectType: 'resource', unknown: true, hasSchedule: false })
+    expect(result?.isActive).toBeUndefined()
+  })
+
   it('keeps the installed planner merger as the DST oracle', async () => {
     const query = jest.fn(async (_entityId: string, _options: unknown) => queryResult([{
       id: 'weekly', subject_type: 'member', subject_id: memberId,

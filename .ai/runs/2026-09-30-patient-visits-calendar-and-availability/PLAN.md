@@ -25,6 +25,7 @@
 | 2 | 2.6-runtime-fix | Correct issues exposed by the live Phase 2 browser and API checkpoint | inline | done | fb5e598 |
 | 2 | 2.7-gate-fix | Preserve idempotent visit retries after conflict enforcement serializes concurrent creates | inline | done | this commit |
 | 2 | 2.8-review-fix | Narrow concurrent retry recovery to availability conflict outcomes | inline | done | this commit |
+| 2 | 2.9-review-fix | Degrade resource-state read failures without inventing an inactive-resource block | inline | done | this commit |
 
 ## Goal
 

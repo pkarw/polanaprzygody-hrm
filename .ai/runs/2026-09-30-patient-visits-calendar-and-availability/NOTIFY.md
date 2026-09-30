@@ -37,3 +37,9 @@
 
 - Delegation: a read-only subagent reproduced the live race as HTTP 201 + 422 and independently confirmed that conflict evaluation now precedes the unique-index recovery path.
 - Review decision: narrow replay recovery to the two availability-decision errors (`visit_conflict_blocking` and `visit_conflict_unacknowledged`) plus the existing unique-index race, so unrelated 409/422 and post-commit failures cannot be hidden.
+
+## 2026-09-30T21:36:02Z — final review availability degradation fix
+
+- Authoritative review found that a transient `resources` QueryEngine failure escaped before the service's degradation boundary and could abort visit create/update instead of returning `availability_unknown`.
+- Decision: catch only the failed resource-state read and degrade it to unknown; a successful read proving the resource inactive or absent remains fail-closed and blocking.
+- A focused regression test distinguishes transient unknown state from an invented `resource_inactive` result.
