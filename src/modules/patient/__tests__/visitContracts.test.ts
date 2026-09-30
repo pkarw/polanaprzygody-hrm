@@ -14,6 +14,7 @@ import {
 import { features } from '../acl'
 import { defaultEncryptionMaps } from '../encryption'
 import { eventsConfig, type PatientEventId } from '../events'
+import { defaultEncryptionMaps as auditLogEncryptionMaps } from '@open-mercato/core/modules/audit_logs/encryption'
 
 const uuid = (n: number) => `${String(n).repeat(8)}-aaaa-4bbb-8ccc-dddddddddddd`
 
@@ -31,15 +32,15 @@ describe('patient visit contracts', () => {
     expect(patientVisitCreateSchema.parse(createInput).serviceProductIds).toEqual([])
   })
 
-  it('accepts one or many unique services and rejects duplicates', () => {
+  it('keeps service arrays structurally valid so commands can map duplicates to 409', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, serviceProductIds: [uuid(4), uuid(5)] }).success).toBe(true)
-    expect(patientVisitCreateSchema.safeParse({ ...createInput, serviceProductIds: [uuid(4), uuid(4)] }).success).toBe(false)
+    expect(patientVisitCreateSchema.safeParse({ ...createInput, serviceProductIds: [uuid(4), uuid(4)] }).success).toBe(true)
   })
 
-  it('requires an explicit offset, valid IANA zone, and a later end', () => {
+  it('keeps syntax errors at 400 while commands map semantic time failures to 422', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, startsAt: '2026-10-05T10:00:00' }).success).toBe(false)
     expect(patientVisitCreateSchema.safeParse({ ...createInput, timeZone: 'Warsaw' }).success).toBe(false)
-    expect(patientVisitCreateSchema.safeParse({ ...createInput, endsAt: createInput.startsAt }).success).toBe(false)
+    expect(patientVisitCreateSchema.safeParse({ ...createInput, endsAt: createInput.startsAt }).success).toBe(true)
     expect(patientVisitCreateSchema.safeParse({
       ...createInput,
       startsAt: '2026-10-05T08:00:00Z',
@@ -50,7 +51,7 @@ describe('patient visit contracts', () => {
       ...createInput,
       startsAt: '2026-03-29T02:30:00+01:00',
       endsAt: null,
-    }).success).toBe(false)
+    }).success).toBe(true)
     expect(patientVisitCreateSchema.safeParse({
       ...createInput,
       startsAt: '2026-10-25T02:30:00+02:00',
@@ -137,6 +138,17 @@ describe('patient visit contracts', () => {
       'product_title_snapshot',
       'product_sku_snapshot',
     ])
+  })
+
+  it('relies on the installed audit-log contract to encrypt command payloads and snapshots', () => {
+    const actionLog = auditLogEncryptionMaps.find((map) => map.entityId === 'audit_logs:action_log')
+    expect(actionLog?.fields.map((field) => field.field)).toEqual(expect.arrayContaining([
+      'command_payload',
+      'snapshot_before',
+      'snapshot_after',
+      'changes_json',
+      'context_json',
+    ]))
   })
 
   it('keeps all VIS event IDs typed and stable', () => {

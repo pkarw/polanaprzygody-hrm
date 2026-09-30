@@ -68,6 +68,51 @@ describe('visit command registry', () => {
     }))).rejects.toMatchObject({ status: 401 })
   })
 
+  it('fails closed when current host authorization is unavailable', async () => {
+    const em = { fork: () => em, findOne: jest.fn(async () => null) }
+    const resolve = jest.fn((token: string) => {
+      if (token === 'em') return em
+      throw new Error(`[internal] Missing dependency ${token}`)
+    })
+    const handler = commandRegistry.get<Record<string, unknown>, unknown>('patient.visits.create')
+    await expect(handler?.execute(createInput, context({
+      container: { resolve } as unknown as CommandRuntimeContext['container'],
+      auth: { sub: 'user-1', tenantId: 'tenant-1', orgId: 'org-1' },
+      selectedOrganizationId: 'org-1',
+    }))).rejects.toMatchObject({
+      status: 503,
+      body: { code: 'visit_reference_authorization_unavailable' },
+    })
+  })
+
+  it('fails closed when the reference host is unavailable', async () => {
+    const em = { fork: () => em, findOne: jest.fn(async () => null) }
+    const userHasAllFeatures = jest.fn<(
+      userId: string,
+      requiredFeatures: string[],
+      scope: { tenantId: string | null; organizationId: string | null },
+    ) => Promise<boolean>>(async () => true)
+    const resolve = jest.fn((token: string) => {
+      if (token === 'em') return em
+      if (token === 'rbacService') return { userHasAllFeatures }
+      throw new Error(`[internal] Missing dependency ${token}`)
+    })
+    const handler = commandRegistry.get<Record<string, unknown>, unknown>('patient.visits.create')
+    await expect(handler?.execute(createInput, context({
+      container: { resolve } as unknown as CommandRuntimeContext['container'],
+      auth: { sub: 'user-1', tenantId: 'tenant-1', orgId: 'org-1' },
+      selectedOrganizationId: 'org-1',
+    }))).rejects.toMatchObject({
+      status: 503,
+      body: { code: 'visit_reference_service_unavailable' },
+    })
+    expect(userHasAllFeatures).toHaveBeenCalledWith(
+      'user-1',
+      ['staff.view'],
+      { tenantId: 'tenant-1', organizationId: 'org-1' },
+    )
+  })
+
   it.each([
     ['patient.visits.confirm', { id: createInput.patientId, expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }, ['patient.visits.manage']],
     ['patient.visits.transition', { id: createInput.patientId, expectedUpdatedAt: '2026-09-30T09:00:00.000Z', status: 'planned', reason: 'Correction' }, ['patient.visits.manage', 'patient.visits.correct']],

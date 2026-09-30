@@ -193,6 +193,105 @@ test.describe('VIS-T04: visit lifecycle actions', () => {
       await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
     }
   })
+
+  test('enforces reasons, future-time gates, explicit unconfirm, and no automatic status changes', async ({ request }) => {
+    const actor = await login(request)
+    let patient: CreatedPatient | null = null
+    let teamMemberId: string | null = null
+    const visitIds: string[] = []
+    try {
+      patient = await createPatient(request, actor)
+      teamMemberId = await createStaffTeamMemberFixture(request, actor.token, {
+        displayName: unique('VIS lifecycle matrix clinician'),
+      })
+      const historical = await createVisit(request, actor, {
+        patientId: patient.id,
+        teamMemberId,
+        startsAt: '2020-03-15T10:00:00+01:00',
+        timeZone: 'Europe/Warsaw',
+      })
+      visitIds.push(historical.id)
+      expect(await readVisit(request, actor, historical.id)).toMatchObject({ status: 'planned' })
+
+      const confirmed = await visitAction(request, actor, historical.id, 'confirmation', {
+        confirmed: true,
+        expectedUpdatedAt: historical.updatedAt,
+      })
+      const unconfirmed = await visitAction(request, actor, historical.id, 'confirmation', {
+        confirmed: false,
+        expectedUpdatedAt: confirmed.updatedAt,
+      })
+      expect(unconfirmed).toMatchObject({ status: 'planned', isConfirmed: false })
+
+      for (const status of ['cancelled', 'no_show', 'planned'] as const) {
+        const refused = await callApi(
+          request,
+          'POST',
+          `/api/patient/visits/${historical.id}/status`,
+          actor,
+          { status, expectedUpdatedAt: unconfirmed.updatedAt },
+        )
+        expect(refused.status).toBe(400)
+      }
+      const noOp = await callApi(
+        request,
+        'POST',
+        `/api/patient/visits/${historical.id}/status`,
+        actor,
+        { status: 'planned', reason: 'No-op is forbidden', expectedUpdatedAt: unconfirmed.updatedAt },
+      )
+      expect(noOp.status).toBe(409)
+
+      const cancelled = await visitAction(request, actor, historical.id, 'status', {
+        status: 'cancelled',
+        reason: 'Matrix cancellation',
+        expectedUpdatedAt: unconfirmed.updatedAt,
+      })
+      const closedToClosed = await callApi(
+        request,
+        'POST',
+        `/api/patient/visits/${historical.id}/status`,
+        actor,
+        { status: 'completed', expectedUpdatedAt: cancelled.updatedAt },
+      )
+      expect(closedToClosed.status).toBe(409)
+      await visitAction(request, actor, historical.id, 'status', {
+        status: 'planned',
+        reason: 'Restore after matrix proof',
+        expectedUpdatedAt: cancelled.updatedAt,
+      })
+
+      const future = await createVisit(request, actor, {
+        patientId: patient.id,
+        teamMemberId,
+        startsAt: '2099-03-15T10:00:00+01:00',
+        timeZone: 'Europe/Warsaw',
+      })
+      visitIds.push(future.id)
+      for (const [status, reason] of [
+        ['completed', undefined],
+        ['no_show', 'Patient did not arrive'],
+      ] as const) {
+        const refused = await callApi(
+          request,
+          'POST',
+          `/api/patient/visits/${future.id}/status`,
+          actor,
+          {
+            status,
+            ...(reason ? { reason } : {}),
+            expectedUpdatedAt: future.updatedAt,
+          },
+        )
+        expect(refused.status).toBe(422)
+      }
+      expect(await readVisit(request, actor, future.id)).toMatchObject({ status: 'planned' })
+    } finally {
+      for (const id of visitIds) await cleanupVisit(request, actor, id)
+      await cleanupPatient(request, actor, patient?.id ?? null)
+      await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
+    }
+  })
 })
 
 test.describe('VIS-T05: manual visit settlement', () => {

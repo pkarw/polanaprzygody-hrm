@@ -20,6 +20,7 @@ import {
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { emitPatientEvent } from '../events'
+import { instantOffsetInTimeZone } from '../lib/visitDateTime'
 import type {
   PatientReferenceService,
   ResolvedProductReference,
@@ -256,6 +257,15 @@ function assertSchedule(startsAt: Date, endsAt: Date | null): void {
   }
 }
 
+function assertUniqueServiceProductIds(productIds: string[]): void {
+  if (new Set(productIds).size !== productIds.length) {
+    throw new CrudHttpError(409, {
+      error: 'The same service cannot be selected twice',
+      code: 'visit_service_duplicate',
+    })
+  }
+}
+
 function assertScheduleTimeZone(startsAt: string | undefined, endsAt: string | null | undefined, timeZone: string): void {
   if (
     (startsAt !== undefined && !patientVisitInstantMatchesTimeZone(startsAt, timeZone)) ||
@@ -266,6 +276,28 @@ function assertScheduleTimeZone(startsAt: string | undefined, endsAt: string | n
       code: 'visit_time_zone_mismatch',
     })
   }
+}
+
+function storedInstantAtTimeZone(instant: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+  const byType = new Map(parts.map((part) => [part.type, part.value]))
+  const offset = instantOffsetInTimeZone(instant.toISOString(), timeZone)
+  if (!offset) {
+    throw new CrudHttpError(422, {
+      error: 'The stored visit instant cannot be represented in the selected time zone',
+      code: 'visit_time_zone_mismatch',
+    })
+  }
+  return `${byType.get('year')}-${byType.get('month')}-${byType.get('day')}T${byType.get('hour')}:${byType.get('minute')}:${byType.get('second')}${offset}`
 }
 
 function assertVisitEditable(visit: PatientVisit): void {
@@ -296,21 +328,30 @@ async function resolveCreateReferences(
   products: ResolvedProductReference[]
 }> {
   const references = referenceService(ctx)
-  await requireReferenceFeature(ctx, scope, 'staff.view')
   const teamMember = await references.requireActiveTeamMember(input.teamMemberId, scope)
 
   let resource: ResolvedReference | null = null
   if (input.resourceId) {
-    await requireReferenceFeature(ctx, scope, 'resources.view')
     resource = await references.requireActiveResource(input.resourceId, scope)
   }
 
   let products: ResolvedProductReference[] = []
   if (input.serviceProductIds.length > 0) {
-    await requireReferenceFeature(ctx, scope, 'catalog.products.view')
     products = await references.requireActiveProducts(input.serviceProductIds, scope)
   }
   return { teamMember, resource, products }
+}
+
+async function requireCreateReferenceFeatures(
+  ctx: CommandRuntimeContext,
+  scope: PatientScope,
+  input: { resourceId?: string | null; serviceProductIds: string[] },
+): Promise<void> {
+  await requireReferenceFeature(ctx, scope, 'staff.view')
+  if (input.resourceId) await requireReferenceFeature(ctx, scope, 'resources.view')
+  if (input.serviceProductIds.length > 0) {
+    await requireReferenceFeature(ctx, scope, 'catalog.products.view')
+  }
 }
 
 async function encryptServiceSnapshots(
@@ -515,6 +556,11 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     const scope = requirePatientScope(ctx)
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
+    assertUniqueServiceProductIds(parsed.serviceProductIds)
+    const startsAt = new Date(parsed.startsAt)
+    const endsAt = parsed.endsAt ? new Date(parsed.endsAt) : null
+    assertSchedule(startsAt, endsAt)
+    assertScheduleTimeZone(parsed.startsAt, parsed.endsAt, parsed.timeZone)
 
     const digest = createRequestDigest({
       patientId: parsed.patientId,
@@ -526,6 +572,9 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       description: parsed.description ?? null,
       serviceProductIds: parsed.serviceProductIds,
     })
+    // A retry is still a current request. Re-check host visibility before returning the
+    // historical result, but do not require the historical references to remain active.
+    await requireCreateReferenceFeatures(ctx, scope, parsed)
     const replayed = await resolveIdempotentVisit(em, parsed.clientRequestId, digest, scope)
     if (replayed) return replayed
 
@@ -546,10 +595,6 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     )
     const serviceColumns = await encryptServiceSnapshots(resolved.products, scope, encryption)
     const visitId = randomUUID()
-    const startsAt = new Date(parsed.startsAt)
-    const endsAt = parsed.endsAt ? new Date(parsed.endsAt) : null
-    assertSchedule(startsAt, endsAt)
-
     let patient!: Patient
     let visit!: PatientVisit
     let now!: Date
@@ -719,6 +764,9 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     const parsed = patientVisitUpdateSchema.parse(rawInput)
     const scope = requirePatientScope(ctx)
     const actorUserId = requireActorUserId(ctx)
+    if (parsed.serviceProductIds !== undefined) {
+      assertUniqueServiceProductIds(parsed.serviceProductIds)
+    }
     const rootEm = ctx.container.resolve('em') as EntityManager
     const readEm = rootEm.fork()
     const current = await loadVisitDecrypted(readEm, parsed.id, scope)
@@ -784,8 +832,17 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
           const endsAt = parsed.endsAt !== undefined
             ? (parsed.endsAt ? new Date(parsed.endsAt) : null)
             : (visit.endsAt ?? null)
+          const timeZone = parsed.timeZone ?? visit.timeZone
           assertSchedule(startsAt, endsAt)
-          assertScheduleTimeZone(parsed.startsAt, parsed.endsAt, parsed.timeZone ?? visit.timeZone)
+          assertScheduleTimeZone(
+            parsed.startsAt ?? storedInstantAtTimeZone(visit.startsAt, timeZone),
+            parsed.endsAt !== undefined
+              ? parsed.endsAt
+              : visit.endsAt
+                ? storedInstantAtTimeZone(visit.endsAt, timeZone)
+                : null,
+            timeZone,
+          )
           updatedAt = nextUpdatedAt(visit.updatedAt)
         },
         ({ em: phaseEm }) => {

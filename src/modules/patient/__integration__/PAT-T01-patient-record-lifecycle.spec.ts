@@ -1,15 +1,22 @@
 import { expect, test } from '@playwright/test'
 import {
+  createStaffTeamMemberFixture,
+  deleteStaffEntityIfExists,
+} from '@open-mercato/core/helpers/integration/staffFixtures'
+import {
   buildPatientInput,
   callApi,
   callApiOk,
   cleanupPatient,
+  cleanupVisit,
   createPatient,
+  createVisit,
   listAddresses,
   login,
   newRequestId,
   readPatient,
   requirePatient,
+  unique,
   type CreatedPatient,
 } from './helpers/api'
 
@@ -195,6 +202,42 @@ test.describe('PAT-T01: patient record lifecycle', () => {
       expect(conflicting.status).toBe(409)
     } finally {
       await cleanupPatient(request, actor, createdId)
+    }
+  })
+
+  test('refuses archiving while a planned visit exists', async ({ request }) => {
+    const actor = await login(request)
+    let patient: CreatedPatient | null = null
+    let teamMemberId: string | null = null
+    let visitId: string | null = null
+    try {
+      patient = await createPatient(request, actor)
+      teamMemberId = await createStaffTeamMemberFixture(request, actor.token, {
+        displayName: unique('PAT visit archive invariant'),
+      })
+      const created = await createVisit(request, actor, {
+        patientId: patient.id,
+        teamMemberId,
+        startsAt: '2026-11-11T10:00:00+01:00',
+        timeZone: 'Europe/Warsaw',
+      })
+      visitId = created.id
+      const record = await requirePatient(request, actor, patient.id)
+
+      const blocked = await callApi(
+        request,
+        'POST',
+        `/api/patient/patients/${patient.id}/archive`,
+        actor,
+        { archived: true, expectedUpdatedAt: record.updatedAt },
+      )
+      expect(blocked.status).toBe(409)
+      expect(blocked.body).toMatchObject({ code: 'patient_has_planned_visits' })
+      expect((await requirePatient(request, actor, patient.id)).status).toBe('active')
+    } finally {
+      await cleanupVisit(request, actor, visitId)
+      await cleanupPatient(request, actor, patient?.id ?? null)
+      await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
     }
   })
 })

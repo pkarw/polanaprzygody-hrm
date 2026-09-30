@@ -49,6 +49,14 @@ describe('visit command invariants', () => {
     expect(visitsSource).toContain("requireReferenceFeature(ctx, scope, 'staff.view')")
     expect(visitsSource).toContain("requireReferenceFeature(ctx, scope, 'resources.view')")
     expect(visitsSource).toContain("requireReferenceFeature(ctx, scope, 'catalog.products.view')")
+    expect(visitsSource.indexOf('await requireCreateReferenceFeatures(ctx, scope, parsed)'))
+      .toBeLessThan(visitsSource.indexOf('const replayed = await resolveIdempotentVisit'))
+  })
+
+  it('maps duplicate services and semantic scheduling failures to domain statuses', () => {
+    expect(visitsSource).toContain("code: 'visit_service_duplicate'")
+    expect(visitsSource).toContain("code: 'visit_end_not_after_start'")
+    expect(visitsSource).toContain("code: 'visit_time_zone_mismatch'")
   })
 
   it('serializes create/archive and blocks patient deletion whenever visit history exists', () => {

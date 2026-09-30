@@ -422,14 +422,6 @@ const visitScheduleFields = {
   timeZone: patientVisitTimeZoneSchema,
 }
 
-const visitEndsAfterStart = (value: { startsAt: string; endsAt?: string | null }) =>
-  value.endsAt == null || Date.parse(value.endsAt) > Date.parse(value.startsAt)
-
-const visitEndAfterStartIssue = {
-  message: 'The visit end must be later than its start',
-  path: ['endsAt'],
-}
-
 /**
  * Confirms that the wall-clock part submitted by the client exists in the named zone and
  * that the explicit offset selects the same instant. This rejects DST gaps while allowing
@@ -463,30 +455,9 @@ export function patientVisitInstantMatchesTimeZone(instant: string, timeZone: st
   }
 }
 
-function addVisitTimeZoneIssues(
-  value: { startsAt: string; endsAt?: string | null; timeZone: string },
-  ctx: z.RefinementCtx,
-): void {
-  if (!patientVisitInstantMatchesTimeZone(value.startsAt, value.timeZone)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'The visit start does not exist at that offset in the selected time zone',
-      path: ['startsAt'],
-    })
-  }
-  if (value.endsAt && !patientVisitInstantMatchesTimeZone(value.endsAt, value.timeZone)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'The visit end does not exist at that offset in the selected time zone',
-      path: ['endsAt'],
-    })
-  }
-}
-
 const serviceProductIdsSchema = z
   .array(z.string().uuid())
   .max(100)
-  .refine((ids) => new Set(ids).size === ids.length, 'The same service cannot be selected twice')
 
 export const patientVisitCreateSchema = z
   .object({
@@ -499,8 +470,6 @@ export const patientVisitCreateSchema = z
     clientRequestId: z.string().uuid(),
   })
   .strict()
-  .refine(visitEndsAfterStart, visitEndAfterStartIssue)
-  .superRefine(addVisitTimeZoneIssues)
 
 export const patientVisitUpdateSchema = z
   .object({
@@ -515,11 +484,6 @@ export const patientVisitUpdateSchema = z
     serviceProductIds: serviceProductIdsSchema.optional(),
   })
   .strict()
-  .superRefine((value, ctx) => {
-    if (value.startsAt && value.endsAt != null && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'The visit end must be later than its start', path: ['endsAt'] })
-    }
-  })
 
 export const patientVisitDeleteSchema = z.object({
   id: z.string().uuid(),
