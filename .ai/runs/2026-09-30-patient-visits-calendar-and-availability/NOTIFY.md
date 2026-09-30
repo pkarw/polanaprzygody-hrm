@@ -69,3 +69,16 @@
 - `react-big-calendar` may attach the availability/exception class after inserting an event node. The accessibility normalizer now observes class changes as well as subtree additions, ensuring late-rendered bands are hidden from the accessibility tree and removed from pointer/tab interaction.
 - A focused production rerun showed that the calendar can subsequently reconcile `tabindex` and classes on the same node without changing its kind. The normalizer is now idempotent and also watches those accessibility attributes, so any library reset is corrected without an observer loop.
 - Root cause after the next focused rerun: query data can change while the loading branch still owns the DOM, so the data-dependent effect saw a null calendar ref and did not rerun when only the branch changed. A callback ref now starts and stops normalization exactly with the calendar root's mount lifecycle.
+
+## 2026-09-30T22:19:00Z — final gate passed
+
+- Full configured gate passed: generated outputs current, typecheck clean, lint 0 errors (8 unrelated pre-existing warnings), DS 330 files, 37 suites / 331 unit tests, and optimized production build.
+- `yarn db:generate` reports `patient: no changes`; entity metadata, migration, and snapshot agree.
+- Focused VCAL-T01–T10 passed 7/7. The complete patient suite passed 94 executable scenarios with 4 expected optional-host skips and zero failures.
+- A visually reviewed 1280×1503 dark-theme screenshot proves the final availability and exception bands in the grid and is staged under `final-gate-artifacts/`.
+- Delegation: the independent review agent is re-reviewing final head `e8dfcca`; the draft remains claimed until that clean verdict is recorded.
+
+## 2026-09-30T22:31:00Z — final review accessibility fix
+
+- The independent re-review found that grid bands were correctly hidden from assistive technology, but their text alternative exposed only times and could not distinguish windows on different dates.
+- Decision: each lane-summary window now exposes a locale- and timezone-aware date-and-time range; browser coverage uses two dates and requires both distinct accessible dates.

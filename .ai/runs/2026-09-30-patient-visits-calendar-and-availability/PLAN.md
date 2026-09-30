@@ -23,15 +23,16 @@
 | 2 | 2.4 | Complete VCAL-T01–T10 integration and browser coverage | dispatch | done | 3d73a6b |
 | 2 | 2.5-review-fix | Fix independent Phase 2 review findings before runtime verification | inline | done | 4cd23af |
 | 2 | 2.6-runtime-fix | Correct issues exposed by the live Phase 2 browser and API checkpoint | inline | done | fb5e598 |
-| 2 | 2.7-gate-fix | Preserve idempotent visit retries after conflict enforcement serializes concurrent creates | inline | done | this commit |
-| 2 | 2.8-review-fix | Narrow concurrent retry recovery to availability conflict outcomes | inline | done | this commit |
-| 2 | 2.9-review-fix | Degrade resource-state read failures without inventing an inactive-resource block | inline | done | this commit |
-| 2 | 2.10-review-fix | Preserve conflict-override audit history across rollback and keep redeploy repeatable | inline | done | this commit |
-| 2 | 2.11-review-fix | Prove concurrent replay, encrypted override storage, active maps, and two-organization isolation | inline | done | this commit |
-| 2 | 2.12-review-fix | Render non-actionable availability and exception bands inside the calendar grid | inline | done | this commit |
-| 2 | 2.13-runtime-fix | Observe late calendar event classes and align the isolation oracle with the stable denial payload | inline | done | this commit |
-| 2 | 2.14-runtime-fix | Reapply non-interactive band semantics after calendar reconciliation | inline | done | this commit |
-| 2 | 2.15-runtime-fix | Start band normalization from the calendar mount callback instead of a data-state race | inline | done | this commit |
+| 2 | 2.7-gate-fix | Preserve idempotent visit retries after conflict enforcement serializes concurrent creates | inline | done | 09824e1 |
+| 2 | 2.8-review-fix | Narrow concurrent retry recovery to availability conflict outcomes | inline | done | 429830e |
+| 2 | 2.9-review-fix | Degrade resource-state read failures without inventing an inactive-resource block | inline | done | 75c97d1 |
+| 2 | 2.10-review-fix | Preserve conflict-override audit history across rollback and keep redeploy repeatable | inline | done | 2669686 |
+| 2 | 2.11-review-fix | Prove concurrent replay, encrypted override storage, active maps, and two-organization isolation | inline | done | 0321dc0 |
+| 2 | 2.12-review-fix | Render non-actionable availability and exception bands inside the calendar grid | inline | done | 7fb70b1 |
+| 2 | 2.13-runtime-fix | Observe late calendar event classes and align the isolation oracle with the stable denial payload | inline | done | dd507ef |
+| 2 | 2.14-runtime-fix | Reapply non-interactive band semantics after calendar reconciliation | inline | done | 151b2f8 |
+| 2 | 2.15-runtime-fix | Start band normalization from the calendar mount callback instead of a data-state race | inline | done | e8dfcca |
+| 2 | 2.16-review-fix | Distinguish availability windows by localized date and time for assistive technology | inline | done | pending |
 
 ## Goal
 

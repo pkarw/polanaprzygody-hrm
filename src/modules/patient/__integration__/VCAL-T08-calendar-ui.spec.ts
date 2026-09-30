@@ -156,8 +156,8 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
             }, {
               id: 'member-lane-exception',
               kind: 'exception',
-              from: '2099-05-10T12:00:00+02:00',
-              to: '2099-05-10T12:30:00+02:00',
+              from: '2099-05-11T12:00:00+02:00',
+              to: '2099-05-11T12:30:00+02:00',
             }],
             }],
             degraded: [{
@@ -216,6 +216,10 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       }
       const laneSummary = page.locator('[data-visit-availability-lanes]')
       await expect(laneSummary).toContainText('Quality-state clinician')
+      await expect(laneSummary).toContainText(/May 10|10 May|10 maj|10\.05/i)
+      await expect(laneSummary).toContainText(/May 11|11 May|11 maj|11\.05/i)
+      await expect(laneSummary.locator('time[datetime^="2099-05-10"]')).toHaveCount(1)
+      await expect(laneSummary.locator('time[datetime^="2099-05-11"]')).toHaveCount(1)
       await expect(laneSummary.getByRole('button')).toHaveCount(0)
       await attachScreenshot(page, testInfo, 'vcal-2-degraded-dark')
 

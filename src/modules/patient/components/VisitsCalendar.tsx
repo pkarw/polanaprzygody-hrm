@@ -306,6 +306,11 @@ export function VisitsCalendar() {
     dateStyle: 'medium',
     timeZone: state.timeZone,
   }).formatRange(new Date(range.from), new Date(new Date(range.to).getTime() - 1)), [locale, range, state.timeZone])
+  const laneWindowFormatter = React.useMemo(() => new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: state.timeZone,
+  }), [locale, state.timeZone])
 
   return (
     <div className="space-y-4">
@@ -446,7 +451,9 @@ export function VisitsCalendar() {
                     <span className="font-medium">{lane.subjectName}</span>
                     {lane.windows.map((window) => (
                       <span key={window.id} className="rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                        {format(displayInstant(window.from, state.timeZone), 'HH:mm')}–{format(displayInstant(window.to, state.timeZone), 'HH:mm')}
+                        <time dateTime={window.from}>
+                          {laneWindowFormatter.formatRange(new Date(window.from), new Date(window.to))}
+                        </time>
                         {' · '}
                         {window.kind === 'availability'
                           ? t('patient.visits.calendar.availableLane', undefined, { name: lane.subjectName })
