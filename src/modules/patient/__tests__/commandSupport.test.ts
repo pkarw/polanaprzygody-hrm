@@ -159,10 +159,13 @@ describe('assertPatientAcceptsNewEntries', () => {
 })
 
 describe('buildPatientNumber', () => {
-  it('derives the handle from the record id, with no counter', () => {
-    expect(buildPatientNumber('11111111-2222-3333-4444-555555555555')).toBe(
-      'P-11111111-2222-3333-4444-555555555555',
-    )
+  it('generates a UUID handle independently on every call', () => {
+    const first = buildPatientNumber()
+    const second = buildPatientNumber()
+
+    expect(first).toMatch(/^P-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(second).toMatch(/^P-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(second).not.toBe(first)
   })
 })
 

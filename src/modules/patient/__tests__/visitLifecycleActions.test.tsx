@@ -114,7 +114,7 @@ describe('VisitLifecycleActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'patient.visits.lifecycle.cancel' }))
     const reason = screen.getByPlaceholderText('patient.visits.lifecycle.reasonPlaceholder')
     fireEvent.change(reason, { target: { value: 'Patient requested a different date' } })
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter', ctrlKey: true })
+    fireEvent.keyDown(reason, { key: 'Enter', ctrlKey: true })
 
     await waitFor(() => expect(mockShowConflict).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('dialog')).toBeVisible()

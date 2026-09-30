@@ -2,6 +2,9 @@
 import * as React from 'react'
 import { CrudForm, type CrudField, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
 import { createCrud } from '@open-mercato/ui/backend/utils/crud'
+import { FormField } from '@open-mercato/ui/primitives/form-field'
+import { Input } from '@open-mercato/ui/primitives/input'
+import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import { loadTeamMemberOptions, resolveTeamMemberLabel } from './referencePickers'
@@ -23,6 +26,79 @@ const LIST_HREF = '/backend/patient/patients'
 const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
 
 type Translate = ReturnType<typeof useT>
+
+type AccessibleTextFieldOptions = {
+  id: string
+  label: string
+  required?: boolean
+  description?: React.ReactNode
+  maxLength?: number
+  textarea?: boolean
+  rows?: number
+  showCount?: boolean
+}
+
+/**
+ * Builds a text control whose visible label is programmatically associated with its input.
+ *
+ * The installed CrudForm currently renders built-in text/textarea labels without an
+ * `htmlFor`, so clicking the label does not focus the control and assistive technology cannot
+ * derive its accessible name. Keeping the field as a CrudForm custom field preserves its
+ * validation and group membership while letting the app render the shared FormField primitive
+ * around the shared Input/Textarea controls. The blank outer label prevents a second,
+ * unassociated label from being rendered by CrudForm.
+ */
+function accessibleTextField({
+  id,
+  label,
+  required = false,
+  description,
+  maxLength,
+  textarea = false,
+  rows,
+  showCount = false,
+}: AccessibleTextFieldOptions): CrudField {
+  const controlId = `patient-create-${id}`
+  return {
+    id,
+    label: '',
+    type: 'custom',
+    required,
+    rendersOwnError: true,
+    component: ({ value, setValue, error, autoFocus, disabled }) => (
+      <FormField
+        id={controlId}
+        label={label}
+        required={required}
+        description={description}
+        error={error}
+        disabled={disabled}
+      >
+        {textarea ? (
+          <Textarea
+            value={value == null ? '' : String(value)}
+            onChange={(event) => setValue(event.target.value)}
+            autoFocus={autoFocus}
+            disabled={disabled}
+            required={required}
+            maxLength={maxLength}
+            rows={rows}
+            showCount={showCount}
+          />
+        ) : (
+          <Input
+            value={value == null ? '' : String(value)}
+            onChange={(event) => setValue(event.target.value)}
+            autoFocus={autoFocus}
+            disabled={disabled}
+            required={required}
+            maxLength={maxLength}
+          />
+        )}
+      </FormField>
+    ),
+  }
+}
 
 /**
  * The create form's flat value shape.
@@ -72,20 +148,18 @@ function orNull(value: unknown): string | null {
 function useIdentityFields(t: Translate): CrudField[] {
   return React.useMemo<CrudField[]>(
     () => [
-      {
+      accessibleTextField({
         id: 'firstName',
         label: t('patient.patients.fields.firstName'),
-        type: 'text',
         required: true,
         maxLength: 120,
-      },
-      {
+      }),
+      accessibleTextField({
         id: 'lastName',
         label: t('patient.patients.fields.lastName'),
-        type: 'text',
         required: true,
         maxLength: 120,
-      },
+      }),
       {
         id: 'birthDate',
         label: t('patient.patients.fields.birthDate'),
@@ -94,18 +168,16 @@ function useIdentityFields(t: Translate): CrudField[] {
         // before a round trip.
         maxDate: new Date(),
       },
-      {
+      accessibleTextField({
         id: 'email',
         label: t('patient.patients.fields.email'),
-        type: 'text',
         description: t('patient.patients.fields.contactHint'),
-      },
-      {
+      }),
+      accessibleTextField({
         id: 'phone',
         label: t('patient.patients.fields.phone'),
-        type: 'text',
         description: t('patient.patients.fields.phoneHint'),
-      },
+      }),
       {
         id: 'ownerTeamMemberId',
         label: t('patient.patients.fields.ownerTeamMember'),
@@ -119,15 +191,15 @@ function useIdentityFields(t: Translate): CrudField[] {
         // going blank.
         resolveLabel: resolveTeamMemberLabel,
       },
-      {
+      accessibleTextField({
         id: 'description',
         label: t('patient.patients.fields.description'),
-        type: 'textarea',
         description: t('patient.patients.fields.descriptionHint'),
         maxLength: 20_000,
+        textarea: true,
         showCount: true,
         rows: 4,
-      },
+      }),
     ],
     [t],
   )
@@ -175,21 +247,20 @@ function useContactsField(): CrudField {
 function usePrimaryAddressFields(t: Translate): CrudField[] {
   return React.useMemo<CrudField[]>(
     () => [
-      { id: 'address_name', label: t('patient.patients.address.name'), type: 'text', maxLength: 120 },
-      { id: 'address_purpose', label: t('patient.patients.address.purpose'), type: 'text', maxLength: 60 },
-      {
+      accessibleTextField({ id: 'address_name', label: t('patient.patients.address.name'), maxLength: 120 }),
+      accessibleTextField({ id: 'address_purpose', label: t('patient.patients.address.purpose'), maxLength: 60 }),
+      accessibleTextField({
         id: 'address_addressLine1',
         label: t('patient.patients.address.line1'),
-        type: 'text',
         required: true,
         maxLength: 200,
-      },
-      { id: 'address_addressLine2', label: t('patient.patients.address.line2'), type: 'text', maxLength: 200 },
-      { id: 'address_buildingNumber', label: t('patient.patients.address.buildingNumber'), type: 'text', maxLength: 40 },
-      { id: 'address_flatNumber', label: t('patient.patients.address.flatNumber'), type: 'text', maxLength: 40 },
-      { id: 'address_city', label: t('patient.patients.address.city'), type: 'text', required: true, maxLength: 120 },
-      { id: 'address_region', label: t('patient.patients.address.region'), type: 'text', maxLength: 120 },
-      { id: 'address_postalCode', label: t('patient.patients.address.postalCode'), type: 'text', maxLength: 20 },
+      }),
+      accessibleTextField({ id: 'address_addressLine2', label: t('patient.patients.address.line2'), maxLength: 200 }),
+      accessibleTextField({ id: 'address_buildingNumber', label: t('patient.patients.address.buildingNumber'), maxLength: 40 }),
+      accessibleTextField({ id: 'address_flatNumber', label: t('patient.patients.address.flatNumber'), maxLength: 40 }),
+      accessibleTextField({ id: 'address_city', label: t('patient.patients.address.city'), required: true, maxLength: 120 }),
+      accessibleTextField({ id: 'address_region', label: t('patient.patients.address.region'), maxLength: 120 }),
+      accessibleTextField({ id: 'address_postalCode', label: t('patient.patients.address.postalCode'), maxLength: 20 }),
       {
         id: 'address_country',
         label: t('patient.patients.address.country'),

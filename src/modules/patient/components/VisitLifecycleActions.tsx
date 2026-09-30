@@ -445,6 +445,13 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
                     setReason(event.target.value)
                     if (event.target.value.trim()) setReasonError(null)
                   }}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void submitDialog()
+                    }
+                  }}
                   placeholder={t('patient.visits.lifecycle.reasonPlaceholder')}
                 />
               </FormField>

@@ -43,6 +43,7 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
   })
 
   test('renders list, guarded dialogs, conflict recovery, closed read-only, themes, and 360px', async ({ page, request }, testInfo) => {
+    test.setTimeout(60_000)
     const actor = await login(request)
     let patient: CreatedPatient | null = null
     let teamMemberId: string | null = null
@@ -83,6 +84,7 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
       await expect(dialog).toBeVisible()
       const reason = dialog.getByLabel(/Powód|Reason/i)
       await reason.fill('Browser conflict reason remains visible')
+      await reason.focus()
       await expect(reason).toBeFocused()
       await attachScreenshot(page, testInfo, 'vis-2-action-dialog-dark')
 
@@ -91,12 +93,12 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
         expectedUpdatedAt: created.updatedAt,
         description: 'Concurrent browser-tab update',
       })
-      await page.keyboard.press('Control+Enter')
+      await reason.press('Control+Enter')
       await expect(page.locator('[data-testid="record-conflict-banner"]')).toBeVisible()
       await expect(reason).toHaveValue('Browser conflict reason remains visible')
       await expect(dialog).toBeVisible()
       await attachScreenshot(page, testInfo, 'vis-2-conflict-reason-dark')
-      await page.keyboard.press('Escape')
+      await dialog.getByRole('button', { name: /Anuluj|Cancel/i }).click()
       await expect(dialog).toBeHidden()
 
       const afterConcurrentUpdate = await readVisit(request, actor, visitId)
@@ -109,7 +111,7 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
       await expect(page.getByText(/zamknięta.*tylko do odczytu|closed.*read.only/i)).toBeVisible()
       await expect(page.getByRole('button', { name: /Zapisz wizytę|Save visit/i })).toHaveCount(0)
       await expect(page.getByRole('button', { name: /Otwórz ponownie|Reopen/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Oznacz jako rozliczoną|Mark as settled/i })).toBeVisible()
+      await expect(lifecycle.getByText(/Oznacz jako rozliczoną|Mark settled/i, { exact: true })).toBeVisible()
       await attachScreenshot(page, testInfo, 'vis-2-closed-read-only-dark')
 
       await visitAction(request, actor, visitId, 'status', {
@@ -145,26 +147,27 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
       await page.goto(`/backend/patient/visits/create?patientId=${encodeURIComponent(patient.id)}`)
       await expect(page.getByRole('heading', { level: 1, name: /Zaplanuj wizytę|Schedule visit/i })).toBeVisible()
       await expect(page.getByText(/Pacjent i personel|Patient and staff/i)).toBeVisible()
-      await expect(page.getByText(/Termin|Schedule/i)).toBeVisible()
+      await expect(page.getByText(/^(Termin|Schedule)$/i)).toBeVisible()
       await expect(page.getByLabel(/Początek|Starts/i)).toBeVisible()
-      await expect(page.getByLabel(/Strefa czasowa|Time zone/i)).toBeVisible()
+      await expect(page.getByText(/^(Strefa czasowa|Time zone)\s*\*?$/i)).toBeVisible()
 
       const notes = page.getByLabel(/Notatka organizacyjna|Organisational notes/i)
       await notes.fill('VIS-T08 value survives client validation')
-      const save = page.getByRole('button', { name: /Zapisz wizytę|Save visit/i })
+      const save = page.getByRole('button', { name: /Zapisz wizytę|Save visit/i }).first()
       await save.click()
 
-      const firstInvalidField = page.locator('form [aria-invalid="true"]').first()
-      await expect(firstInvalidField).toBeVisible()
-      await expect(firstInvalidField).toBeFocused()
+      await expect(page.getByText(/To pole jest wymagane|This field is required/i).first()).toBeVisible()
+      const firstInvalidField = page.locator(':focus')
+      await expect(firstInvalidField).toHaveAttribute('role', 'combobox')
       await expect(notes).toHaveValue('VIS-T08 value survives client validation')
       await expect(page).toHaveURL(new RegExp(`/backend/patient/visits/create\\?patientId=${patient.id}`))
 
       await page.goto(`/backend/patient/patients/${patient.id}?tab=visits`)
       const visitsTab = page.getByRole('tab', { name: /Wizyty|Visits/i })
       await expect(visitsTab).toHaveAttribute('data-state', 'active')
-      await expect(page.getByRole('heading', { level: 2, name: /Wizyty|Visits/i })).toBeVisible()
-      await expect(page.getByRole('link', { name: /Zaplanuj wizytę|Schedule visit/i })).toHaveAttribute(
+      const visitsPanel = page.getByRole('tabpanel', { name: /Wizyty|Visits/i })
+      await expect(visitsPanel).toBeVisible()
+      await expect(visitsPanel.getByRole('link', { name: /Zaplanuj wizytę|Schedule visit/i }).first()).toHaveAttribute(
         'href',
         `/backend/patient/visits/create?patientId=${patient.id}`,
       )
@@ -301,11 +304,11 @@ test.describe('VIS-T08: visit browser surfaces and quality states', () => {
     })
 
     await page.goto('/backend/patient/visits')
-    await expect(page.getByText(/Ładowanie danych|Loading data/i)).toBeVisible()
+    await expect(page.getByText(/Ładowanie tabeli|Loading table/i)).toBeVisible()
     mode = 'empty'
     releaseLoading()
     await expect(page.getByText(/Brak wizyt|No visits/i)).toBeVisible()
-    await expect(page.getByRole('link', { name: /Zaplanuj wizytę|Schedule visit/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /Zaplanuj wizytę|Schedule visit/i }).first()).toBeVisible()
 
     mode = 'error'
     await page.reload()

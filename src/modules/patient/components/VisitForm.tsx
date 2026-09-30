@@ -8,7 +8,11 @@ import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/deta
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { DatePicker } from '@open-mercato/ui/primitives/date-picker'
+import { FormField } from '@open-mercato/ui/primitives/form-field'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { Textarea } from '@open-mercato/ui/primitives/textarea'
+import { format } from 'date-fns/format'
 import extensionPoints from '../extension-points'
 import type { PatientPagedResponse, PatientVisitItem } from '../types'
 import {
@@ -84,6 +88,74 @@ function resolveFormInstant(
   return selected.instant
 }
 
+function accessibleDateTimeField(input: {
+  id: 'startsAtLocal' | 'endsAtLocal'
+  label: string
+  required?: boolean
+}): CrudField {
+  return {
+    id: input.id,
+    label: '',
+    type: 'custom',
+    required: input.required,
+    rendersOwnError: true,
+    component: ({ value, setValue, error, disabled }) => (
+      <FormField
+        id={`patient-visit-${input.id}`}
+        label={input.label}
+        required={input.required}
+        error={error}
+        disabled={disabled}
+      >
+        <DatePicker
+          withTime
+          minuteStep={5}
+          value={typeof value === 'string' && value ? new Date(value) : null}
+          onChange={(date) => setValue(date ? format(date, "yyyy-MM-dd'T'HH:mm") : null)}
+        />
+      </FormField>
+    ),
+  }
+}
+
+function accessibleDescriptionField(input: {
+  label: string
+  description: string
+}): CrudField {
+  const maxLength = 20_000
+  return {
+    id: 'description',
+    label: '',
+    type: 'custom',
+    rendersOwnError: true,
+    component: ({ value, setValue, error, autoFocus, disabled }) => {
+      const text = typeof value === 'string' ? value : ''
+      return (
+        <div className="space-y-1">
+          <FormField
+            id="patient-visit-description"
+            label={input.label}
+            description={input.description}
+            error={error}
+            disabled={disabled}
+          >
+            <Textarea
+              value={text}
+              rows={5}
+              maxLength={maxLength}
+              autoFocus={autoFocus}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </FormField>
+          <p className="text-right text-xs text-muted-foreground" aria-live="polite">
+            {text.length}/{maxLength}
+          </p>
+        </div>
+      )
+    },
+  }
+}
+
 function useVisitFields(
   seedServices: VisitServiceSeed[] = [],
   patientReadOnly = false,
@@ -127,19 +199,15 @@ function useVisitFields(
       seedOptions: referenceSeeds?.resource ? [referenceSeeds.resource] : undefined,
       description: t('patient.visits.fields.resourceHint'),
     },
-    {
+    accessibleDateTimeField({
       id: 'startsAtLocal',
       label: t('patient.visits.fields.startsAt'),
-      type: 'datetime-local',
       required: true,
-      minuteStep: 5,
-    },
-    {
+    }),
+    accessibleDateTimeField({
       id: 'endsAtLocal',
       label: t('patient.visits.fields.endsAt'),
-      type: 'datetime-local',
-      minuteStep: 5,
-    },
+    }),
     {
       id: 'timeZone',
       label: t('patient.visits.fields.timeZone'),
@@ -179,15 +247,10 @@ function useVisitFields(
         />
       ),
     },
-    {
-      id: 'description',
+    accessibleDescriptionField({
       label: t('patient.visits.fields.description'),
-      type: 'textarea',
-      maxLength: 20_000,
-      showCount: true,
-      rows: 5,
       description: t('patient.visits.fields.descriptionHint'),
-    },
+    }),
   ], [patientReadOnly, referenceSeeds?.resource, referenceSeeds?.teamMember, seedServices, t])
 }
 
@@ -343,6 +406,7 @@ export function VisitDetailForm({ id }: { id: string }) {
       fields={fields}
       groups={groups}
       initialValues={initialValues}
+      disableInitialFocus
       optimisticLockUpdatedAt={record.updatedAt}
       readOnly={readOnly}
       readOnlyOverlay={record.status !== 'planned'

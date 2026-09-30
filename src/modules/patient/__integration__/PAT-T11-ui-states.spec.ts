@@ -37,8 +37,8 @@ test.describe('PAT-T11: patient UI states', () => {
       await page.goto('/backend/patient/patients')
       await expect(page.getByText('Widoczna Nazwa').first()).toBeVisible()
 
-      // The spec forbids showing a UUID: the record id must not appear anywhere in the rendered
-      // text, even though it is present in hrefs.
+      // Neither the rendered patient number nor any other displayed value may reveal the
+      // persistence id. Links may still use the id for routing.
       const bodyText = await page.locator('body').innerText()
       expect(bodyText).not.toContain(created.id)
     } finally {

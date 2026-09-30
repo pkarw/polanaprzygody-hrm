@@ -36,8 +36,11 @@ test.describe('PAT-T01: patient record lifecycle', () => {
       const record = await requirePatient(request, actor, created.id)
       expect(record.firstName).toBe('Anna')
       expect(record.status).toBe('active')
-      // Server-assigned, embedding the record id, and never a national identifier.
-      expect(record.patientNumber).toBe(`P-${created.id}`)
+      // Server-assigned from a distinct UUID, never the primary key or a national identifier.
+      expect(record.patientNumber).toMatch(
+        /^P-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      )
+      expect(record.patientNumber).not.toBe(`P-${created.id}`)
       // The version token must be projected, or optimistic locking is silently off.
       expect(record.updatedAt).toBeTruthy()
 

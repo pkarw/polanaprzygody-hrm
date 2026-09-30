@@ -202,8 +202,9 @@ async function resolveIdempotentPatient(
  * create rather than committing a record whose guardian silently went missing. The list stays
  * optional — the spec is explicit that a patient may have no CRM contacts at all.
  *
- * The record id is generated here rather than left to the database default because
- * `patient_number` embeds it and the children need it in the same transaction.
+ * The record id is generated here rather than left to the database default because the
+ * children need it in the same transaction. The public patient number receives a separate
+ * random UUID and therefore cannot disclose this persistence id.
  */
 const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
   id: 'patient.patients.create',
@@ -307,7 +308,7 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
               id: patientId,
               tenantId: scope.tenantId,
               organizationId: scope.organizationId,
-              patientNumber: buildPatientNumber(patientId),
+              patientNumber: buildPatientNumber(),
               ...patientColumns,
               ownerTeamMemberId: parsed.ownerTeamMemberId ?? null,
               status: 'active',

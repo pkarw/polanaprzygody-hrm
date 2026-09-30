@@ -21,6 +21,7 @@
 | 2 | 2.3 | Deliver lifecycle dialogs, read-only states, and settlement UI | inline | done | 5cf8ab3 |
 | 2 | 2.4 | Complete VIS acceptance, concurrency, security, and browser coverage | inline | done | 1ad6de4 |
 | 2 | 2.5 | Preserve timestamp precision and align persisted update assertions | inline | done | 6679eeb |
+| 2 | 2.6 | Fix browser-found accessibility, identity privacy, and deterministic UI coverage | inline | done | 339bdbc |
 
 ## Goal
 
@@ -116,6 +117,15 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
 - Complete self-contained VIS-T01..VIS-T09 coverage and PAT regression for the archive invariant, including logging/event privacy checks and missing optional-host behavior.
 - Run the Phase 2 local-browser checkpoint against real API fixtures and capture/attach list/detail/action/conflict/read-only/360 px/light/dark screenshots.
 - Reconcile VIS-AC01..VIS-AC06 and mark both phases verified only after their exit gates pass.
+
+#### Step 2.6 — Fix browser-found accessibility, identity privacy, and deterministic UI coverage
+
+- Replace inaccessible built-in text/date controls on the patient and visit forms with
+  labelled design-system primitives while preserving CrudForm validation and extension hosts.
+- Generate patient numbers independently from persistence identifiers and pin the privacy
+  invariant in API/browser regression coverage.
+- Make lifecycle keyboard submission and browser scenarios deterministic, retaining the
+  operator's input through optimistic-conflict recovery.
 
 ## Checkpoint and final verification
 
