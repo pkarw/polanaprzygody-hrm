@@ -1,22 +1,24 @@
 # Handoff — 2026-09-30-patient-visits-calendar-and-availability
 
-**Last updated:** 2026-09-30T21:12:48Z
+**Last updated:** 2026-09-30T22:27:00Z
 **Branch:** `feat/patient-visits-calendar-availability`
 **Base:** `feat/patient-visits` / PR #3
 **PR:** #6 — `https://github.com/pkarw/polanaprzygody-hrm/pull/6`
-**Current phase/step:** final gate
-**Last implementation commit:** `5c73d94` — Step 2.6-runtime-fix
+**Current phase/step:** PR finalization
+**Last implementation commit:** `9939551` — Step 2.17-review-fix
 
 ## What just happened
 
-- Completed and pushed every planned Step through `5c73d94`, including independent review and runtime fixes.
-- Checkpoint 2 passed: typecheck; focused ESLint; DS 330; focused 20/20 unit contracts; production build; and all 7/7 VCAL-T01–T10 API/browser scenarios against the dedicated task database.
-- Captured and visually reviewed five production-preview PNGs covering the real week calendar, 360 px dark create dialog, degradation/availability lanes, warning override, and hard block.
-- Runtime verification proved shared-dialog deletion and optimistic locking, nested-shortcut isolation, DST-safe deep links, >62-day recovery, stable 503 mapping, non-interactive availability lanes, idempotent retries, and serialized bookings.
+- Completed and pushed every planned implementation and review-fix Step through `9939551`.
+- Closed the last review findings: lane summaries distinguish windows with localized date/time text, and intentional degradation emits only PII-free technical failure classes.
+- The configured final gate passes: db/generate current, typecheck, lint with 0 errors, DS 330, 37 suites/332 unit tests, and production build.
+- The complete patient integration/browser suite passes with 94 executable scenarios, 4 expected optional-host skips, and 0 failures; focused VCAL is 7/7.
+- Captured and visually reviewed the final 1280×1533 dark-theme calendar screenshot showing aligned bands on two dates and distinct date text in the accessible lane summary; it is staged in `final-gate-artifacts/` for the final evidence commit.
+- Independent final re-review of `9939551` approved with no blocker, major, minor, or nit findings; its focused 2 suites / 18 tests and diff check passed.
 
 ## Next concrete action
 
-Run the full configured validation gate and complete patient integration suite, perform the authoritative `om-auto-review-pr 6 --autofix` pass, apply any findings as new Steps, post final evidence, mark PR #6 ready, and move the final current production preview to port 3000.
+Commit/push this final-gate evidence, refresh the PR body/comments, mark PR #6 ready, release the lock, and move the final production build from port 3100 to port 3000.
 
 ## Blockers / open questions
 
@@ -24,8 +26,7 @@ None.
 
 ## Environment
 
-- Current complete VCAL production preview is available on port 3100 against the dedicated task database.
-- The final VCAL build will replace it on port 3000 after all gates pass.
+- The final production build is running on port 3100 for verification; move it to port 3000 after PR finalization.
 - Docker is unavailable; repository-native Playwright uses the dedicated task-only PostgreSQL database and task-local Chromium libraries.
 
 ## Worktree

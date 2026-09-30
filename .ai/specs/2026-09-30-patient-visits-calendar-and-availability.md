@@ -1,7 +1,7 @@
 # Patient — kalendarz wizyt i kontrola dostępności
 
 **Date**: 2026-09-30
-**Status**: Ready for implementation
+**Status**: Implemented and verified
 **Spec ID**: VCAL
 **Zakres**: pełna implementacja VCAL-1 i VCAL-2.
 **Zależność**: [VIS — wizyty pacjenta](2026-09-29-patient-visits.md), faza VIS-1 (ten sam moduł `patient`). VIS zależy od [PAT](2026-09-29-patient-ehr-base.md) faza PAT-1.
@@ -11,8 +11,8 @@
 
 | Phase | Status | Tracking |
 |---|---|---|
-| VCAL-1 — kontrola dostępności | implemented; checkpoint passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/checkpoint-1-checks.md` |
-| VCAL-2 — kalendarz | implemented; checkpoint passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/checkpoint-2-checks.md` |
+| VCAL-1 — kontrola dostępności | implemented; final gate passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/final-gate-checks.md` |
+| VCAL-2 — kalendarz | implemented; final gate passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/final-gate-checks.md` |
 
 ## TLDR
 
@@ -533,16 +533,16 @@ Rollback VCAL-2 usuwa stronę i trasę kalendarza; lista, formularz i cała kont
 
 ## Acceptance Criteria
 
-- [ ] **VCAL-AC01** — Uprawniony planista otwiera kalendarz wizyt, przełącza dzień/tydzień/miesiąc/agenda i widzi w każdym z nich dokładnie te wizyty ze swojej organizacji, które zobaczyłby na liście; zakres i filtry są zapisane w adresie, a przekroczenie limitu zakresu jest odrzucane z podpowiedzią.
-- [ ] **VCAL-AC02** — Kliknięcie wolnego slotu zakłada wizytę z wypełnionym terminem, a kliknięcie kafla otwiera ją do edycji; obie ścieżki używają tego samego formularza i tych samych komend co lista wizyt.
-- [ ] **VCAL-AC03** — Kalendarz zawężony do wskazanego terapeuty pokazuje jego wizyty oraz pasma dostępności i nieobecności w tle; odnośnik do tego widoku otwiera to samo u innego użytkownika, z jego uprawnieniami. To samo działa dla gabinetu.
-- [ ] **VCAL-AC04** — Zapis wizyty w oknie zaakceptowanego urlopu lub zwolnienia wykonawcy jest odrzucony z `visit_conflict_blocking` identycznie z kalendarza, z listy i przez API; wniosek `pending` lub odrzucony nie blokuje; termin poza grafikiem i podwójna rezerwacja ostrzegają; brak grafiku nie ostrzega.
-- [ ] **VCAL-AC05** — Nieaktywny gabinet blokuje zapis; gabinet niedostępny regułą, poza grafikiem albo zajęty inną wizytą ostrzega; reguły przypięte przez `availability_rule_set_id` są uwzględniane.
-- [ ] **VCAL-AC06** — Zapis mimo ostrzeżeń wymaga feature `patient.visits.override_conflict`, kompletu sygnatur i niepustego powodu; utrwala powód, autora, czas i kody; kolejny zapis bez ostrzeżeń je zeruje; brak uprawnienia daje 403 bez żadnego zapisu.
-- [ ] **VCAL-AC07** — Przy wyłączonym module `planner` albo nieudanym odczycie reguł praca nie staje, odpowiedź niesie `availability_unknown`, UI mówi o tym wprost, a wykrywanie podwójnej rezerwacji i blokada nieaktywnego gabinetu działają dalej.
-- [ ] **VCAL-AC08** — Izolacja tenantów i organizacji, zachowanie fail closed dla zakresu i uprawnień, przeliczenie konfliktów po blokadzie w transakcji, brak powodów i nazwisk w zdarzeniach i logach oraz ukrycie powodu nieobecności bez `staff.view` przechodzą testy; żaden test nie wymaga danych produkcyjnych.
-- [ ] Każda wymieniona powierzchnia odpowiada zapisanej referencji Open Mercato i używa kanonicznej powłoki i komponentów, współdzielonych helperów API, semantycznych tokenów oraz kompletu stanów: ładowania, pustego, błędu, konfliktu, klawiatury, dostępności, responsywności oraz motywu jasnego i ciemnego.
-- [ ] Każda nowa ścieżka API i UI ma samowystarczalne pokrycie integracyjne, a skonfigurowana bramka walidacyjna przechodzi.
+- [x] **VCAL-AC01** — Uprawniony planista otwiera kalendarz wizyt, przełącza dzień/tydzień/miesiąc/agenda i widzi w każdym z nich dokładnie te wizyty ze swojej organizacji, które zobaczyłby na liście; zakres i filtry są zapisane w adresie, a przekroczenie limitu zakresu jest odrzucane z podpowiedzią.
+- [x] **VCAL-AC02** — Kliknięcie wolnego slotu zakłada wizytę z wypełnionym terminem, a kliknięcie kafla otwiera ją do edycji; obie ścieżki używają tego samego formularza i tych samych komend co lista wizyt.
+- [x] **VCAL-AC03** — Kalendarz zawężony do wskazanego terapeuty pokazuje jego wizyty oraz pasma dostępności i nieobecności w tle; odnośnik do tego widoku otwiera to samo u innego użytkownika, z jego uprawnieniami. To samo działa dla gabinetu.
+- [x] **VCAL-AC04** — Zapis wizyty w oknie zaakceptowanego urlopu lub zwolnienia wykonawcy jest odrzucony z `visit_conflict_blocking` identycznie z kalendarza, z listy i przez API; wniosek `pending` lub odrzucony nie blokuje; termin poza grafikiem i podwójna rezerwacja ostrzegają; brak grafiku nie ostrzega.
+- [x] **VCAL-AC05** — Nieaktywny gabinet blokuje zapis; gabinet niedostępny regułą, poza grafikiem albo zajęty inną wizytą ostrzega; reguły przypięte przez `availability_rule_set_id` są uwzględniane.
+- [x] **VCAL-AC06** — Zapis mimo ostrzeżeń wymaga feature `patient.visits.override_conflict`, kompletu sygnatur i niepustego powodu; utrwala powód, autora, czas i kody; kolejny zapis bez ostrzeżeń je zeruje; brak uprawnienia daje 403 bez żadnego zapisu.
+- [x] **VCAL-AC07** — Przy wyłączonym module `planner` albo nieudanym odczycie reguł praca nie staje, odpowiedź niesie `availability_unknown`, UI mówi o tym wprost, a wykrywanie podwójnej rezerwacji i blokada nieaktywnego gabinetu działają dalej.
+- [x] **VCAL-AC08** — Izolacja tenantów i organizacji, zachowanie fail closed dla zakresu i uprawnień, przeliczenie konfliktów po blokadzie w transakcji, brak powodów i nazwisk w zdarzeniach i logach oraz ukrycie powodu nieobecności bez `staff.view` przechodzą testy; żaden test nie wymaga danych produkcyjnych.
+- [x] Każda wymieniona powierzchnia odpowiada zapisanej referencji Open Mercato i używa kanonicznej powłoki i komponentów, współdzielonych helperów API, semantycznych tokenów oraz kompletu stanów: ładowania, pustego, błędu, konfliktu, klawiatury, dostępności, responsywności oraz motywu jasnego i ciemnego.
+- [x] Każda nowa ścieżka API i UI ma samowystarczalne pokrycie integracyjne, a skonfigurowana bramka walidacyjna przechodzi.
 
 ## Final Compliance Report
 
@@ -555,10 +555,10 @@ Rollback VCAL-2 usuwa stronę i trasę kalendarza; lista, formularz i cała kont
 | Kontrakty UI wskazują referencje, komponenty i pokrycie stanów/motywów | pass — projekt | Tabela powierzchni z konkretnymi plikami zainstalowanymi, makiety, VCAL-T08 |
 | Fazy mają zależności, wycinki, testy, wartość i obserwowalne bramki | pass — projekt | VCAL-1 i VCAL-2 z listą wycinków, oracles i kryteriami wyjścia |
 | Zgodność wsteczna | pass — projekt | Zmiany addytywne: nowe pola opcjonalne, nowe trasy, nowy feature; kody konfliktów jako `enum` objęty protokołem deprecjacji |
-| Brama Open Questions | pass — z zastrzeżeniem | Rozstrzygnięta autonomicznie; cztery założenia poniżej czekają na potwierdzenie człowieka |
+| Brama Open Questions | pass | Cztery odwracalne założenia rozstrzygnięto autonomicznie i potwierdzono jawnym zleceniem pełnej implementacji |
 | Zgoda na implementację | pass | Użytkownik zlecił pełną autonomiczną implementację VCAL-1 i VCAL-2 2026-09-30 |
 
-**Verdict:** Ready for implementation — Q1–Q4 są potwierdzone, a wymagane VIS-1/VIS-2 są dostarczone i zweryfikowane w PR #3.
+**Verdict:** Implemented and verified — Q1–Q4 są potwierdzone, VIS jest dostarczony w PR #3, a VCAL-1/VCAL-2 oraz pełna bramka są udokumentowane w runie PR #6.
 
 ## Resolved assumptions (autonomous defaults)
 
@@ -592,3 +592,4 @@ Dodatkowo, bez osobnego pytania: VCAL zakłada dostarczoną fazę VIS-1 i **nie*
 | 2026-09-30 | Run autonomiczny: brama rozstrzygnięta (jedna specyfikacja z dwiema fazami; dwie wagi konfliktu; reguły `planner` + własne wizyty; `ScheduleView`); pełny dokument — macierz konfliktów, kontrakt nadpisania z sygnaturami, pola audytu i indeksy, dwie trasy API, kontrakty UI, dziesięć testów integracyjnych, fazy VCAL-1/VCAL-2, traceability, rollout, ryzyka i kryteria akceptacji |
 | 2026-09-30 | Założenia Q1–Q4 potwierdzone przez jawne zlecenie pełnej autonomicznej implementacji; status zmieniony na Ready for implementation i powiązany z runem/PR #6 |
 | 2026-09-30 | VCAL-1 zaimplementowana i potwierdzona checkpointem: kontrola w komendach i formularzu VIS, audyt nadpisania, produkcyjny build, migracja na dedykowanej bazie, testy przeglądarkowe i cztery screenshoty w PR #6 |
+| 2026-09-30 | VCAL-2 i końcowe poprawki review zaimplementowane: kalendarz dzień/tydzień/miesiąc/agenda, dostępność i wyjątki w siatce z dostępną alternatywą dat/czasów, pełne testy bezpieczeństwa i współbieżności, PII-free logowanie degradacji, 94 wykonane scenariusze integracyjne oraz screenshoty w PR #6 |

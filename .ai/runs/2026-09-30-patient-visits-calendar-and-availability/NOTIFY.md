@@ -87,3 +87,9 @@
 
 - The independent re-review found that intentional availability degradation was not represented in technical logs.
 - Decision: emit one warning containing only a stable degraded-read class for member, resource, or planner failures; the exception, subject identifiers, names, and clinical data are never logged. A runtime logger-extension test proves the record is PII-free.
+
+## 2026-09-30T22:45:00Z — final gate and independent review passed
+
+- The post-review full gate is green: db/generate current, typecheck, lint 0 errors, DS 330, 37 suites / 332 unit tests, production build, and 94 executable patient integration scenarios with 4 expected optional-host skips and 0 failures.
+- Final VCAL-T08 passed 2/2 and produced a visually reviewed 1280×1533 dark-theme screenshot with bands on two dates and distinct localized date/time text in the accessible summary.
+- Independent final re-review of `9939551` returned `APPROVE`; 2 focused suites / 18 tests and `git diff --check` passed, with no blocker, major, minor, or nit findings.

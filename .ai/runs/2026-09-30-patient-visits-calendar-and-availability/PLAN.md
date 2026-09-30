@@ -33,7 +33,7 @@
 | 2 | 2.14-runtime-fix | Reapply non-interactive band semantics after calendar reconciliation | inline | done | 151b2f8 |
 | 2 | 2.15-runtime-fix | Start band normalization from the calendar mount callback instead of a data-state race | inline | done | e8dfcca |
 | 2 | 2.16-review-fix | Distinguish availability windows by localized date and time for assistive technology | inline | done | 52b7125 |
-| 2 | 2.17-review-fix | Emit PII-free technical warnings when availability reads degrade | inline | done | pending |
+| 2 | 2.17-review-fix | Emit PII-free technical warnings when availability reads degrade | inline | done | 9939551 |
 
 ## Goal
 
