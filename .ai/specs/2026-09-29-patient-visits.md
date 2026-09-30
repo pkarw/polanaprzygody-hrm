@@ -154,7 +154,30 @@ Usługi: [Wyszukaj w katalogu] [+ Dodaj]
 
 `nextVisit` zwraca wyłącznie `{startsAt, timeZone, resourceNameSnapshot?, confirmedAt}` — bez opisu, usług i danych klinicznych; brak terminu to jawne `null` prezentowane jako „Brak zaplanowanej”, nie pusta komórka. Jedno zapytanie na stronę wyników (`DISTINCT ON`/window po `(patient_id, starts_at)` w zakresie tenant/organizacja), nigdy jedno na wiersz. Bez uprawnienia `patient.visits.view` pole nie jest liczone ani zwracane, a kolumna i sortowanie po niej znikają z listy. Sortowanie korzysta z `starts_at`, więc nie narusza zakazu sortowania po polach szyfrowanych z PAT.
 
-**Makieta do przeglądu (2026-09-29):** [lista wizyt, formularz i akcje](assets/patient-ui-09-wizyty-lista-spec-vis-ten-sam-modul.png); zakładka Wizyty na karcie pacjenta widoczna też na makietach PAT. Źródło: `assets/patient-ui-mockups.html`.
+**Makieta listy (2026-09-29):** [lista wizyt, formularz i akcje](assets/patient-ui-09-wizyty-lista-spec-vis-ten-sam-modul.png). Źródło: `assets/patient-ui-mockups.html`.
+
+### Makiety szczegółów wizyty (2026-09-30)
+
+Komplet zakładek, formularzy i dialogów karty `/backend/patient/visits/[id]`. Źródło: `assets/visit-detail-mockups.html`, render do PNG: `node .ai/specs/assets/render-visit-mockups.mjs`. Makiety są projektem powierzchni do przeglądu, nie zrzutami z działającej aplikacji — dane są przykładowe i nie pochodzą od prawdziwych pacjentów.
+
+| # | Makieta | Powierzchnia | Rozstrzyga |
+|---|---|---|---|
+| M01 | [Przegląd](assets/vis-detail-01-przeglad.png) | `[id]`, zakładka Przegląd | Układ karty, mapowanie zakładek na grupy CrudForm, pasek akcji, historia rekordu, widoczne uprawnienia aktora |
+| M02 | [Pacjent i termin](assets/vis-detail-02-pacjent-i-termin.png) | grupy `patient` + `schedule` | Niezmienny pacjent, wymagany wykonawca, opcjonalny gabinet, UTC/IANA obok czasu lokalnego, zapowiedź resetu potwierdzenia przed zapisem |
+| M03 | [Usługi](assets/vis-detail-03-uslugi.png) | grupa `services` | 0..n pozycji, picker katalogu z blokadą duplikatu i nieaktywnych, kolejność, snapshot wycofanej usługi, stan pustej listy |
+| M04 | [Opis](assets/vis-detail-04-opis.png) | grupa `description` | Notatka organizacyjna vs. treści kliniczne PAT, licznik 20 000 znaków, brak wpływu na potwierdzenie |
+| M05 | [Status i potwierdzenie](assets/vis-detail-05-status-i-potwierdzenie.png) | grupa `status` | Panel potwierdzenia, przyciski przejść z wyłączeniami, macierz przejść, dziennik stanu, jawne non-goals |
+| M06 | [Rozliczenie](assets/vis-detail-06-rozliczenie.png) | akcja settlement | Ręczny znacznik w trzech wariantach (nieustawiony, ustawiony, bez uprawnienia), powód przy cofnięciu, niezależność od statusu |
+| M07 | [Nowa wizyta](assets/vis-detail-07-nowa-wizyta.png) | `visits/create?patientId=…` | Pełny formularz tworzenia ze wszystkimi grupami, podpowiedź pacjenta jako sugestia, brak pól stanu przy create |
+| M08 | [Dialogi cyklu życia](assets/vis-detail-08-dialogi-cyklu-zycia.png) | confirmation + status | Potwierdzenie, anulowanie i nieobecność z wymaganym powodem, zakończenie bez powodu, walidacja pustego powodu |
+| M09 | [Dialogi korekty i rozliczenia](assets/vis-detail-09-dialogi-korekty-i-rozliczenia.png) | status + settlement + delete | Wznowienie z powodem i resetem potwierdzenia, cofnięcie rozliczenia, usunięcie tylko planned/nierozliczonej i odmowa |
+| M10 | [Konflikt wersji i walidacja terminu](assets/vis-detail-10-konflikt-i-walidacja.png) | 409 / 422 | Porównanie wersji bez utraty treści, `ends_at` ≤ `starts_at`, luka i powtórzenie DST z jawnym wyborem offsetu |
+| M11 | [Stan zamknięty i brak uprawnień](assets/vis-detail-11-tylko-do-odczytu.png) | completed / cancelled | Nagłówek i usługi tylko do odczytu, rozliczenie nadal edytowalne, ukryte akcje bez uprawnienia, historyczne potwierdzenie |
+| M12 | [Zakładka Wizyty na karcie pacjenta](assets/vis-detail-12-zakladka-wizyt-na-karcie.png) | `patients/[id]`, zakładka Wizyty | Wejście z karty w ≤3 kliknięcia, ta sama lista zawężona do pacjenta, warunek archiwizacji |
+| M13 | [Stany powierzchni](assets/vis-detail-13-stany-powierzchni.png) | wszystkie zakładki | Wczytywanie, pusto, błąd sekcji z ponowieniem, 403, 404, sukces z aria-live |
+| M14 | [Szerokość 360 px](assets/vis-detail-14-szerokosc-360px.png) | wszystkie zakładki, 360 px | Przewijane zakładki, pionowe grupy, akcje stanu i dialog w viewport, fokus na błędnym polu |
+
+Makiety nie zmieniają modelu, API ani faz — doprecyzowują wygląd powierzchni już opisanych w tej sekcji i są materiałem wejściowym dla VIS-T08.
 
 Nawigacja „Pacjenci” → „Wizyty”; zakładka pacjenta pojawia się po VIS-1 i tylko przy feature view. Bez dashboardu/kalendarza. Pełna akcja zaplanowania z karty ≤3 kliknięcia nawigacyjne. PatientId w query jest tylko sugestią, serwer waliduje scope i aktywność; użytkownik nie wprowadza UUID. Referencje prezentują display names/snapshoty, „Gabinet nieprzypisany” dla null.
 
@@ -272,7 +295,7 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 | VIS-T05 | Settle/unset w różnych statusach; brak feature; generic PUT isSettled | Oddzielny ACL, audyt actor/time, powód unset, brak sales/payment write | R04/06 |
 | VIS-T06 | Dwie karty przeglądarki confirm/update/settle; retry create; archive patient vs create visit | 409 i zachowanie input; jeden rekord; zero wizyt na zarchiwizowanym pacjencie | R01/03/04/06 |
 | VIS-T07 | UTC, Europe/Warsaw DST gap/fold, daty historyczne/przyszłe, ends ≤ starts | Jedna chwila, odrzucenie błędnych godzin/offsetów, stabilny round-trip | R01/03 |
-| VIS-T08 | Lista/create/detail/tab i kolumna „Kolejna wizyta” na liście pacjentów (z prawem wizyt i bez, pacjent bez terminu, tylko wizyty przeszłe/anulowane); keyboard, loading/empty/errors/409/360 px/light/dark | Pełny przepływ, czytelne nazwy, brak UUID/raw controls; kolumna pokazuje najbliższy planned albo „Brak zaplanowanej”, znika bez uprawnienia, jedno zapytanie na stronę; lokalizacja | R05/R06 |
+| VIS-T08 | Lista/create/detail/tab i kolumna „Kolejna wizyta” na liście pacjentów (z prawem wizyt i bez, pacjent bez terminu, tylko wizyty przeszłe/anulowane); keyboard, loading/empty/errors/409/360 px/light/dark | Pełny przepływ, czytelne nazwy, brak UUID/raw controls; kolumna pokazuje najbliższy planned albo „Brak zaplanowanej”, znika bez uprawnienia, jedno zapytanie na stronę; lokalizacja. Oczekiwane powierzchnie i stany opisują makiety M01–M14 | R05/R06 |
 | VIS-T09 | Inny tenant/org, brak scope, brak features, brak keys/hosta, analiza logów/events | Fail closed; żadnych efektów przy odmowie; brak tekstów medycznych w logach | R06 |
 
 ## Implementation Phases
@@ -281,7 +304,7 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 
 - **Depends on:** PAT-1 exit gate, zatwierdzenie implementacji. Nie czeka na PAT-2/3.
 - **Outcome/value:** operator zapisuje i edytuje planned wizytę z pustą lub pełną listą usług.
-- **Steps:** 1) Visit/VisitService, walidatory, mapy szyfrowania, ACL, SQL/snapshot do przeglądu. 2) create/update/delete/query przez komendy, atomowe listy usług i sprawdzanie archiwizacji pacjenta. 3) Lista/create/detail, pickery, tab na karcie i kolumna „Kolejna wizyta” na liście pacjentów. 4) VIS-T01–03/06–09 i obowiązkowe stany UI.
+- **Steps:** 1) Visit/VisitService, walidatory, mapy szyfrowania, ACL, SQL/snapshot do przeglądu. 2) create/update/delete/query przez komendy, atomowe listy usług i sprawdzanie archiwizacji pacjenta. 3) Lista/create/detail, pickery, tab na karcie i kolumna „Kolejna wizyta” na liście pacjentów — wzorce w makietach M01–M04, M07, M10, M12–M14. 4) VIS-T01–03/06–09 i obowiązkowe stany UI.
 - **Bounded slices:** ok. 3–4 commity w kolejności; nie edytować wspólnych entities/ACL w dwóch niezależnych zadaniach.
 - **Requirements:** R01/R02/R05/R06; statusy utworzone w modelu, przyciski przejść dostarcza VIS-2.
 - **Validation:** `yarn db:generate` i przegląd; `yarn generate`; unit komend; `yarn test:integration:ephemeral` z VIS-T01–03/06–09 w zatwierdzonym środowisku, bez migracji dla samej walidacji.
@@ -291,7 +314,7 @@ Docelowe samowystarczalne pliki `src/modules/patient/__integration__/VIS-Txx.spe
 
 - **Depends on:** VIS-1 exit gate.
 - **Outcome/value:** operator kontroluje życie wizyty i oddzielną informację o rozliczeniu.
-- **Steps:** 1) Komendy confirm/unconfirm/transition/settle/unsettle, allowlist generic PUT i chroniony audit. 2) Guarded routes/actions/dialogi z powodami, stany read-only i reopen. 3) VIS-T04–09 oraz regresja VIS-T01–03/PAT-T01 dla nowego warunku archiwizacji.
+- **Steps:** 1) Komendy confirm/unconfirm/transition/settle/unsettle, allowlist generic PUT i chroniony audit. 2) Guarded routes/actions/dialogi z powodami, stany read-only i reopen — wzorce w makietach M05, M06, M08, M09, M11. 3) VIS-T04–09 oraz regresja VIS-T01–03/PAT-T01 dla nowego warunku archiwizacji.
 - **Bounded slices:** komendy/API, następnie UI; bramka wspólnej wersji przed równoległym rozwijaniem innych funkcji.
 - **Requirements:** R03/R04 i domknięcie R05/R06.
 - **Validation:** `yarn generate && yarn typecheck && yarn lint && yarn ds:check && yarn test && yarn build`; `yarn test:integration:ephemeral` dla wskazanych PAT/VIS.
@@ -369,7 +392,7 @@ Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **appr
 | Model/API/UI/tests consistency | pass — design | Macierz przejść, model 0..n i traceability |
 | End-to-end phases | pass — design | VIS-1 planowanie, VIS-2 cykl życia/rozliczenie |
 | Platform reuse | pass — design | catalog/staff/resources scalar IDs, istniejące UI/commands |
-| UI references/states | pass — design | Trasy, makieta, VIS-T08 |
+| UI references/states | pass — design | Trasy, makiety listy i M01–M14 szczegółów wizyty, VIS-T08 |
 | Dependencies/tests/value/exit gates | pass — design | Zależność tylko PAT-1, konkretne oracles każdej fazy |
 | Approval to implement | pending | Zlecenie dotyczy specyfikacji, testy implementacyjne nie były wykonywane |
 
@@ -387,3 +410,4 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 | 2026-09-29 | Niezależny przegląd zakresu: approve; walidacja dokumentów i jawne klasyfikacje powierzchni |
 | 2026-09-29 | Makieta UI listy wizyt i formularza dołączona do przeglądu; bez zmian modelu, API i faz |
 | 2026-09-29 | Pole `nextVisit` i kolumna „Kolejna wizyta” na liście pacjentów: kontrakt, ACL, jedno zapytanie na stronę, oracle VIS-T08 |
+| 2026-09-30 | Makiety M01–M14 szczegółów wizyty (wszystkie zakładki, formularze, dialogi, stany, 360 px) wraz z odnośnikami w sekcji UI, fazach i VIS-T08; bez zmian modelu, API i faz |
