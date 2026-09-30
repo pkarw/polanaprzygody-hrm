@@ -173,6 +173,8 @@ describe('patient visit contracts', () => {
     }
     expect(upgradeMigration).toContain('declareQueryIndexReindex')
     expect(upgradeMigration).toContain(`where "patient_number" = 'P-' || "id"::text`)
+    const down = upgradeMigration.slice(upgradeMigration.indexOf('override down()'))
+    expect(down).not.toContain('delete from "encryption_maps"')
   })
 
   it('relies on the installed audit-log contract to encrypt command payloads and snapshots', () => {

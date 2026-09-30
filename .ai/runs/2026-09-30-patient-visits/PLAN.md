@@ -24,6 +24,7 @@
 | 2 | 2.6 | Fix browser-found accessibility, identity privacy, and deterministic UI coverage | inline | done | 339bdbc |
 | 2 | 2.7 | Resolve latest-main review conflict and import the VCAL source spec | inline | done | 087835b |
 | 2 | 2.8 | Apply authoritative review fixes for upgrades, scope, concurrency, and bounded reads | inline | done | f9e68af |
+| 2 | 2.9 | Preserve pre-existing encryption maps during review-fix rollback | inline | done | 035f30f |
 
 ## Goal
 
@@ -144,6 +145,12 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
   batch service availability, validate bounded visit-id lists, and fail closed before search work.
 - Preserve historical undo after references deactivate, reject archived-patient reopen under the
   parent lock, and disable time-dependent patient-list caching.
+
+#### Step 2.9 — Preserve pre-existing encryption maps during review-fix rollback
+
+- Keep VIS encryption maps during rollback because the idempotent upgrade cannot distinguish
+  rows it inserted from maps previously created by tenant setup or an operator seed.
+- Pin the non-destructive rollback behavior in the migration contract test.
 
 ## Checkpoint and final verification
 

@@ -71,7 +71,9 @@ export class Migration20260930182624_patient extends Migration {
     this.addSql(`update "patient_patients" set "patient_number" = "legacy_patient_number", "updated_at" = now() where "legacy_patient_number" is not null;`);
     this.addSql(`drop index if exists "patient_patients_scope_legacy_number_uq";`);
     this.addSql(`alter table "patient_patients" drop column "legacy_patient_number";`);
-    this.addSql(`delete from "encryption_maps" where "entity_id" in ('patient:patient_list_projection', 'patient:patient_visit', 'patient:patient_visit_service');`);
+    // Keep VIS maps on rollback. `up()` inserts only missing rows, so a map may predate
+    // this migration (tenant setup or an operator seed); deleting by entity id would
+    // destroy those rows too and make already-encrypted snapshots unreadable.
   }
 
 }
