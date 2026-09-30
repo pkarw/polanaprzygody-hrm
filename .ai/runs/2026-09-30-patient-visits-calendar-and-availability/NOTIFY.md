@@ -61,3 +61,9 @@
 - Availability and exception windows now use the shared `ScheduleView` item contract so each window is aligned to its actual day and time inside the calendar grid.
 - The grid bands are informational: the visible lane summary remains the screen-reader source, while band events are removed from the tab order, hidden from assistive technology, and made pointer-transparent so they cannot open visit actions.
 - Browser coverage now requires both semantic band kinds in the grid and proves that neither band exposes a button or pointer interaction.
+
+## 2026-09-30T22:18:00Z — live final-review runtime correction
+
+- The first corrected live run reached the isolated QA database: five of seven focused scenarios passed.
+- The cross-organization availability route correctly returned 422 with its established generic message; the test had guessed an optional `code` that the installed team-member reference path does not publish, so the oracle now checks the stable denial and proves the scoped ID is not leaked.
+- `react-big-calendar` may attach the availability/exception class after inserting an event node. The accessibility normalizer now observes class changes as well as subtree additions, ensuring late-rendered bands are hidden from the accessibility tree and removed from pointer/tab interaction.

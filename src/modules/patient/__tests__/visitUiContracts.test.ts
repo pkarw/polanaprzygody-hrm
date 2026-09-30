@@ -91,6 +91,7 @@ describe('patient visit UI contracts', () => {
     expect(calendar).toContain("metadata: { itemType: 'availability-band' }")
     expect(calendar).toContain("element.setAttribute('aria-hidden', 'true')")
     expect(calendar).toContain("element.classList.add('pointer-events-none', 'cursor-default')")
+    expect(calendar).toContain("attributeFilter: ['class']")
     expect(calendar).toContain('visit.resourceName ?')
     expect(calendar).toContain('<VisitCalendarDialog')
     expect(table).toContain("t('patient.visits.actions.calendar')")

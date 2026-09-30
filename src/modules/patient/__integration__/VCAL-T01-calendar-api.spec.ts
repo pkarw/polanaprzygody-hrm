@@ -220,7 +220,7 @@ test.describe('VCAL-T01: scoped visit calendar API', () => {
       )
       expect(foreignCalendar).toMatchObject({ items: [], lanes: [], degraded: [] })
 
-      const foreignAvailability = await callApi<{ code?: string }>(
+      const foreignAvailability = await callApi<{ error?: string }>(
         request,
         'GET',
         `/api/patient/visits/availability-check?${new URLSearchParams({
@@ -230,10 +230,9 @@ test.describe('VCAL-T01: scoped visit calendar API', () => {
         }).toString()}`,
         foreignActor,
       )
-      expect(foreignAvailability).toMatchObject({
-        status: 422,
-        body: { code: 'visit_reference_unavailable' },
-      })
+      expect(foreignAvailability.status).toBe(422)
+      expect(foreignAvailability.body.error).toBe('Referenced team member is not active in this scope')
+      expect(JSON.stringify(foreignAvailability.body)).not.toContain(teamMemberId)
     } finally {
       for (const visitId of visitIds.reverse()) await cleanupVisit(request, actor, visitId)
       for (const patient of patients.reverse()) await cleanupPatient(request, actor, patient.id)

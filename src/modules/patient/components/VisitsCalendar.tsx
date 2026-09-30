@@ -266,7 +266,14 @@ export function VisitsCalendar() {
     }
     makeBandsNonInteractive()
     const observer = new MutationObserver(makeBandsNonInteractive)
-    observer.observe(root, { childList: true, subtree: true })
+    // react-big-calendar can attach event-kind classes after inserting the
+    // event node, so observe class changes as well as subtree additions.
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    })
     return () => observer.disconnect()
   }, [scheduleItems, state.view])
 
