@@ -10,16 +10,16 @@ describe('Polana therapist snapshot', () => {
     expect(POLANA_THERAPISTS_CAPTURED_AT).toBe('2026-09-28')
     expect(POLANA_THERAPISTS_SOURCE_URL).toBe('https://polanaprzygody.pl/terapeuci')
     expect(POLANA_THERAPISTS.map((therapist) => therapist.sourceId)).toEqual([
-      'katarzyna-karwatka',
-      'weronika-saczewska',
-      'magdalena-wawrzycka',
-      'anna-kuczkowska-pluta',
+      'elzbieta-sokolowska',
+      'joanna-wieczorek',
+      'aleksandra-nowakowska',
+      'barbara-kowalczyk',
     ])
     for (const therapist of POLANA_THERAPISTS) {
       expect(therapist).toEqual(expect.objectContaining({
         displayName: expect.any(String),
         experience: expect.any(String),
-        photoUrl: expect.stringMatching(/^https:\/\/polanaprzygody\.pl\/images\/terapeuci\//),
+        photoUrl: expect.stringMatching(/^https:\/\/ui-avatars\.com\//),
         shortDescription: expect.any(String),
         fullDescription: expect.any(String),
         quote: expect.any(String),

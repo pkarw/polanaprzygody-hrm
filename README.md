@@ -1,10 +1,16 @@
-# polanaprzygody-hrm
+# 🌲 Polana Przygody — eHR
 
-The back-office application for **Polana Przygody**, a Polish children's therapy and adventure
-centre. It is a standalone [Open Mercato](https://github.com/open-mercato/open-mercato)
-application — a single Next.js + MikroORM deployment assembled from the framework's published
-modules (CRM, catalogue, sales, staff, planner, resources, documents, attachments, workflows, the
-AI assistant and more) plus the modules this repository owns under `src/modules/`.
+A back-office **electronic health record** for a Polish children's therapy and adventure centre —
+patients, guardians, diagnoses, documents, staff and schedules in one place. It is a standalone
+[Open Mercato](https://github.com/open-mercato/open-mercato) application — a single Next.js +
+MikroORM deployment assembled from the framework's published modules (CRM, catalogue, sales,
+staff, planner, resources, documents, attachments, workflows, the AI assistant and more) plus the
+modules this repository owns under `src/modules/`.
+
+> 📚 This project is built on **[Open Mercato](https://github.com/open-mercato/open-mercato)** and
+> was created as a worked example for the Open Mercato course at
+> **[help.openmercatocloud.com](https://help.openmercatocloud.com)**. It is a real, working
+> application, not a toy demo — read on for what it actually does and how it is built.
 
 The centre runs its clients, therapists, rooms and schedules here. The newest app-owned module is
 the **patient register** (`src/modules/patient/`) — the base of an electronic health record: a
@@ -12,6 +18,55 @@ patient's identity, addresses, the people around them, their diagnoses and their
 
 The UI is Polish. `Pacjenci` is the register, `Prowadzący` is the optional lead carer, `Opiekun` is
 a guardian.
+
+> 🔒 **Privacy note.** The staff fixtures shipped in `src/modules/polana_bootstrap/` (names,
+> avatars, third-party training references) are fictional placeholders, not real people. No real
+> patient or clinical data ever ships in this repository — see
+> [Tenant data is encrypted at rest](#tenant-data-is-encrypted-at-rest) for how the app handles
+> real data in production.
+
+## 📸 Screenshots
+
+| Patients register | Patient record |
+|---|---|
+| ![Patients list](docs/screenshots/patients-list.png) | ![Patient record](docs/screenshots/patient-record.png) |
+
+| Diagnosis history | Team members |
+|---|---|
+| ![Diagnoses history](docs/screenshots/diagnoses-history.png) | ![Team members](docs/screenshots/team-members.png) |
+
+All screenshots above are taken from the actual running application with synthetic demo data —
+none of it is real patient or staff information.
+
+## 🚀 Getting started
+
+Requires Node ≥ 24, Yarn 4 and PostgreSQL. `docker-compose.yml` brings up Postgres (plus optional
+Redis, Meilisearch and LocalStack services) if you do not have a database already.
+
+```bash
+cp .env.example .env     # then fill in DATABASE_URL and the secrets
+yarn setup               # install, generate registries, initialise the database
+yarn dev
+```
+
+Open [http://localhost:3000/backend](http://localhost:3000/backend). If you need to create the
+first tenant, organisation and admin user by hand, use the framework's setup command:
+
+```bash
+yarn mercato auth setup --orgName "Your Org" --email you@example.com --password 'ChangeMe123!'
+```
+
+Afterwards, `yarn dev` is the everyday command. Two things are easy to get wrong:
+
+- **Run `yarn generate` after changing any discovery file** — entities, API routes, pages, events,
+  widgets, agents, tools, workflows or `src/modules.ts`. The registries are generated, not scanned
+  at runtime.
+- **Restart the dev server after `yarn generate` plus a migration.** ORM metadata and the entity
+  table cache are built once per process, so HMR alone leaves a stale registry behind — which
+  surfaces as `relation "..." does not exist` against a table that plainly exists.
+
+Schema changes are generated with `yarn db:generate`, reviewed, and only then applied with
+`yarn db:migrate`. Never migrate a database just to make a check pass.
 
 ## 🗂️ The patient register
 
@@ -188,29 +243,6 @@ organisation is a refusal, never "all organisations" — the difference between 
 returning nothing and returning everyone's patients. `created_by_user_id`, `updated_by_user_id` and
 a diagnosis author are server-side facts and are never accepted from a client.
 
-## 🚀 Getting started
-
-Requires Node ≥ 24, Yarn 4 and PostgreSQL. `docker-compose.yml` brings up Postgres (plus optional
-Redis, Meilisearch and LocalStack services) if you do not have a database already.
-
-```bash
-cp .env.example .env     # then fill in DATABASE_URL and the secrets
-yarn setup               # install, generate registries, initialise the database
-yarn dev
-```
-
-Afterwards, `yarn dev` is the everyday command. Two things are easy to get wrong:
-
-- **Run `yarn generate` after changing any discovery file** — entities, API routes, pages, events,
-  widgets, agents, tools, workflows or `src/modules.ts`. The registries are generated, not scanned
-  at runtime.
-- **Restart the dev server after `yarn generate` plus a migration.** ORM metadata and the entity
-  table cache are built once per process, so HMR alone leaves a stale registry behind — which
-  surfaces as `relation "..." does not exist` against a table that plainly exists.
-
-Schema changes are generated with `yarn db:generate`, reviewed, and only then applied with
-`yarn db:migrate`. Never migrate a database just to make a check pass.
-
 ## 🧱 Project layout
 
 ```
@@ -291,3 +323,12 @@ The register's non-goals are equally deliberate: no prescriptions, lab results, 
 medications or hospitalisation; no PESEL as an identifier; no P1/NFZ integration; no mandatory ICD
 dictionary; no FHIR; no patient portal; no OCR or AI over clinical content; no automatic retention
 or clinical export. No claim of regulatory compliance is made anywhere in this repository.
+
+## 📄 License
+
+Licensed under the [MIT License](LICENSE).
+
+## 🙏 Credits
+
+Built on [Open Mercato](https://github.com/open-mercato/open-mercato) as a worked example for the
+course at [help.openmercatocloud.com](https://help.openmercatocloud.com).
