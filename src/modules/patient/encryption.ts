@@ -126,6 +126,7 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
       { field: 'description' },
       { field: 'status_reason' },
       { field: 'settlement_reason' },
+      { field: 'conflict_override_reason' },
       { field: 'create_request_payload' },
     ],
   },

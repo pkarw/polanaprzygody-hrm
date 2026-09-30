@@ -39,6 +39,24 @@ describe('patient visit contracts', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, serviceProductIds: [uuid(4), uuid(4)] }).success).toBe(true)
   })
 
+  it('accepts only exact non-empty conflict acknowledgements with a bounded reason', () => {
+    const signature = 'a'.repeat(64)
+    const override = { acknowledgedSignatures: [signature], reason: 'Urgent clinical exception' }
+    expect(patientVisitCreateSchema.safeParse({ ...createInput, conflictOverride: override }).success).toBe(true)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      conflictOverride: { ...override, acknowledgedSignatures: [] },
+    }).success).toBe(false)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      conflictOverride: { ...override, reason: ' ' },
+    }).success).toBe(false)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      conflictOverride: { ...override, extra: true },
+    }).success).toBe(false)
+  })
+
   it('keeps syntax errors at 400 while commands map semantic time failures to 422', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, startsAt: '2026-10-05T10:00:00' }).success).toBe(false)
     expect(patientVisitCreateSchema.safeParse({ ...createInput, timeZone: 'Warsaw' }).success).toBe(false)
@@ -135,6 +153,7 @@ describe('patient visit contracts', () => {
     expect(byId.get('patient.visits.manage')?.dependsOn).toEqual(['patient.visits.view'])
     expect(byId.get('patient.visits.settle')?.dependsOn).toEqual(['patient.visits.view'])
     expect(byId.get('patient.visits.correct')?.dependsOn).toEqual(['patient.visits.manage'])
+    expect(byId.get('patient.visits.override_conflict')?.dependsOn).toEqual(['patient.visits.manage'])
   })
 
   it('encrypts visit free text and historical person/service snapshots', () => {
@@ -145,6 +164,7 @@ describe('patient visit contracts', () => {
       'description',
       'status_reason',
       'settlement_reason',
+      'conflict_override_reason',
       'create_request_payload',
     ]))
     expect(maps.get('patient:patient_visit_service')).toEqual([
@@ -197,8 +217,9 @@ describe('patient visit contracts', () => {
       'patient.visit.unconfirmed',
       'patient.visit.status_changed',
       'patient.visit.settlement_changed',
+      'patient.visit.conflict_overridden',
     ]
-    expect(ids).toHaveLength(7)
+    expect(ids).toHaveLength(8)
 
     const byId = new Map(eventsConfig.events.map((event) => [event.id, event]))
     for (const id of ids) {
@@ -208,5 +229,28 @@ describe('patient visit contracts', () => {
     }
     expect(byId.get('patient.visit.status_changed')?.payloadSchema?.fields).toContainEqual({ path: 'status', type: 'text' })
     expect(byId.get('patient.visit.settlement_changed')?.payloadSchema?.fields).toContainEqual({ path: 'isSettled', type: 'boolean' })
+    expect(byId.get('patient.visit.conflict_overridden')?.payloadSchema?.fields).toContainEqual({ path: 'codes', type: 'object' })
+  })
+
+  it('ships the reversible conflict-audit migration with scoped busy indexes', () => {
+    const migration = readFileSync(
+      path.join(__dirname, '..', 'migrations', 'Migration20260930190908_patient.ts'),
+      'utf8',
+    )
+    for (const column of [
+      'conflict_override_reason',
+      'conflict_override_at',
+      'conflict_override_by_user_id',
+      'conflict_override_codes',
+    ]) {
+      expect(migration).toContain(column)
+    }
+    expect(migration).toContain('patient_visits_conflict_override_fields_chk')
+    expect(migration).toContain('jsonb_array_length')
+    expect(migration).toContain('patient_visits_member_busy_idx')
+    expect(migration).toContain('patient_visits_resource_busy_idx')
+    const down = migration.slice(migration.indexOf('override down()'))
+    expect(down).toContain('drop constraint')
+    expect(down).toContain('drop column "conflict_override_reason"')
   })
 })

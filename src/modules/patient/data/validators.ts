@@ -459,6 +459,11 @@ const serviceProductIdsSchema = z
   .array(z.string().uuid())
   .max(100)
 
+export const patientVisitConflictOverrideSchema = z.object({
+  acknowledgedSignatures: z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(100),
+  reason: z.string().trim().min(1).max(2_000),
+}).strict()
+
 export const patientVisitCreateSchema = z
   .object({
     ...visitScheduleFields,
@@ -468,6 +473,7 @@ export const patientVisitCreateSchema = z
     description: clearableText(20_000).optional(),
     serviceProductIds: serviceProductIdsSchema.optional().default([]),
     clientRequestId: z.string().uuid(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
   })
   .strict()
 
@@ -482,6 +488,7 @@ export const patientVisitUpdateSchema = z
     timeZone: patientVisitTimeZoneSchema.optional(),
     description: clearableText(20_000).optional(),
     serviceProductIds: serviceProductIdsSchema.optional(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
   })
   .strict()
 

@@ -13,7 +13,7 @@
 |-------|------|-------|------|--------|--------|
 | 0 | 0.1 | Confirm autonomous assumptions and mark VCAL ready for implementation | inline | done | a78a4e8 |
 | 1 | 1.1 | Implement the pure conflict engine and scoped availability adapter | inline | done | feb6dad |
-| 1 | 1.2 | Add override audit fields, encryption, ACL, event, indexes, and migration | inline | todo | — |
+| 1 | 1.2 | Add override audit fields, encryption, ACL, event, indexes, and migration | inline | done | 216ea6b |
 | 1 | 1.3 | Enforce conflicts and exact acknowledgements in visit commands | inline | todo | — |
 | 1 | 1.4 | Expose the scoped availability-check API and OpenAPI contract | inline | todo | — |
 | 1 | 1.5 | Add shared availability and override UI to the VIS form | inline | todo | — |
