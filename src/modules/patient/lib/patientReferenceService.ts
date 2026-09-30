@@ -1,11 +1,10 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { CustomerEntity } from '@open-mercato/core/modules/customers/data/entities'
 import { StaffTeamMember } from '@open-mercato/core/modules/staff/data/entities'
 import { User } from '@open-mercato/core/modules/auth/data/entities'
-import { ResourcesResource } from '@open-mercato/core/modules/resources/data/entities'
-import { CatalogProduct } from '@open-mercato/core/modules/catalog/data/entities'
 
 /**
  * Resolves the scalar references this module stores into display names.
@@ -104,7 +103,7 @@ function normalizeIds(ids: string[]): string[] {
  *
  * `__tests__/patientReferenceService.test.ts` pins the parameter name for that reason.
  */
-export function createPatientReferenceService(em: EntityManager): PatientReferenceService {
+export function createPatientReferenceService(em: EntityManager, queryEngine: QueryEngine): PatientReferenceService {
   async function resolveCrmPeople(
     ids: string[],
     scope: PatientReferenceScope,
@@ -220,16 +219,27 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     const resolved = new Map<string, ResolvedReference>()
     if (wanted.length === 0) return resolved
 
-    const rows = await em.find(ResourcesResource, {
-      id: { $in: wanted },
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-    } as FilterQuery<ResourcesResource>)
+    // QueryEngine is the installed modules' public, scope-aware read contract. Importing
+    // ResourcesResource here would couple this app module to a private host ORM class and
+    // bypass any query extension/decryption policy owned by resources.
+    const { items: rows } = await queryEngine.query<Record<string, unknown>>(
+      'resources:resources_resource',
+      {
+        fields: ['id', 'name', 'is_active', 'deleted_at'],
+        filters: { id: { $in: wanted } },
+        page: { page: 1, pageSize: wanted.length },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        withDeleted: true,
+      },
+    )
     for (const row of rows) {
-      resolved.set(String(row.id), {
-        id: String(row.id),
+      const id = String(row.id ?? '')
+      if (!id) continue
+      resolved.set(id, {
+        id,
         displayName: String(row.name ?? ''),
-        isAvailable: row.isActive !== false && !row.deletedAt,
+        isAvailable: (row.is_active ?? row.isActive) !== false && !(row.deleted_at ?? row.deletedAt),
       })
     }
     return resolved
@@ -243,17 +253,27 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     const resolved = new Map<string, ResolvedProductReference>()
     if (wanted.length === 0) return resolved
 
-    const rows = await em.find(CatalogProduct, {
-      id: { $in: wanted },
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-    } as FilterQuery<CatalogProduct>)
+    // The catalog product entity is likewise private. One bounded QueryEngine read keeps
+    // selection validation on the public contract and avoids an N-query lookup per service.
+    const { items: rows } = await queryEngine.query<Record<string, unknown>>(
+      'catalog:catalog_product',
+      {
+        fields: ['id', 'title', 'sku', 'is_active', 'deleted_at'],
+        filters: { id: { $in: wanted } },
+        page: { page: 1, pageSize: wanted.length },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        withDeleted: true,
+      },
+    )
     for (const row of rows) {
-      resolved.set(String(row.id), {
-        id: String(row.id),
+      const id = String(row.id ?? '')
+      if (!id) continue
+      resolved.set(id, {
+        id,
         displayName: String(row.title ?? ''),
-        sku: row.sku ?? null,
-        isAvailable: row.isActive !== false && !row.deletedAt,
+        sku: typeof row.sku === 'string' ? row.sku : null,
+        isAvailable: (row.is_active ?? row.isActive) !== false && !(row.deleted_at ?? row.deletedAt),
       })
     }
     return resolved

@@ -7,11 +7,10 @@ import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inp
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import {
   loadProductOptions,
-  resolveProductAvailability,
   resolveProductLabel,
 } from './referencePickers'
 
-export type VisitServiceSeed = { productId: string; title: string; sku: string | null }
+export type VisitServiceSeed = { productId: string; title: string; sku: string | null; isAvailable: boolean }
 
 export function VisitServicesField({
   value,
@@ -36,31 +35,10 @@ export function VisitServicesField({
   const [labels, setLabels] = React.useState<Record<string, string>>(() =>
     Object.fromEntries(seedOptions.map((option) => [option.value, option.label])),
   )
-  const [availability, setAvailability] = React.useState<Record<string, boolean>>({})
-
-  React.useEffect(() => {
-    let cancelled = false
-    void Promise.all(value.filter((id) => !labels[id]).map(async (id) => [id, await resolveProductLabel(id)] as const))
-      .then((entries) => {
-        if (!cancelled && entries.length > 0) {
-          setLabels((current) => ({ ...current, ...Object.fromEntries(entries) }))
-        }
-      })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [labels, value])
-
-  React.useEffect(() => {
-    let cancelled = false
-    const unchecked = value.filter((id) => availability[id] === undefined)
-    void Promise.all(unchecked.map(async (id) => [id, await resolveProductAvailability(id)] as const))
-      .then((entries) => {
-        if (!cancelled && entries.length > 0) {
-          setAvailability((current) => ({ ...current, ...Object.fromEntries(entries) }))
-        }
-      })
-    return () => { cancelled = true }
-  }, [availability, value])
+  const availability = React.useMemo(
+    () => Object.fromEntries(seedServices.map((service) => [service.productId, service.isAvailable])),
+    [seedServices],
+  )
 
   const addCandidate = React.useCallback(() => {
     if (!candidate || value.includes(candidate)) return
@@ -68,7 +46,6 @@ export function VisitServicesField({
       setLabels((current) => ({ ...current, [candidate]: label }))
     }).catch(() => undefined)
     onChange([...value, candidate])
-    setAvailability((current) => ({ ...current, [candidate]: true }))
     setCandidate('')
   }, [candidate, onChange, value])
 

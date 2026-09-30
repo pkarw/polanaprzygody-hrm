@@ -2108,6 +2108,23 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "legacy_patient_number": {
+          "name": "legacy_patient_number",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "organization_id": {
           "name": "organization_id",
           "type": "uuid",
@@ -2255,6 +2272,15 @@
           "keyName": "patient_patients_pkey",
           "primary": true,
           "unique": true
+        },
+        {
+          "columnNames": [],
+          "composite": false,
+          "constraint": false,
+          "keyName": "patient_patients_scope_legacy_number_uq",
+          "primary": false,
+          "unique": false,
+          "expression": "create unique index \"patient_patients_scope_legacy_number_uq\" on \"patient_patients\" (\"tenant_id\", \"organization_id\", \"legacy_patient_number\") where \"deleted_at\" is null and \"legacy_patient_number\" is not null"
         },
         {
           "columnNames": [],

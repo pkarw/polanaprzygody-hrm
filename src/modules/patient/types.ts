@@ -136,6 +136,7 @@ export type PatientVisitServiceItem = {
   productId: string
   title: string
   sku: string | null
+  isAvailable: boolean
   position: number
 }
 

@@ -37,4 +37,8 @@ export class Migration20260930114907_patient extends Migration {
     from patient_patients p;`);
   }
 
+  override down(): void | Promise<void> {
+    this.addSql(`drop view if exists "patient_patient_list_projection";`);
+  }
+
 }

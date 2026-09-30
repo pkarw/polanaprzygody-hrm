@@ -404,22 +404,22 @@ function requireUndoSnapshot(
   return snapshot
 }
 
-async function authorizeSnapshotReferences(
+export async function authorizeSnapshotReferences(
   ctx: CommandRuntimeContext,
   scope: PatientScope,
   snapshot: VisitAuditSnapshot,
 ): Promise<void> {
+  // Undo re-authorizes the operator, not the historical choices. The encrypted snapshot was
+  // already validated when it was written; requiring those host rows to remain active would
+  // make an update/delete permanently non-undoable as soon as a clinician, room, or service
+  // is retired. Scalar ids and snapshots intentionally preserve that history.
   await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
   await requireReferenceFeature(ctx, scope, 'staff.view')
-  const references = referenceService(ctx)
-  await references.requireActiveTeamMember(snapshot.teamMemberId, scope)
   if (snapshot.resourceId) {
     await requireReferenceFeature(ctx, scope, 'resources.view')
-    await references.requireActiveResource(snapshot.resourceId, scope)
   }
   if (snapshot.services.length > 0) {
     await requireReferenceFeature(ctx, scope, 'catalog.products.view')
-    await references.requireActiveProducts(snapshot.services.map((service) => service.productId), scope)
   }
 }
 
@@ -1382,6 +1382,7 @@ async function executeVisitLifecycleAction(
           const target = input.status
           if (!target) throw new Error('[internal] Missing parsed visit target status')
           assertPatientVisitTransition(visit.status, target, visit.startsAt, wallClockNow)
+          if (target === 'planned') assertPatientAcceptsNewEntries(patient)
           confirmationCleared = target === 'planned' && Boolean(visit.confirmedAt)
           visit.status = target
           visit.statusReason = input.reason

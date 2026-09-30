@@ -361,6 +361,8 @@ Każdy niżej wymieniony mechanizm ma klasyfikację **`emitted-example`** wedłu
 
 Po PAT-1 włączyć VIS-1 z migracją wyłącznie nowych tabel `patient_visits`/`patient_visit_services`, indexami i snapshotem. `yarn db:generate` + review, zgoda przed apply, `yarn generate` po discovery. Nie migrować do walidacji. Brak backfill z CRM i automatycznej konwersji opiekunów w pacjentów.
 
+Upgrade materializuje mapy szyfrowania dla `patient:patient_list_projection`, `patient:patient_visit` i `patient:patient_visit_service` we wszystkich istniejących scope'ach, które już mają aktywne szyfrowanie. Preview-era numery w formacie `P-<id rekordu>` otrzymują niezależny numer kanoniczny; poprzednia wartość trafia do nieeksponowanego aliasu wyszukiwania, dlatego zapisane linki/integracje nadal rozwiązują pacjenta. Migracja deklaruje reindex `patient:patient`, a rollback przywraca alias jako numer kanoniczny przed usunięciem kolumny.
+
 VIS-2 dodaje zachowania i uprawnienia na istniejących polach; stare planned wizyty pozostają planned/unconfirmed/unsettled. Stan dostarczony w VIS-1 nie może zostać zgubiony w aktualizacji. Rollback ukrywa nowe akcje i pozostawia tabele, historię i czytelny stan; nie zeruje potwierdzeń ani rozliczeń. Wycofanie VIS nie może przywrócić możliwości usunięcia pacjenta z istniejącą historią wizyt.
 
 ## Risks and Tradeoffs

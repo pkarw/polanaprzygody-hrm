@@ -42,7 +42,8 @@ describe('patient visit UI contracts', () => {
     expect(form).toContain('historicalOption={referenceSeeds?.teamMember}')
     expect(form).toContain("patientId={typeof values?.patientId")
     expect(teamMember).toContain("'visit-owner-suggestion'")
-    expect(services).toContain('resolveProductAvailability')
+    expect(services).toContain('service.isAvailable')
+    expect(services).not.toContain('Promise.all(unchecked.map')
     expect(services).toContain("t('patient.common.unavailableReference')")
   })
 

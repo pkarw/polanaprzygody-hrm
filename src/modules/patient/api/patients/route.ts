@@ -40,6 +40,7 @@ import type { PatientReferenceService, ResolvedReference } from '../../lib/patie
 import { toIsoTimestamp } from '../../lib/commandSupport'
 import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
+import { hasCompletePatientSearchScope } from '../../lib/searchScope'
 import { assertCanSortPatientsByNextVisit, enrichPatientNextVisits } from '../../lib/visitApi'
 import {
   createPatientCrudOpenApi,
@@ -281,18 +282,25 @@ const SEARCH_FALLBACK_SCAN_LIMIT = 200
  * name matched", so it contributes nothing rather than an empty result — the number half
  * still answers.
  */
-async function resolvePatientSearchIds(
+export async function resolvePatientSearchIds(
   term: string,
   scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
 ): Promise<string[]> {
+  // `buildFilters` runs before makeCrudRoute's final scope guard. Refuse the lookup here
+  // too so neither the plaintext number probe nor the decrypted index-lag fallback can
+  // scan another organization while the eventual HTTP response is being failed closed.
+  if (!hasCompletePatientSearchScope(scope)) return []
   const ids = new Set<string>()
 
   const numberRows = await scope.em.find(
     Patient,
     {
-      patientNumber: { $ilike: `%${term}%` },
-      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
-      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+      $or: [
+        { patientNumber: { $ilike: `%${term}%` } },
+        { legacyPatientNumber: { $ilike: `%${term}%` } },
+      ],
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
       deletedAt: null,
     } as never,
     { fields: ['id'], limit: SEARCH_ID_LIMIT },
@@ -348,17 +356,36 @@ async function resolvePatientSearchIds(
   return Array.from(ids)
 }
 
+async function resolvePatientNumberIds(
+  patientNumber: string,
+  scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
+): Promise<string[]> {
+  if (!hasCompletePatientSearchScope(scope)) return []
+  const rows = await scope.em.find(
+    Patient,
+    {
+      $or: [{ patientNumber }, { legacyPatientNumber: patientNumber }],
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      deletedAt: null,
+    } as never,
+    { fields: ['id'], limit: 2 },
+  )
+  return rows.map((row) => String(row.id))
+}
+
 type PatientEncryptedFilter = {
   query: string | undefined
   tokenField: (typeof PATIENT_SEARCH_TOKEN_FIELDS)[number]
   property: 'firstName' | 'lastName' | 'email' | 'phone'
 }
 
-async function resolvePatientEncryptedFieldIds(
+export async function resolvePatientEncryptedFieldIds(
   filter: PatientEncryptedFilter,
   scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
 ): Promise<string[] | null> {
   if (!filter.query) return null
+  if (!hasCompletePatientSearchScope(scope)) return []
   const tokenMatch = await findEntityIdsBySearchTokens({
     db: scope.em.getKysely<SearchTokenDatabase>(),
     entityType: ENTITY_ID,
@@ -498,6 +525,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   events: { module: 'patient', entity: 'patient', persistent: true },
   indexer: { entityType: ENTITY_ID },
   list: {
+    // `next_visit_at` depends on visit writes and on wall-clock time. A cached patient page
+    // can therefore have stale global sort/page membership even if afterList refreshes the
+    // displayed value; disable the generic page cache for this time-dependent projection.
+    disableListCache: true,
     schema: querySchema,
     entityId: LIST_ENTITY_ID,
     fields: (query: Query, ctx: CrudCtx) => [
@@ -528,8 +559,16 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       }
       if (q.id) F.id = q.id
       if (q.status) F.status = q.status
-      // Plaintext column, so an exact equality is a real index lookup.
-      if (q.patientNumber) F.patient_number = q.patientNumber
+      // Preserve exact lookup by the deprecated preview-era number while only returning
+      // the independent canonical number in API responses.
+      if (q.patientNumber) {
+        const ids = await resolvePatientNumberIds(q.patientNumber, {
+          em: ctx.container.resolve<EntityManager>('em'),
+          tenantId: ctx.auth?.tenantId ?? null,
+          organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null,
+        })
+        intersectPatientIds(F, ids)
+      }
 
       // The list's single search box. One term has to reach both a plaintext column and
       // five encrypted ones, and those need opposite treatments, so the two halves are

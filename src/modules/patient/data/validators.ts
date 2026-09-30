@@ -566,9 +566,24 @@ export const patientVisitSettlementRequestSchema = z.object({
   }
 })
 
+const patientVisitIdsQuerySchema = z.string().superRefine((value, ctx) => {
+  const ids = value.split(',').map((entry) => entry.trim()).filter(Boolean)
+  if (ids.length === 0 || ids.length > 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'ids must contain between 1 and 100 UUIDs',
+    })
+    return
+  }
+  const uuid = z.string().uuid()
+  if (ids.some((id) => !uuid.safeParse(id).success)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'ids must contain only UUIDs' })
+  }
+})
+
 const patientVisitListQueryFields = {
   id: z.string().uuid().optional(),
-  ids: z.string().optional(),
+  ids: patientVisitIdsQuerySchema.optional(),
   patientId: z.string().uuid().optional(),
   teamMemberId: z.string().uuid().optional(),
   resourceId: z.string().uuid().optional(),

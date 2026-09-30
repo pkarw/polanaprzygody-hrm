@@ -159,12 +159,20 @@ export type VisitRecord = {
   startsAt: string
   endsAt: string | null
   timeZone: string
+  description?: string | null
   status: 'planned' | 'completed' | 'cancelled' | 'no_show'
   confirmedAt: string | null
   isConfirmed: boolean
   isSettled: boolean
   settledAt: string | null
-  services: Array<{ id: string; productId: string; title: string; sku: string | null; position: number }>
+  services: Array<{
+    id: string
+    productId: string
+    title: string
+    sku: string | null
+    isAvailable: boolean
+    position: number
+  }>
   updatedAt: string
 }
 

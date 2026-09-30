@@ -23,6 +23,7 @@
 | 2 | 2.5 | Preserve timestamp precision and align persisted update assertions | inline | done | 6679eeb |
 | 2 | 2.6 | Fix browser-found accessibility, identity privacy, and deterministic UI coverage | inline | done | 339bdbc |
 | 2 | 2.7 | Resolve latest-main review conflict and import the VCAL source spec | inline | done | 087835b |
+| 2 | 2.8 | Apply authoritative review fixes for upgrades, scope, concurrency, and bounded reads | inline | done | f9e68af |
 
 ## Goal
 
@@ -134,6 +135,15 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
 - Preserve both the completed VIS implementation ledger and main's additive VCAL reference.
 - Import the approved VCAL spec/assets and unrelated latest-main documentation/fixture updates
   unchanged, then rerun the full validation gate on the merged tree.
+
+#### Step 2.8 — Apply authoritative review fixes for upgrades, scope, concurrency, and bounded reads
+
+- Add reversible view rollback, existing-tenant VIS encryption maps, a backward-compatible
+  patient-number alias migration, and runtime ciphertext/plaintext coverage.
+- Replace private catalog/resources entity reads with the public scoped QueryEngine contract,
+  batch service availability, validate bounded visit-id lists, and fail closed before search work.
+- Preserve historical undo after references deactivate, reject archived-patient reopen under the
+  parent lock, and disable time-dependent patient-list caching.
 
 ## Checkpoint and final verification
 

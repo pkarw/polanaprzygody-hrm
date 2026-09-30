@@ -1,4 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import {
   patientVisitCreateSchema,
   patientVisitConfirmationActionSchema,
@@ -116,6 +118,17 @@ describe('patient visit contracts', () => {
     expect(patientVisitListQuerySchema.safeParse({ from: '2026-10-05T11:00:00Z', to: '2026-10-05T10:00:00Z' }).success).toBe(false)
   })
 
+  it('validates and bounds batch visit ids before they reach a UUID predicate', () => {
+    const first = uuid(1)
+    const second = uuid(2)
+    expect(patientVisitListQuerySchema.safeParse({ ids: `${first},${first},${second}` }).success).toBe(true)
+    expect(patientVisitListQuerySchema.safeParse({ ids: 'not-a-uuid' }).success).toBe(false)
+    expect(patientVisitListQuerySchema.safeParse({ ids: '' }).success).toBe(false)
+    expect(patientVisitListQuerySchema.safeParse({
+      ids: Array.from({ length: 101 }, (_, index) => `${String(index).padStart(8, '0')}-aaaa-4bbb-8ccc-dddddddddddd`).join(','),
+    }).success).toBe(false)
+  })
+
   it('declares the complete feature dependency chain', () => {
     const byId = new Map(features.map((feature) => [feature.id, feature]))
     expect(byId.get('patient.visits.view')?.dependsOn).toEqual(['patient.patients.view'])
@@ -138,6 +151,28 @@ describe('patient visit contracts', () => {
       'product_title_snapshot',
       'product_sku_snapshot',
     ])
+  })
+
+  it('ships reversible projection SQL and an existing-tenant encryption-map bridge', () => {
+    const projectionMigration = readFileSync(
+      path.join(__dirname, '..', 'migrations', 'Migration20260930114907_patient.ts'),
+      'utf8',
+    )
+    const upgradeMigration = readFileSync(
+      path.join(__dirname, '..', 'migrations', 'Migration20260930182624_patient.ts'),
+      'utf8',
+    )
+
+    expect(projectionMigration).toContain('drop view if exists')
+    for (const entityId of [
+      'patient:patient_list_projection',
+      'patient:patient_visit',
+      'patient:patient_visit_service',
+    ]) {
+      expect(upgradeMigration).toContain(entityId)
+    }
+    expect(upgradeMigration).toContain('declareQueryIndexReindex')
+    expect(upgradeMigration).toContain(`where "patient_number" = 'P-' || "id"::text`)
   })
 
   it('relies on the installed audit-log contract to encrypt command payloads and snapshots', () => {

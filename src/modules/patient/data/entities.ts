@@ -56,6 +56,11 @@ export type PatientVisitStatus = 'planned' | 'completed' | 'cancelled' | 'no_sho
     `create unique index "patient_patients_scope_number_uq" on "patient_patients" ("tenant_id", "organization_id", "patient_number") where "deleted_at" is null`,
 })
 @Index({
+  name: 'patient_patients_scope_legacy_number_uq',
+  expression:
+    `create unique index "patient_patients_scope_legacy_number_uq" on "patient_patients" ("tenant_id", "organization_id", "legacy_patient_number") where "deleted_at" is null and "legacy_patient_number" is not null`,
+})
+@Index({
   name: 'patient_patients_scope_request_uq',
   expression:
     `create unique index "patient_patients_scope_request_uq" on "patient_patients" ("tenant_id", "organization_id", "client_request_id")`,
@@ -69,7 +74,7 @@ export type PatientVisitStatus = 'planned' | 'completed' | 'cancelled' | 'no_sho
   expression: `("status" = 'archived') = ("archived_at" is not null)`,
 })
 export class Patient {
-  [OptionalProps]?: 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archivedAt'
+  [OptionalProps]?: 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archivedAt' | 'legacyPatientNumber'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -83,6 +88,13 @@ export class Patient {
   /** Server-assigned, immutable, non-clinical handle (`P-<uuid>`). Never a national id. */
   @Property({ name: 'patient_number', type: 'text' })
   patientNumber!: string
+
+  /**
+   * Deprecated lookup-only alias for preview rows whose old public number was derived
+   * from the persistence id. Never returned by the API and never assigned to new rows.
+   */
+  @Property({ name: 'legacy_patient_number', type: 'text', nullable: true })
+  legacyPatientNumber?: string | null
 
   /** Encrypted. Reachable by exact search through the hashed token index only. */
   @Property({ name: 'first_name', type: 'text' })

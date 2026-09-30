@@ -67,12 +67,19 @@ describe('visit command invariants', () => {
     expect(patientsSource).toContain('A visit tombstone is still care history')
   })
 
-  it('guards undo with scope, current versions, active references, and the same lock order', () => {
+  it('guards undo with scope, current versions, current features, and the same lock order', () => {
     expect(visitsSource).toContain('Undo scope does not match the visit scope')
     expect(visitsSource).toContain("requireReferenceFeature(ctx, scope, 'patient.visits.manage')")
     expect(visitsSource).toContain('assertExpectedVersion(after.updatedAt, visit.updatedAt')
     expect(visitsSource).toContain('assertPatientAcceptsNewEntries(patient)')
     expect(visitsSource).toContain('restoreVisitServices(')
+    const authorization = visitsSource.slice(
+      visitsSource.indexOf('export async function authorizeSnapshotReferences'),
+      visitsSource.indexOf('async function encryptVisitSnapshot'),
+    )
+    expect(authorization).not.toContain('requireActiveTeamMember')
+    expect(authorization).not.toContain('requireActiveResource')
+    expect(authorization).not.toContain('requireActiveProducts')
   })
 
   it('never indexes care usage globally and emits generic CRUD only through the post-commit pipeline', () => {
@@ -103,6 +110,7 @@ describe('visit command invariants', () => {
     expect(body).toContain("emitPatientEvent('patient.visit.settlement_changed'")
     expect(visitsSource).toContain("['patient.visits.manage', 'patient.visits.correct']")
     expect(visitsSource).toContain("return ['patient.visits.settle']")
+    expect(visitsSource).toContain("if (target === 'planned') assertPatientAcceptsNewEntries(patient)")
     expect(visitsSource).not.toMatch(/from ['\"]@open-mercato\/(?:[^'\"]*\/)?(?:sales|payment)/)
   })
 })

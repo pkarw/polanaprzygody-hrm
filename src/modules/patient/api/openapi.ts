@@ -173,6 +173,7 @@ export const patientVisitServiceItemSchema = z.object({
   productId: z.string().uuid(),
   title: z.string(),
   sku: z.string().nullable(),
+  isAvailable: z.boolean(),
   position: z.number().int().min(0),
 })
 

@@ -321,6 +321,24 @@ describe('patient visit lifecycle command behavior', () => {
     expect(emitPatientEvent).not.toHaveBeenCalled()
   })
 
+  it('refuses to reopen a visit after the locked patient has been archived', async () => {
+    const harness = createHarness({
+      status: 'completed',
+      startsAt: new Date('2020-01-20T09:00:00.000Z'),
+    })
+    harness.patient.status = 'archived'
+
+    await expect(execute('patient.visits.transition', {
+      id: ids.visit,
+      expectedUpdatedAt: harness.visit.updatedAt.toISOString(),
+      status: 'planned',
+      reason: 'Correction',
+    }, harness.context)).rejects.toMatchObject({ status: 409 })
+
+    expect(harness.visit.status).toBe('completed')
+    expect(harness.rollback).toHaveBeenCalled()
+  })
+
   it('never duplicates encrypted reason text into lifecycle audit snapshots', async () => {
     const harness = createHarness({
       statusReason: 'decrypted status secret',

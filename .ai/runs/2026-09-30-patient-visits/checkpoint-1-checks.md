@@ -1,7 +1,7 @@
 # Checkpoint 1 — VIS-1 planning and services
 
-**Recorded:** 2026-09-30T13:01:17Z  
-**Branch:** `feat/patient-visits`  
+**Recorded:** 2026-09-30T13:01:17Z
+**Branch:** `feat/patient-visits`
 **Last implementation commit:** `0ac0107`
 
 ## Outcome

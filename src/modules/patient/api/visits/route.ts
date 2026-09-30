@@ -37,6 +37,10 @@ import { toIsoTimestamp } from '../../lib/commandSupport'
 import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
 import { isVisitDetailQuery } from '../../lib/visitApi'
+import {
+  PATIENT_REFERENCE_SERVICE,
+} from '../../di'
+import type { PatientReferenceService } from '../../lib/patientReferenceService'
 import type { PatientVisitItem, PatientVisitServiceItem } from '../../types'
 import {
   createPatientCrudOpenApi,
@@ -167,7 +171,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const F = filters as Record<string, WhereValue>
       if (q.id) F.id = q.id
       if (q.ids) {
-        const ids = q.ids.split(',').map((value) => value.trim()).filter(Boolean)
+        const ids = Array.from(new Set(q.ids.split(',').map((value) => value.trim()).filter(Boolean)))
         if (ids.length > 0) F.id = { $in: ids }
       }
       if (q.patientId) F.patient_id = q.patientId
@@ -254,6 +258,12 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           .join(' ')
         patientNameById.set(String(patient.id), name.length > 0 ? name : null)
       }
+      const productIds = Array.from(new Set(services.map((service) => String(service.productId))))
+      const products = productIds.length > 0
+        ? await ctx.container
+            .resolve<PatientReferenceService>(PATIENT_REFERENCE_SERVICE)
+            .resolveProducts(productIds, { tenantId, organizationId })
+        : new Map()
       const servicesByVisit = new Map<string, PatientVisitServiceItem[]>()
       for (const service of services) {
         const visitId = String(service.visitId)
@@ -263,6 +273,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           productId: String(service.productId),
           title: String(service.productTitleSnapshot),
           sku: service.productSkuSnapshot ?? null,
+          isAvailable: products.get(String(service.productId))?.isAvailable ?? false,
           position: Number(service.position),
         })
         servicesByVisit.set(visitId, list)

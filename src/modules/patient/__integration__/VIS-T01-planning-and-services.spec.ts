@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { Client } from 'pg'
 import {
   createProductFixture,
   deleteCatalogProductIfExists,
@@ -32,11 +33,13 @@ test.describe('VIS-T01: visit planning and service list', () => {
     let visitId: string | null = null
     try {
       patient = await createPatient(request, actor)
+      const clinicianName = unique('VIS clinician')
       teamMemberId = await createStaffTeamMemberFixture(request, actor.token, {
-        displayName: unique('VIS clinician'),
+        displayName: clinicianName,
       })
+      const consultationTitle = unique('VIS consultation')
       firstProductId = await createProductFixture(request, actor.token, {
-        title: unique('VIS consultation'),
+        title: consultationTitle,
         sku: unique('VIS-A'),
       })
       secondProductId = await createProductFixture(request, actor.token, {
@@ -55,6 +58,7 @@ test.describe('VIS-T01: visit planning and service list', () => {
         endsAt: '2026-11-05T10:45:00+01:00',
         timeZone: 'Europe/Warsaw',
         resourceId: null,
+        description: 'Encrypted integration visit note',
         serviceProductIds: [],
       })
       visitId = created.id
@@ -87,6 +91,60 @@ test.describe('VIS-T01: visit planning and service list', () => {
         .toEqual([thirdProductId, secondProductId, firstProductId])
       expect(populated?.services.map((service) => service.position)).toEqual([0, 1, 2])
       expect(populated?.services.every((service) => service.title.length > 0)).toBe(true)
+      expect(populated?.services.every((service) => service.isAvailable)).toBe(true)
+
+      // Runtime encryption proof, not a source declaration check: the owning APIs return
+      // plaintext while the database stores ciphertext and the upgrade maps exist for the
+      // exact scope used by the write.
+      const databaseUrl = process.env.DATABASE_URL
+      expect(databaseUrl, 'DATABASE_URL is required for the encryption integration proof').toBeTruthy()
+      const db = new Client({ connectionString: databaseUrl })
+      await db.connect()
+      try {
+        const visitRow = await db.query(
+          'select tenant_id, organization_id, team_member_name_snapshot, description from patient_visits where id = $1',
+          [visitId],
+        ) as { rows: Array<{
+          tenant_id: string
+          organization_id: string
+          team_member_name_snapshot: string
+          description: string
+        }> }
+        const storedVisit = visitRow.rows[0]
+        expect(storedVisit).toBeTruthy()
+        expect(storedVisit.team_member_name_snapshot).not.toBe(clinicianName)
+        expect(storedVisit.description).not.toBe('Encrypted integration visit note')
+        expect(populated?.teamMemberName).toBe(clinicianName)
+
+        const serviceRows = await db.query(
+          'select product_title_snapshot from patient_visit_services where visit_id = $1 and deleted_at is null',
+          [visitId],
+        ) as { rows: Array<{ product_title_snapshot: string }> }
+        expect(serviceRows.rows.some((row) => row.product_title_snapshot === consultationTitle)).toBe(false)
+        expect(populated?.services.some((service) => service.title === consultationTitle)).toBe(true)
+
+        const maps = await db.query(
+          `select entity_id from encryption_maps
+           where tenant_id = $1 and organization_id = $2 and deleted_at is null and is_active = true
+             and entity_id = any($3::text[])`,
+          [
+            storedVisit.tenant_id,
+            storedVisit.organization_id,
+            [
+              'patient:patient_list_projection',
+              'patient:patient_visit',
+              'patient:patient_visit_service',
+            ],
+          ],
+        ) as { rows: Array<{ entity_id: string }> }
+        expect(new Set(maps.rows.map((row) => row.entity_id))).toEqual(new Set([
+          'patient:patient_list_projection',
+          'patient:patient_visit',
+          'patient:patient_visit_service',
+        ]))
+      } finally {
+        await db.end()
+      }
 
       await callApiOk(request, 'PUT', '/api/patient/visits', actor, {
         id: visitId,

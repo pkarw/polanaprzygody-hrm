@@ -55,6 +55,7 @@ export async function buildPatientRouteContext(req: Request): Promise<PatientRou
  */
 export const PATIENT_PROTECTED_KEYS = [
   'patientNumber',
+  'legacyPatientNumber',
   'status',
   'archivedAt',
   'createRequestPayload',

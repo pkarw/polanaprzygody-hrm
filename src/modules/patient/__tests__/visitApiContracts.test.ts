@@ -89,5 +89,8 @@ describe('patient visit API contracts', () => {
   it('delegates patient-list enrichment to the executable next-visit helper', () => {
     const patientsRouteSource = readFileSync(path.join(__dirname, '..', 'api', 'patients', 'route.ts'), 'utf8')
     expect(patientsRouteSource).toContain('await enrichPatientNextVisits(items, ctx)')
+    expect(patientsRouteSource).toContain('disableListCache: true')
+    const visitsRouteSource = readFileSync(path.join(__dirname, '..', 'api', 'visits', 'route.ts'), 'utf8')
+    expect(visitsRouteSource).toContain('Array.from(new Set(q.ids.split')
   })
 })

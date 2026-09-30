@@ -355,7 +355,12 @@ export function VisitDetailForm({ id }: { id: string }) {
   })
   const record = query.data?.items?.[0]
   const seedServices = React.useMemo<VisitServiceSeed[]>(
-    () => record?.services.map((service) => ({ productId: service.productId, title: service.title, sku: service.sku })) ?? [],
+    () => record?.services.map((service) => ({
+      productId: service.productId,
+      title: service.title,
+      sku: service.sku,
+      isAvailable: service.isAvailable,
+    })) ?? [],
     [record?.services],
   )
   const referenceSeeds = React.useMemo(() => ({
