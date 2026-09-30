@@ -10,7 +10,14 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@open-mercato/ui/primitives/alert'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { DatePicker } from '@open-mercato/ui/primitives/date-picker'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@open-mercato/ui/primitives/dialog'
 import { FormField } from '@open-mercato/ui/primitives/form-field'
+import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { format } from 'date-fns/format'
@@ -54,6 +61,26 @@ type VisitFormValues = {
   serviceProductIds: string[]
   availabilityGate: VisitAvailabilityGateValue | null
   updatedAt?: string
+}
+
+export type VisitEditorSeed = {
+  patientId?: string
+  teamMemberId?: string
+  resourceId?: string | null
+  startsAt?: string | Date
+  endsAt?: string | Date | null
+  timeZone?: string
+}
+
+export type VisitCalendarDialogState =
+  | { mode: 'create'; seed?: VisitEditorSeed }
+  | { mode: 'edit'; visitId: string }
+
+type EmbeddedVisitFormProps = {
+  embedded?: boolean
+  onSaved?: () => void | Promise<void>
+  onChanged?: () => void | Promise<void>
+  seed?: VisitEditorSeed
 }
 
 function orNull(value: unknown): string | null {
@@ -282,39 +309,56 @@ function buildSchedule(values: VisitFormValues, t: ReturnType<typeof useT>) {
   })
 }
 
-export function VisitCreateForm() {
+function seedInstant(value: string | Date | null | undefined): string | null {
+  if (!value) return null
+  return value instanceof Date ? value.toISOString() : value
+}
+
+export function VisitCreateForm({
+  embedded = false,
+  onSaved,
+  seed,
+}: EmbeddedVisitFormProps = {}) {
   const t = useT()
   const searchParams = useSearchParams()
-  const suggestedPatientId = searchParams.get('patientId') ?? ''
+  const suggestedPatientId = seed?.patientId ?? searchParams.get('patientId') ?? ''
   const fields = useVisitFields()
   const groups = useVisitGroups()
   const clientRequestId = React.useMemo(() => crypto.randomUUID(), [])
-  const initialValues = React.useMemo<Partial<VisitFormValues>>(() => ({
+  const initialValues = React.useMemo<Partial<VisitFormValues>>(() => {
+    const timeZone = seed?.timeZone ?? defaultVisitTimeZone()
+    const startsAt = seedInstant(seed?.startsAt)
+    const endsAt = seedInstant(seed?.endsAt)
+    return ({
     patientId: suggestedPatientId,
-    teamMemberId: '',
-    resourceId: null,
-    startsAtLocal: '',
-    endsAtLocal: null,
-    timeZone: defaultVisitTimeZone(),
-    startOffset: null,
-    endOffset: null,
+    teamMemberId: seed?.teamMemberId ?? '',
+    resourceId: seed?.resourceId ?? null,
+    startsAtLocal: startsAt ? toVisitLocalDateTime(startsAt, timeZone) : '',
+    endsAtLocal: endsAt ? toVisitLocalDateTime(endsAt, timeZone) : null,
+    timeZone,
+    startOffset: startsAt ? instantOffsetInTimeZone(startsAt, timeZone) : null,
+    endOffset: endsAt ? instantOffsetInTimeZone(endsAt, timeZone) : null,
     description: null,
     serviceProductIds: [],
     availabilityGate: { allowSubmit: true },
-  }), [suggestedPatientId])
+    })
+  }, [seed, suggestedPatientId])
 
   return (
     <CrudForm<VisitFormValues>
-      title={t('patient.visits.create.title')}
-      titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      title={embedded ? undefined : t('patient.visits.create.title')}
+      titleHeadingLevel={embedded ? 2 : 1}
+      backHref={embedded ? undefined : LIST_HREF}
       entityId={ENTITY_ID}
       fields={fields}
       groups={groups}
       initialValues={initialValues}
       submitLabel={t('patient.visits.actions.save')}
-      cancelHref={LIST_HREF}
-      successRedirect={`${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.created'))}&type=success`}
+      embedded={embedded}
+      trackDirtyWhenEmbedded={embedded}
+      customFieldsManageMode={embedded ? 'page' : 'inline'}
+      cancelHref={embedded ? undefined : LIST_HREF}
+      successRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.created'))}&type=success`}
       onSubmit={async (values) => {
         const schedule = buildSchedule(values, t)
         await createCrud('patient/visits', {
@@ -330,6 +374,8 @@ export function VisitCreateForm() {
             ? { conflictOverride: values.availabilityGate.conflictOverride }
             : {}),
         })
+        if (embedded) flash(t('patient.visits.flash.created'), 'success')
+        await onSaved?.()
       }}
     />
   )
@@ -384,7 +430,12 @@ function VisitConflictOverrideAudit({ visit }: { visit: PatientVisitItem }) {
   )
 }
 
-export function VisitDetailForm({ id }: { id: string }) {
+export function VisitDetailForm({
+  id,
+  embedded = false,
+  onSaved,
+  onChanged,
+}: { id: string } & EmbeddedVisitFormProps) {
   const t = useT()
   const access = usePatientVisitAccess()
   const query = useQuery<PatientPagedResponse<PatientVisitItem>>({
@@ -442,14 +493,17 @@ export function VisitDetailForm({ id }: { id: string }) {
   const initialValues = toEditValues(record)
   return (
     <CrudForm<VisitFormValues>
-      title={t('patient.visits.detail.title')}
-      titleHeadingLevel={1}
-      backHref={LIST_HREF}
+      title={embedded ? undefined : t('patient.visits.detail.title')}
+      titleHeadingLevel={embedded ? 2 : 1}
+      backHref={embedded ? undefined : LIST_HREF}
       entityId={ENTITY_ID}
       fields={fields}
       groups={groups}
       initialValues={initialValues}
       disableInitialFocus
+      embedded={embedded}
+      trackDirtyWhenEmbedded={embedded}
+      customFieldsManageMode={embedded ? 'page' : 'inline'}
       optimisticLockUpdatedAt={record.updatedAt}
       readOnly={readOnly}
       readOnlyOverlay={record.status !== 'planned'
@@ -460,9 +514,9 @@ export function VisitDetailForm({ id }: { id: string }) {
             ? <p>{t('patient.visits.readOnly.noManage')}</p>
             : undefined}
       submitLabel={t('patient.visits.actions.save')}
-      cancelHref={LIST_HREF}
-      successRedirect={`${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.updated'))}&type=success`}
-      deleteRedirect={`${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.deleted'))}&type=success`}
+      cancelHref={embedded ? undefined : LIST_HREF}
+      successRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.updated'))}&type=success`}
+      deleteRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.deleted'))}&type=success`}
       deleteVisible={!readOnly && !record.isSettled}
       contentHeader={(
         <div className="space-y-3">
@@ -490,7 +544,10 @@ export function VisitDetailForm({ id }: { id: string }) {
           <VisitLifecycleActions
             visit={record}
             access={access}
-            onSaved={() => query.refetch()}
+            onSaved={async () => {
+              await query.refetch()
+              await onChanged?.()
+            }}
           />
         </div>
       )}
@@ -509,10 +566,75 @@ export function VisitDetailForm({ id }: { id: string }) {
             ? { conflictOverride: values.availabilityGate.conflictOverride }
             : {}),
         })
+        if (embedded) flash(t('patient.visits.flash.updated'), 'success')
+        await onSaved?.()
       }}
       onDelete={async () => {
         await deleteCrud('patient/visits', record.id)
+        if (embedded) flash(t('patient.visits.flash.deleted'), 'success')
+        await onSaved?.()
       }}
     />
+  )
+}
+
+export function VisitCalendarDialog({
+  state,
+  onClose,
+  onSaved,
+  onChanged,
+}: {
+  state: VisitCalendarDialogState | null
+  onClose: () => void
+  onSaved: () => void | Promise<void>
+  onChanged?: () => void | Promise<void>
+}) {
+  const t = useT()
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  const isOpen = state !== null
+  const finish = React.useCallback(async () => {
+    await onSaved()
+    onClose()
+  }, [onClose, onSaved])
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        ref={contentRef}
+        size="xl"
+        aria-describedby={undefined}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            event.preventDefault()
+            const form = contentRef.current?.querySelector('form')
+            if (form instanceof HTMLFormElement) form.requestSubmit()
+          }
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {state?.mode === 'edit'
+              ? t('patient.visits.detail.title')
+              : t('patient.visits.create.title')}
+          </DialogTitle>
+        </DialogHeader>
+        {state?.mode === 'edit' ? (
+          <VisitDetailForm
+            key={`edit:${state.visitId}`}
+            id={state.visitId}
+            embedded
+            onSaved={finish}
+            onChanged={onChanged}
+          />
+        ) : state?.mode === 'create' ? (
+          <VisitCreateForm
+            key={`create:${seedInstant(state.seed?.startsAt) ?? 'blank'}`}
+            embedded
+            seed={state.seed}
+            onSaved={finish}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
   )
 }

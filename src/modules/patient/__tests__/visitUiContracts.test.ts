@@ -49,6 +49,20 @@ describe('patient visit UI contracts', () => {
     expect(route).toContain('references.resolveUsers(overrideUserIds')
   })
 
+  it('reuses the VIS editor in a keyboard-accessible calendar dialog', () => {
+    const form = read('components', 'VisitForm.tsx')
+    expect(form).toContain('export function VisitCalendarDialog')
+    expect(form).toContain('<VisitCreateForm')
+    expect(form).toContain('<VisitDetailForm')
+    expect(form).toContain('embedded={embedded}')
+    expect(form).toContain('trackDirtyWhenEmbedded={embedded}')
+    expect(form).toContain("customFieldsManageMode={embedded ? 'page' : 'inline'}")
+    expect(form).toContain('form.requestSubmit()')
+    expect(form).toContain('event.metaKey || event.ctrlKey')
+    expect(form).toContain('startsAtLocal: startsAt ? toVisitLocalDateTime(startsAt, timeZone)')
+    expect(form).toContain('await onSaved?.()')
+  })
+
   it('pins immutable patients, versioned mutations, snapshots, and owner suggestions', () => {
     const form = read('components', 'VisitForm.tsx')
     const teamMember = read('components', 'VisitTeamMemberField.tsx')
