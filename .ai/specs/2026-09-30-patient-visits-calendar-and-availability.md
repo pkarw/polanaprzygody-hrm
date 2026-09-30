@@ -12,7 +12,7 @@
 | Phase | Status | Tracking |
 |---|---|---|
 | VCAL-1 — kontrola dostępności | implemented; checkpoint passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/checkpoint-1-checks.md` |
-| VCAL-2 — kalendarz | planned | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/PLAN.md` |
+| VCAL-2 — kalendarz | implemented; checkpoint passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/checkpoint-2-checks.md` |
 
 ## TLDR
 
