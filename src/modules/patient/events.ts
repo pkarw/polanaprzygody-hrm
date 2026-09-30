@@ -1,5 +1,15 @@
 import { createModuleEvents } from '@open-mercato/shared/modules/events'
 
+const visitPayloadFields = [
+  { path: 'id', type: 'text' },
+  { path: 'patientId', type: 'text' },
+  { path: 'tenantId', type: 'text' },
+  { path: 'organizationId', type: 'text' },
+  { path: 'updatedAt', type: 'date' },
+] as const
+
+const visitPayloadSchema = { fields: visitPayloadFields }
+
 /**
  * Typed events emitted by the `patient` module.
  *
@@ -45,6 +55,26 @@ const events = [
 
   { id: 'patient.attachment_link.created', label: 'Attachment Link Created', entity: 'attachment_link', category: 'crud' },
   { id: 'patient.attachment_link.deleted', label: 'Attachment Link Deleted', entity: 'attachment_link', category: 'crud' },
+
+  { id: 'patient.visit.created', label: 'Patient Visit Created', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
+  { id: 'patient.visit.updated', label: 'Patient Visit Updated', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
+  { id: 'patient.visit.deleted', label: 'Patient Visit Deleted', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
+  { id: 'patient.visit.confirmed', label: 'Patient Visit Confirmed', entity: 'visit', category: 'lifecycle', payloadSchema: visitPayloadSchema },
+  { id: 'patient.visit.unconfirmed', label: 'Patient Visit Unconfirmed', entity: 'visit', category: 'lifecycle', payloadSchema: visitPayloadSchema },
+  {
+    id: 'patient.visit.status_changed',
+    label: 'Patient Visit Status Changed',
+    entity: 'visit',
+    category: 'lifecycle',
+    payloadSchema: { fields: [...visitPayloadFields, { path: 'status', type: 'text' }] },
+  },
+  {
+    id: 'patient.visit.settlement_changed',
+    label: 'Patient Visit Settlement Changed',
+    entity: 'visit',
+    category: 'lifecycle',
+    payloadSchema: { fields: [...visitPayloadFields, { path: 'isSettled', type: 'boolean' }] },
+  },
 ] as const
 
 export const eventsConfig = createModuleEvents({

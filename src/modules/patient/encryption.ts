@@ -106,6 +106,23 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
       { field: 'create_request_payload' },
     ],
   },
+  {
+    entityId: 'patient:patient_visit',
+    fields: [
+      { field: 'team_member_name_snapshot' },
+      { field: 'description' },
+      { field: 'status_reason' },
+      { field: 'settlement_reason' },
+      { field: 'create_request_payload' },
+    ],
+  },
+  {
+    entityId: 'patient:patient_visit_service',
+    fields: [
+      { field: 'product_title_snapshot' },
+      { field: 'product_sku_snapshot' },
+    ],
+  },
 ]
 
 export default defaultEncryptionMaps

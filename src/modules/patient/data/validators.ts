@@ -400,6 +400,94 @@ export const patientAttachmentLinkDeleteSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
 })
 
+/** Timestamp accepted by VIS: an ISO instant with an explicit UTC designator or offset. */
+export const patientVisitInstantSchema = z
+  .string()
+  .regex(/T.*(?:Z|[+-]\d{2}:\d{2})$/, 'Expected an ISO-8601 timestamp with an explicit offset')
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid timestamp')
+
+/** IANA zone validation uses the runtime's installed ICU database. */
+export const patientVisitTimeZoneSchema = z.string().trim().min(1).refine((value) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format()
+    return true
+  } catch {
+    return false
+  }
+}, 'Expected a valid IANA time zone')
+
+const visitScheduleFields = {
+  startsAt: patientVisitInstantSchema,
+  endsAt: patientVisitInstantSchema.nullish(),
+  timeZone: patientVisitTimeZoneSchema,
+}
+
+const visitEndsAfterStart = (value: { startsAt: string; endsAt?: string | null }) =>
+  value.endsAt == null || Date.parse(value.endsAt) > Date.parse(value.startsAt)
+
+const visitEndAfterStartIssue = {
+  message: 'The visit end must be later than its start',
+  path: ['endsAt'],
+}
+
+const serviceProductIdsSchema = z
+  .array(z.string().uuid())
+  .max(100)
+  .refine((ids) => new Set(ids).size === ids.length, 'The same service cannot be selected twice')
+
+export const patientVisitCreateSchema = z
+  .object({
+    ...visitScheduleFields,
+    patientId: z.string().uuid(),
+    teamMemberId: z.string().uuid(),
+    resourceId: z.string().uuid().nullish(),
+    description: clearableText(20_000).optional(),
+    serviceProductIds: serviceProductIdsSchema.optional().default([]),
+    clientRequestId: z.string().uuid(),
+  })
+  .strict()
+  .refine(visitEndsAfterStart, visitEndAfterStartIssue)
+
+export const patientVisitUpdateSchema = z
+  .object({
+    id: z.string().uuid(),
+    expectedUpdatedAt: z.string().min(1),
+    teamMemberId: z.string().uuid().optional(),
+    resourceId: z.string().uuid().nullish(),
+    startsAt: patientVisitInstantSchema.optional(),
+    endsAt: patientVisitInstantSchema.nullish(),
+    timeZone: patientVisitTimeZoneSchema.optional(),
+    description: clearableText(20_000).optional(),
+    serviceProductIds: serviceProductIdsSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.startsAt && value.endsAt != null && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'The visit end must be later than its start', path: ['endsAt'] })
+    }
+  })
+
+export const patientVisitDeleteSchema = z.object({
+  id: z.string().uuid(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+export const patientVisitListQuerySchema = z.object({
+  id: z.string().uuid().optional(),
+  patientId: z.string().uuid().optional(),
+  teamMemberId: z.string().uuid().optional(),
+  resourceId: z.string().uuid().optional(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']).optional(),
+  isSettled: z.enum(['true', 'false']).optional(),
+  from: patientVisitInstantSchema.optional(),
+  to: patientVisitInstantSchema.optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
+}).strict().refine((value) => !value.from || !value.to || Date.parse(value.to) > Date.parse(value.from), {
+  message: 'The range end must be later than its start',
+  path: ['to'],
+})
+
 export type PatientCreateInput = z.infer<typeof patientCreateSchema>
 export type PatientUpdateInput = z.infer<typeof patientUpdateSchema>
 export type PatientAddressCreateInput = z.infer<typeof patientAddressCreateSchema>
@@ -408,3 +496,5 @@ export type PatientContactCreateInput = z.infer<typeof patientContactCreateSchem
 export type PatientContactUpdateInput = z.infer<typeof patientContactUpdateSchema>
 export type PatientDiagnosisCreateInput = z.infer<typeof patientDiagnosisCreateSchema>
 export type PatientDiagnosisCorrectInput = z.infer<typeof patientDiagnosisCorrectSchema>
+export type PatientVisitCreateInput = z.infer<typeof patientVisitCreateSchema>
+export type PatientVisitUpdateInput = z.infer<typeof patientVisitUpdateSchema>
