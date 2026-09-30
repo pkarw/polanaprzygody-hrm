@@ -10,8 +10,6 @@ The centre runs its clients, therapists, rooms and schedules here. The newest ap
 the **patient register** (`src/modules/patient/`) — the base of an electronic health record: a
 patient's identity, addresses, the people around them, their diagnoses and their documentation.
 
-![The patient register](docs/screenshots/01-register.png)
-
 The UI is Polish. `Pacjenci` is the register, `Prowadzący` is the optional lead carer, `Opiekun` is
 a guardian.
 
@@ -29,8 +27,6 @@ are one atomic write. Guardians entered here are linked in the same transaction 
 its first address, so a child never lands in the register separated from the parent who brought
 them in.
 
-![The create form](docs/screenshots/03-create.png)
-
 Picking a guardian offers to fill the patient's **empty** e-mail and phone fields from that person
 — it never overwrites something the operator typed, and it does not make the parent's contact
 details a live reference. The lead carer option shows the therapist's specialisations, read from
@@ -41,49 +37,33 @@ the `staff` module's tags.
 The record opens on its own data plus whatever custom attributes the organisation has defined.
 Everything else lives behind a tab: addresses, contacts, diagnoses, documents, files.
 
-![The record tab](docs/screenshots/04-record.png)
-
 Addresses use the same editor and address shape as the CRM, through an adapter onto the patient's
 own API. An active record has exactly one primary address, and the switch between two of them is
 a single locked, atomic transition.
-
-![The addresses tab](docs/screenshots/05-addresses.png)
 
 Contacts are CRM people linked to the patient with independent role flags — guardian, contact
 person, payer — so one person can be both the guardian and the payer without being listed twice.
 A patient may have none; the same person may be linked to several patients. Unlinking removes the
 link, never the CRM record.
 
-![The contacts tab](docs/screenshots/06-contacts.png)
-
 Diagnoses are append-only clinical history. An entry's text is immutable once saved: a correction
 writes a **new** entry that supersedes the previous one, and a mistake is voided with a reason
-rather than deleted. The screenshot below shows a voided entry — still present, still readable,
-clearly marked.
-
-![The diagnoses tab](docs/screenshots/07-diagnoses.png)
+rather than deleted. A voided entry stays in the list — still present, still readable, clearly
+marked as void.
 
 Documents are the platform's own documents, pinned to the patient or created from the record and
 opened in the native editor. Pinning grants nobody access: each document keeps its own owner and
-shares, which is why the second row here is a document the signed-in user may not open, shown
-without leaking its title. A document pinned to more than one patient says so.
-
-![The documents tab](docs/screenshots/08-documents.png)
+shares, so a document the signed-in user may not open is still listed, without leaking its title.
+A document pinned to more than one patient says so.
 
 The files tab is deliberately switched off — see
 [Clinical files are refused on purpose](#clinical-files-are-refused-on-purpose).
 
-![The files tab with the capability banner](docs/screenshots/09-files.png)
-
-| Linking a contact | Adding a diagnosis |
-|---|---|
-| ![Link contact dialog](docs/screenshots/10-link-contact.png) | ![Add diagnosis dialog](docs/screenshots/11-add-diagnosis.png) |
-
-The link dialog states that roles are independent and that a primary contact requires the contact
-role — a rule the database enforces with a check constraint and a partial unique index, not only
-the form. The diagnosis dialog takes an optional code, system and version, and says plainly that
-the code is not validated against any dictionary: the module records terminology, it does not
-implement one.
+The dialogs spell out the rules they enforce. Linking a contact states that roles are independent
+and that a primary contact requires the contact role — a rule the database enforces with a check
+constraint and a partial unique index, not only the form. Adding a diagnosis takes an optional
+code, system and version, and says plainly that the code is not validated against any dictionary:
+the module records terminology, it does not implement one.
 
 ## 🔐 How the module is built
 
@@ -124,11 +104,8 @@ search term through three paths and unions the ids:
 3. **only when the first two produce nothing**, a bounded decrypt-and-match over the most recent
    page of records.
 
-![Searching the register by surname](docs/screenshots/02-search.png)
-
-A surname narrows the register to one result even though `last_name` is ciphertext in the
-database — the term is resolved through the hashed token index, not an `ILIKE` the column could
-never answer.
+A surname still narrows the register even though `last_name` is ciphertext in the database — the
+term is resolved through the hashed token index, not an `ILIKE` the column could never answer.
 
 The third path exists for one specific moment. Search tokens are written by the query index *after*
 the write commits, so between creating a patient and that pipeline catching up the record exists
@@ -242,7 +219,6 @@ src/modules/patient/           the patient register — the app's own EHR base
 src/modules/polana_bootstrap/  organisation, catalogue and resource bootstrap for the centre
 .ai/specs/                     specifications, each with its implementation status ledger
 .ai/guides/                    framework conventions this app is written against
-docs/screenshots/              the images in this README
 ```
 
 Inside `src/modules/patient/` the layout is the framework's standard module shape:
