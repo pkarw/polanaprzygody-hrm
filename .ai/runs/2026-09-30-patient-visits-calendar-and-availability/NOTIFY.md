@@ -93,3 +93,9 @@
 - The post-review full gate is green: db/generate current, typecheck, lint 0 errors, DS 330, 37 suites / 332 unit tests, production build, and 94 executable patient integration scenarios with 4 expected optional-host skips and 0 failures.
 - Final VCAL-T08 passed 2/2 and produced a visually reviewed 1280×1533 dark-theme screenshot with bands on two dates and distinct localized date/time text in the accessible summary.
 - Independent final re-review of `9939551` returned `APPROVE`; 2 focused suites / 18 tests and `git diff --check` passed, with no blocker, major, minor, or nit findings.
+
+## 2026-09-30T22:46:00Z — run completed
+
+- Final evidence and screenshot were committed and pushed, PR #6 was refreshed with `Status: complete`, final-gate/review/summary comments were posted, and the draft was promoted to ready.
+- The current verified production build is live through the workspace preview on port 3000; `/login` and `/api/healthz` return HTTP 200.
+- PR: https://github.com/pkarw/polanaprzygody-hrm/pull/6
