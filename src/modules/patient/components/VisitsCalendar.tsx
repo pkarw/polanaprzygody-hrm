@@ -259,9 +259,10 @@ export function VisitsCalendar() {
       for (const element of root.querySelectorAll<HTMLElement>(
         '.schedule-event-availability, .schedule-event-exception',
       )) {
-        element.tabIndex = -1
-        element.setAttribute('aria-hidden', 'true')
-        element.classList.add('pointer-events-none', 'cursor-default')
+        if (element.tabIndex !== -1) element.tabIndex = -1
+        if (element.getAttribute('aria-hidden') !== 'true') element.setAttribute('aria-hidden', 'true')
+        if (!element.classList.contains('pointer-events-none')) element.classList.add('pointer-events-none')
+        if (!element.classList.contains('cursor-default')) element.classList.add('cursor-default')
       }
     }
     makeBandsNonInteractive()
@@ -272,7 +273,7 @@ export function VisitsCalendar() {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['class'],
+      attributeFilter: ['class', 'tabindex', 'aria-hidden'],
     })
     return () => observer.disconnect()
   }, [scheduleItems, state.view])
