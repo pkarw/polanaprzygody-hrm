@@ -20,7 +20,6 @@ import {
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { emitPatientEvent } from '../events'
-import { instantOffsetInTimeZone } from '../lib/visitDateTime'
 import type {
   PatientReferenceService,
   ResolvedProductReference,
@@ -290,14 +289,29 @@ function storedInstantAtTimeZone(instant: Date, timeZone: string): string {
     hourCycle: 'h23',
   }).formatToParts(instant)
   const byType = new Map(parts.map((part) => [part.type, part.value]))
-  const offset = instantOffsetInTimeZone(instant.toISOString(), timeZone)
-  if (!offset) {
+  const localAsUtc = Date.UTC(
+    Number(byType.get('year')),
+    Number(byType.get('month')) - 1,
+    Number(byType.get('day')),
+    Number(byType.get('hour')),
+    Number(byType.get('minute')),
+    Number(byType.get('second')),
+    instant.getUTCMilliseconds(),
+  )
+  const offsetMinutes = Math.round((localAsUtc - instant.getTime()) / 60_000)
+  if (!Number.isInteger(offsetMinutes) || Math.abs(offsetMinutes) > 14 * 60) {
     throw new CrudHttpError(422, {
       error: 'The stored visit instant cannot be represented in the selected time zone',
       code: 'visit_time_zone_mismatch',
     })
   }
-  return `${byType.get('year')}-${byType.get('month')}-${byType.get('day')}T${byType.get('hour')}:${byType.get('minute')}:${byType.get('second')}${offset}`
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteOffset = Math.abs(offsetMinutes)
+  const offset = `${sign}${String(Math.floor(absoluteOffset / 60)).padStart(2, '0')}:${String(absoluteOffset % 60).padStart(2, '0')}`
+  const fraction = instant.getUTCMilliseconds() === 0
+    ? ''
+    : `.${String(instant.getUTCMilliseconds()).padStart(3, '0')}`
+  return `${byType.get('year')}-${byType.get('month')}-${byType.get('day')}T${byType.get('hour')}:${byType.get('minute')}:${byType.get('second')}${fraction}${offset}`
 }
 
 function assertVisitEditable(visit: PatientVisit): void {

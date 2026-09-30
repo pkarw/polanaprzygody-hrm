@@ -402,8 +402,8 @@ test.describe('VIS-T07: explicit instants and DST boundaries', () => {
       const editable = await createVisit(request, actor, {
         patientId: patient.id,
         teamMemberId,
-        startsAt: '2099-07-10T10:00:00+02:00',
-        endsAt: '2099-07-10T11:00:00+02:00',
+        startsAt: '2099-07-10T10:00:30.250+02:00',
+        endsAt: '2099-07-10T11:00:30.250+02:00',
         timeZone: 'Europe/Warsaw',
       })
       visitIds.push(editable.id)
@@ -422,7 +422,7 @@ test.describe('VIS-T07: explicit instants and DST boundaries', () => {
         expect(refused.body).toMatchObject({ code })
       }
 
-      const zoneOnly = await callApi<{ startsAt?: string; timeZone?: string }>(
+      const zoneOnly = await callApi<{ ok?: boolean; id?: string; updatedAt?: string }>(
         request,
         'PUT',
         '/api/patient/visits',
@@ -434,7 +434,13 @@ test.describe('VIS-T07: explicit instants and DST boundaries', () => {
         },
       )
       expect(zoneOnly.status).toBe(200)
-      expect(zoneOnly.body).toMatchObject({ timeZone: 'UTC', startsAt: editableRecord?.startsAt })
+      expect(zoneOnly.body).toMatchObject({ ok: true, id: editable.id })
+      const persistedZoneOnly = await readVisit(request, actor, editable.id)
+      expect(persistedZoneOnly).toMatchObject({
+        timeZone: 'UTC',
+        startsAt: editableRecord?.startsAt,
+        endsAt: editableRecord?.endsAt,
+      })
     } finally {
       for (const id of visitIds) await cleanupVisit(request, actor, id)
       await cleanupPatient(request, actor, patient?.id ?? null)
