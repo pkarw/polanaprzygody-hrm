@@ -3234,6 +3234,12 @@
       "comment": null
     }
   ],
-  "views": [],
+  "views": [
+    {
+      "name": "patient_patient_list_projection",
+      "schema": "public",
+      "definition": "select\n      p.id,\n      p.tenant_id,\n      p.organization_id,\n      p.patient_number,\n      p.first_name,\n      p.last_name,\n      p.birth_date,\n      p.email,\n      p.phone,\n      p.description,\n      p.owner_team_member_id,\n      p.status,\n      p.archived_at,\n      p.created_at,\n      p.updated_at,\n      p.deleted_at,\n      (\n        select v.starts_at\n        from patient_visits v\n        where v.tenant_id = p.tenant_id\n          and v.organization_id = p.organization_id\n          and v.patient_id = p.id\n          and v.status = 'planned'\n          and v.starts_at >= current_timestamp\n          and v.deleted_at is null\n        order by v.starts_at asc, v.id asc\n        limit 1\n      ) as next_visit_at\n    from patient_patients p"
+    }
+  ],
   "nativeEnums": {}
 }

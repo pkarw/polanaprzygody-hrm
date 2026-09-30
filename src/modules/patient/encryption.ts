@@ -58,6 +58,18 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
     ],
   },
   {
+    // Read-only patient-list view; its encrypted values are the same ciphertext columns.
+    entityId: 'patient:patient_list_projection',
+    fields: [
+      { field: 'first_name' },
+      { field: 'last_name' },
+      { field: 'birth_date' },
+      { field: 'email' },
+      { field: 'phone' },
+      { field: 'description' },
+    ],
+  },
+  {
     entityId: 'patient:patient_address',
     fields: [
       { field: 'name' },

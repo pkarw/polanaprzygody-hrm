@@ -1,0 +1,67 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { describe, expect, it } from '@jest/globals'
+import extensionPoints from '../extension-points'
+import en from '../i18n/en.json'
+import pl from '../i18n/pl.json'
+
+const read = (...segments: string[]) => readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
+
+describe('patient visit UI contracts', () => {
+  it('publishes stable extension hosts for the list and form', () => {
+    expect(extensionPoints.hosts.visitsTable.tableId).toBe('patient.visits.list')
+    expect(extensionPoints.hosts.visitsTable.family).toBe('data-table')
+    expect(extensionPoints.hosts.visitForm.entityId).toBe('patient.visit')
+    expect(extensionPoints.hosts.visitForm.spotId).toBe('crud-form:patient.visit')
+  })
+
+  it('keeps visit translations complete and in parity', () => {
+    const sources = [
+      read('components', 'VisitForm.tsx'),
+      read('components', 'VisitsTable.tsx'),
+      read('components', 'VisitServicesField.tsx'),
+    ].join('\n')
+    const keys = Array.from(sources.matchAll(/t\('([^']+)'/g), (match) => match[1])
+      .filter((key) => key.startsWith('patient.visits.') && !key.endsWith('.'))
+    for (const key of keys) {
+      expect((en as Record<string, string>)[key]).toBeTruthy()
+      expect((pl as Record<string, string>)[key]).toBeTruthy()
+    }
+    expect(Object.keys(en).filter((key) => key.startsWith('patient.visits.')).sort())
+      .toEqual(Object.keys(pl).filter((key) => key.startsWith('patient.visits.')).sort())
+  })
+
+  it('pins immutable patients, versioned mutations, snapshots, and owner suggestions', () => {
+    const form = read('components', 'VisitForm.tsx')
+    const teamMember = read('components', 'VisitTeamMemberField.tsx')
+    const services = read('components', 'VisitServicesField.tsx')
+    expect(form).toContain('disabled: patientReadOnly')
+    expect(form).toContain('expectedUpdatedAt: values.updatedAt ?? record.updatedAt')
+    expect(form).toContain('optimisticLockUpdatedAt={record.updatedAt}')
+    expect(form).toContain('historicalOption={referenceSeeds?.teamMember}')
+    expect(form).toContain("patientId={typeof values?.patientId")
+    expect(teamMember).toContain("'visit-owner-suggestion'")
+    expect(services).toContain('resolveProductAvailability')
+    expect(services).toContain("t('patient.common.unavailableReference')")
+  })
+
+  it('pins fail-closed feature probing to organization scope and responsive patient tabs', () => {
+    const access = read('components', 'usePatientVisitAccess.ts')
+    const detail = read('components', 'PatientDetail.tsx')
+    expect(access).toContain('useOrganizationScopeDetail')
+    expect(access).toContain('[organizationId, tenantId]')
+    expect(access).toContain("status: 'unknown', canView: false, canManage: false")
+    expect(detail).toContain("resolvedTab === 'visits'")
+    expect(detail).toContain('overflow-x-auto')
+  })
+
+  it('uses a strict patient sort allowlist and guards the visit projection', () => {
+    const route = read('api', 'patients', 'route.ts')
+    expect(route).toContain("'nextVisit',")
+    expect(route).toContain('tiebreakSortField: idField')
+    expect(route).toContain("if (_query.sortField === 'nextVisit')")
+    expect(route).not.toContain('sortField: z.string()')
+    expect(route).toContain("entityType: ENTITY_ID")
+    expect(route).toContain('resolvePatientEncryptedFieldIds')
+  })
+})

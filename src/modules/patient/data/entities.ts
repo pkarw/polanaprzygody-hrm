@@ -151,6 +151,103 @@ export class Patient {
 }
 
 /**
+ * Read-only projection used by the patient register.
+ *
+ * `next_visit_at` must be computed before pagination to support a globally correct sort.
+ * A view keeps it exact as time passes; a denormalized patient column would become stale
+ * without any write occurring. The correlated lookup is covered by the visit
+ * scope/patient/start index and never broadens tenant or organization scope.
+ */
+@Entity({
+  tableName: 'patient_patient_list_projection',
+  view: true,
+  expression: `
+    select
+      p.id,
+      p.tenant_id,
+      p.organization_id,
+      p.patient_number,
+      p.first_name,
+      p.last_name,
+      p.birth_date,
+      p.email,
+      p.phone,
+      p.description,
+      p.owner_team_member_id,
+      p.status,
+      p.archived_at,
+      p.created_at,
+      p.updated_at,
+      p.deleted_at,
+      (
+        select v.starts_at
+        from patient_visits v
+        where v.tenant_id = p.tenant_id
+          and v.organization_id = p.organization_id
+          and v.patient_id = p.id
+          and v.status = 'planned'
+          and v.starts_at >= current_timestamp
+          and v.deleted_at is null
+        order by v.starts_at asc, v.id asc
+        limit 1
+      ) as next_visit_at
+    from patient_patients p
+  `,
+})
+export class PatientListProjection {
+  @PrimaryKey({ type: 'uuid' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'patient_number', type: 'text' })
+  patientNumber!: string
+
+  @Property({ name: 'first_name', type: 'text' })
+  firstName!: string
+
+  @Property({ name: 'last_name', type: 'text' })
+  lastName!: string
+
+  @Property({ name: 'birth_date', type: 'text', nullable: true })
+  birthDate?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  email?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  phone?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  description?: string | null
+
+  @Property({ name: 'owner_team_member_id', type: 'uuid', nullable: true })
+  ownerTeamMemberId?: string | null
+
+  @Property({ type: 'text' })
+  status!: PatientStatus
+
+  @Property({ name: 'archived_at', type: Date, nullable: true })
+  archivedAt?: Date | null
+
+  @Property({ name: 'created_at', type: Date })
+  createdAt!: Date
+
+  @Property({ name: 'updated_at', type: Date })
+  updatedAt!: Date
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+
+  @Property({ name: 'next_visit_at', type: Date, nullable: true })
+  nextVisitAt?: Date | null
+}
+
+/**
  * A patient's own address — `patient_addresses`.
  *
  * The column set matches the shared CRM address editor's contract so the same

@@ -24,6 +24,7 @@ import { formatDate } from '@open-mercato/ui/utils/format'
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import type { PatientListItem, PatientPagedResponse } from '../types'
+import { usePatientVisitAccess } from './usePatientVisitAccess'
 
 const LIST_HREF = '/backend/patient/patients'
 const PAGE_SIZE = 50
@@ -47,9 +48,9 @@ type Translate = ReturnType<typeof useT>
  * There is no export control: `allowCsv` is false on the route, and a clinical export is a
  * spec non-goal.
  *
- * The "Kolejna wizyta" (next visit) column belongs to the VIS specification and is
- * deliberately absent. PAT assigns it to VIS-1, together with the rule that it appears
- * only for a caller holding the visit-view feature.
+ * The "Kolejna wizyta" column appears only after the feature probe explicitly grants
+ * `patient.visits.view`. The route repeats that authorization check for sorting and omits
+ * the projection otherwise, so hiding the column is not the security boundary.
  */
 export default function PatientsTable() {
   const t = useT()
@@ -58,6 +59,7 @@ export default function PatientsTable() {
   const { confirm, ConfirmDialogElement } = useConfirmDialog()
   const scopeVersion = useOrganizationScopeVersion()
   const locale = useLocale()
+  const visitAccess = usePatientVisitAccess()
 
   const [search, setSearch] = React.useState('')
   const [filterValues, setFilterValues] = React.useState<FilterValues>({})
@@ -92,10 +94,17 @@ export default function PatientsTable() {
   const cfDefs = rawCfDefs ?? EMPTY_CUSTOM_FIELD_DEFS
 
   const computedColumns = React.useMemo(() => {
-    const base = buildPatientColumns(t, locale)
+    const base = buildPatientColumns(t, locale, visitAccess.status === 'ready' && visitAccess.canView)
     if (!cfDefs.length) return base
     return withCustomFieldDateCells(applyCustomFieldVisibility(base, cfDefs), cfDefs, locale)
-  }, [cfDefs, locale, t])
+  }, [cfDefs, locale, t, visitAccess.canView, visitAccess.status])
+
+  React.useEffect(() => {
+    if (visitAccess.status === 'ready' && !visitAccess.canView && sorting[0]?.id === 'nextVisit') {
+      setSorting([{ id: 'createdAt', desc: true }])
+      setPage(1)
+    }
+  }, [sorting, visitAccess.canView, visitAccess.status])
 
   const {
     data: patientsData,
@@ -338,13 +347,58 @@ function withCustomFieldDateCells(
   })
 }
 
-function buildPatientColumns(t: Translate, locale: string | undefined): ColumnDef<PatientListItem>[] {
-  return [
+function formatNextVisitDate(value: string, timeZone: string, locale: string | undefined): string {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone,
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+export function buildPatientColumns(
+  t: Translate,
+  locale: string | undefined,
+  showNextVisit = false,
+): ColumnDef<PatientListItem>[] {
+  const columns: ColumnDef<PatientListItem>[] = [
     {
       accessorKey: 'patientNumber',
       header: t('patient.patients.columns.number'),
       meta: { priority: 2 },
     },
+    ...(showNextVisit ? [{
+      id: 'nextVisit',
+      header: t('patient.patients.columns.nextVisit'),
+      meta: { priority: 3 },
+      cell: ({ row }: { row: { original: PatientListItem } }) => {
+        const nextVisit = row.original.nextVisit
+        if (!nextVisit) {
+          return <span className="text-muted-foreground">{t('patient.patients.nextVisit.none')}</span>
+        }
+        return (
+          <div className="min-w-40 space-y-1">
+            <div className="whitespace-nowrap">
+              {formatNextVisitDate(nextVisit.startsAt, nextVisit.timeZone, locale)}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {nextVisit.resourceNameSnapshot ? <span>{nextVisit.resourceNameSnapshot}</span> : null}
+              <StatusBadge
+                variant={nextVisit.confirmedAt ? 'success' : 'warning'}
+                appearance="light"
+              >
+                {nextVisit.confirmedAt
+                  ? t('patient.patients.nextVisit.confirmed')
+                  : t('patient.patients.nextVisit.unconfirmed')}
+              </StatusBadge>
+            </div>
+          </div>
+        )
+      },
+    } as ColumnDef<PatientListItem>] : []),
     {
       accessorKey: 'displayName',
       header: t('patient.patients.columns.name'),
@@ -422,4 +476,5 @@ function buildPatientColumns(t: Translate, locale: string | undefined): ColumnDe
       },
     },
   ]
+  return columns
 }

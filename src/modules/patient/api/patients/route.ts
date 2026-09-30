@@ -40,7 +40,7 @@ import type { PatientReferenceService, ResolvedReference } from '../../lib/patie
 import { toIsoTimestamp } from '../../lib/commandSupport'
 import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
-import { enrichPatientNextVisits } from '../../lib/visitApi'
+import { assertCanSortPatientsByNextVisit, enrichPatientNextVisits } from '../../lib/visitApi'
 import {
   createPatientCrudOpenApi,
   createPatientPagedListResponseSchema,
@@ -50,6 +50,7 @@ import {
 } from '../openapi'
 
 const ENTITY_ID = 'patient:patient' as const
+const LIST_ENTITY_ID = 'patient:patient_list_projection' as const
 
 /**
  * The encrypted columns the single search box reaches through the token index.
@@ -82,7 +83,17 @@ const querySchema = z
     ids: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
     pageSize: z.coerce.number().min(1).max(100).default(50),
-    sortField: z.string().optional().default('created_at'),
+    sortField: z.enum([
+      'id',
+      'patient_number',
+      'patientNumber',
+      'status',
+      'created_at',
+      'createdAt',
+      'updated_at',
+      'updatedAt',
+      'nextVisit',
+    ]).optional().default('created_at'),
     sortDir: z.enum(['asc', 'desc']).optional().default('desc'),
     status: z.enum(['active', 'archived']).optional(),
     /** The list's one search box: patient number, name, email or phone. */
@@ -337,6 +348,66 @@ async function resolvePatientSearchIds(
   return Array.from(ids)
 }
 
+type PatientEncryptedFilter = {
+  query: string | undefined
+  tokenField: (typeof PATIENT_SEARCH_TOKEN_FIELDS)[number]
+  property: 'firstName' | 'lastName' | 'email' | 'phone'
+}
+
+async function resolvePatientEncryptedFieldIds(
+  filter: PatientEncryptedFilter,
+  scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
+): Promise<string[] | null> {
+  if (!filter.query) return null
+  const tokenMatch = await findEntityIdsBySearchTokens({
+    db: scope.em.getKysely<SearchTokenDatabase>(),
+    entityType: ENTITY_ID,
+    query: filter.query,
+    fields: [filter.tokenField],
+    scope: { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  })
+  if (tokenMatch.matched && tokenMatch.ids.length > 0) {
+    return tokenMatch.ids.slice(0, SEARCH_ID_LIMIT)
+  }
+
+  // Same bounded index-lag bridge as the register search, but restricted to the
+  // requested field. QueryEngine is reading from the projection entity in this route,
+  // while the authoritative tokens belong to `patient:patient`; resolving ids here keeps
+  // that ownership explicit and avoids ever applying ILIKE to ciphertext.
+  const needle = filter.query.replaceAll('%', '').toLocaleLowerCase()
+  if (!needle) return []
+  const recent = await findWithDecryption(
+    scope.em,
+    Patient,
+    {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+      deletedAt: null,
+    } as never,
+    { orderBy: { createdAt: 'desc' }, limit: SEARCH_FALLBACK_SCAN_LIMIT },
+    { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  )
+  return recent
+    .filter((row) => {
+      const value = row[filter.property]
+      return typeof value === 'string' && value.toLocaleLowerCase().includes(needle)
+    })
+    .map((row) => String(row.id))
+}
+
+function intersectPatientIds(filters: Record<string, WhereValue>, ids: string[]): void {
+  const narrowed = ids.length > 0 ? ids : [NO_MATCH_ID]
+  const existing = filters.id
+  if (existing && typeof existing === 'object' && '$in' in existing) {
+    const allowed = new Set(narrowed)
+    filters.id = { $in: (existing as { $in: string[] }).$in.filter((id) => allowed.has(id)) }
+  } else if (typeof existing === 'string') {
+    filters.id = narrowed.includes(existing) ? existing : NO_MATCH_ID
+  } else {
+    filters.id = { $in: narrowed }
+  }
+}
+
 const sortFieldMap: Record<string, string> = {
   id: idField,
   patient_number,
@@ -346,6 +417,7 @@ const sortFieldMap: Record<string, string> = {
   createdAt: created_at,
   updated_at,
   updatedAt: updated_at,
+  nextVisit: 'next_visit_at',
 }
 
 type PatientRow = {
@@ -427,13 +499,23 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   indexer: { entityType: ENTITY_ID },
   list: {
     schema: querySchema,
-    entityId: ENTITY_ID,
+    entityId: LIST_ENTITY_ID,
     fields: (query: Query, ctx: CrudCtx) => [
       ...baseListFields,
       ...(isSingleRecordRequest(query) ? [descriptionField, birth_date, archived_at] : []),
       ...customFieldKeysFor(ctx).map((key) => `cf:${key}`),
     ],
     sortFieldMap,
+    tiebreakSortField: idField,
+    customFieldSources: [
+      {
+        entityId: ENTITY_ID,
+        table: 'patient_patients',
+        alias: 'patient_base',
+        recordIdColumn: 'id',
+        join: { fromField: 'id', toField: 'id' },
+      },
+    ],
     buildFilters: async (q: Query, ctx): Promise<Where<PatientRow>> => {
       const filters: Where<PatientRow> = {}
       const F = filters as Record<string, WhereValue>
@@ -460,26 +542,22 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         })
         // An empty set is a real "no match", not an absent filter: without the
         // impossible predicate the search box would silently return the whole register.
-        const narrowed = matchedIds.length > 0 ? matchedIds : [NO_MATCH_ID]
-        const existing = F.id
-        if (existing && typeof existing === 'object' && '$in' in existing) {
-          const previous = (existing as { $in: string[] }).$in
-          const allowed = new Set(narrowed)
-          F.id = { $in: previous.filter((value) => allowed.has(value)) }
-        } else if (typeof existing === 'string') {
-          F.id = narrowed.includes(existing) ? existing : NO_MATCH_ID
-        } else {
-          F.id = { $in: narrowed }
-        }
+        intersectPatientIds(F, matchedIds)
       }
-      // Encrypted columns. A plain `$ilike` is deliberate: the query engine intercepts it
-      // and rewrites it into a `search_tokens` lookup over hashes of the decrypted value.
-      // Hand-rolling an id narrowing here would duplicate that and would have to re-apply
-      // the tenant/organization scope the engine's token path already applies.
-      if (q.firstName) F.first_name = { $ilike: q.firstName }
-      if (q.lastName) F.last_name = { $ilike: q.lastName }
-      if (q.email) F.email = { $ilike: q.email }
-      if (q.phone) F.phone = { $ilike: q.phone }
+      const encryptedFilterScope = {
+        em: ctx.container.resolve<EntityManager>('em'),
+        tenantId: ctx.auth?.tenantId ?? null,
+        organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null,
+      }
+      const encryptedFilterIds = await Promise.all([
+        resolvePatientEncryptedFieldIds({ query: q.firstName, tokenField: 'first_name', property: 'firstName' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.lastName, tokenField: 'last_name', property: 'lastName' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.email, tokenField: 'email', property: 'email' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.phone, tokenField: 'phone', property: 'phone' }, encryptedFilterScope),
+      ])
+      for (const ids of encryptedFilterIds) {
+        if (ids) intersectPatientIds(F, ids)
+      }
       if (q.ownerTeamMemberId) F.owner_team_member_id = q.ownerTeamMemberId
 
       const cfFilterMap = await buildCustomFieldFiltersFromQuery({
@@ -521,6 +599,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
      * selectors and still return the record, not turn a readable patient into an error.
      */
     beforeList: async (_query: Query, ctx: CrudCtx) => {
+      if (_query.sortField === 'nextVisit') {
+        await assertCanSortPatientsByNextVisit(ctx)
+      }
       try {
         requestCustomFieldKeys.set(ctx, await discoverCustomFieldKeys(ctx))
       } catch {

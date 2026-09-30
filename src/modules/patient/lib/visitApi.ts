@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { CrudCtx } from '@open-mercato/shared/lib/crud/factory'
+import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { decryptEntitiesWithFallbackScope } from '@open-mercato/shared/lib/encryption/subscriber'
 import { PatientVisit } from '../data/entities'
 import { toIsoTimestamp } from './commandSupport'
@@ -25,6 +26,26 @@ export type PatientNextVisitTarget = {
 /** Free text belongs only to an explicit single-record lookup, never to `ids` lists. */
 export function isVisitDetailQuery(query: { id?: string; ids?: string }): boolean {
   return typeof query.id === 'string' && query.id.length > 0
+}
+
+export async function assertCanSortPatientsByNextVisit(ctx: CrudCtx): Promise<void> {
+  const tenantId = ctx.auth?.tenantId ?? null
+  const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
+  const userId = ctx.auth?.sub ?? null
+  if (!tenantId || !organizationId || !userId) {
+    throw new CrudHttpError(403, { error: 'Visit sorting is not available in this scope' })
+  }
+  try {
+    const rbac = ctx.container.resolve<ScopedRbacService>('rbacService')
+    const granted = await rbac.userHasAllFeatures(userId, ['patient.visits.view'], {
+      tenantId,
+      organizationId,
+    })
+    if (granted) return
+  } catch {
+    // Fail closed below when authorization cannot be proved.
+  }
+  throw new CrudHttpError(403, { error: 'Visit sorting is not available' })
 }
 
 /**

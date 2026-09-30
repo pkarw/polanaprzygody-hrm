@@ -16,7 +16,17 @@
  * skip the very suite that documents why the phase is disabled.
  */
 export const integrationMeta = {
-  dependsOnModules: ['patient', 'auth', 'directory', 'customers', 'staff', 'documents', 'entities'],
+  dependsOnModules: [
+    'patient',
+    'auth',
+    'directory',
+    'customers',
+    'staff',
+    'catalog',
+    'resources',
+    'documents',
+    'entities',
+  ],
 }
 
 export default integrationMeta

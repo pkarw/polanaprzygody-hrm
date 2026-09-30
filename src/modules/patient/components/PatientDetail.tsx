@@ -26,7 +26,9 @@ import { PatientContactsSection } from './PatientContactsSection'
 import { PatientDiagnosesSection } from './PatientDiagnosesSection'
 import { PatientDocumentsSection } from './PatientDocumentsSection'
 import { PatientFilesSection } from './PatientFilesSection'
+import { PatientVisitsSection } from './PatientVisitsSection'
 import { useClinicalAccess } from './useClinicalAccess'
+import { usePatientVisitAccess } from './usePatientVisitAccess'
 
 const LIST_HREF = '/backend/patient/patients'
 const ENTITY_ID = extensionPoints.hosts.patientForm.entityId.replace('.', ':')
@@ -46,7 +48,7 @@ const FORM_ID = 'patient-detail-form'
  * and so a 409 that reloads the record does not silently drop the operator back to the first
  * tab.
  */
-const TABS = ['data', 'addresses', 'contacts', 'diagnoses', 'documents', 'files'] as const
+const TABS = ['data', 'addresses', 'contacts', 'visits', 'diagnoses', 'documents', 'files'] as const
 type TabId = (typeof TABS)[number]
 
 /** Tabs that require `patient.clinical.view`; absent entirely for a records-only operator. */
@@ -118,17 +120,24 @@ export function PatientDetail({ id }: { id: string }) {
   const [isDeleting, setIsDeleting] = React.useState(false)
 
   const clinicalAccess = useClinicalAccess(id)
+  const visitAccess = usePatientVisitAccess()
   // `unknown` keeps the clinical tabs hidden until the probe answers, so they do not flash in
   // and out for an operator who turns out not to hold the feature. `unavailable` shows them, so
   // a transport failure does not silently remove a surface the operator may be entitled to.
   const showClinicalTabs = clinicalAccess === 'granted' || clinicalAccess === 'unavailable'
+  // Visit surfaces fail closed: unlike the clinical probe's legacy fallback, this new
+  // capability must never appear until the feature check explicitly grants it.
+  const showVisitsTab = visitAccess.status === 'ready' && visitAccess.canView
 
   const requestedTab = searchParams?.get('tab') ?? null
   const resolvedTab: TabId = isTabId(requestedTab) ? requestedTab : 'data'
   // A deep link to a clinical tab the operator cannot open falls back to the record tab rather
   // than rendering an empty panel with no trigger to leave it.
   const activeTab: TabId =
-    !showClinicalTabs && CLINICAL_TABS.includes(resolvedTab) ? 'data' : resolvedTab
+    (!showClinicalTabs && CLINICAL_TABS.includes(resolvedTab)) ||
+    (!showVisitsTab && resolvedTab === 'visits')
+      ? 'data'
+      : resolvedTab
 
   const setActiveTab = React.useCallback(
     (next: string) => {
@@ -397,10 +406,16 @@ export function PatientDetail({ id }: { id: string }) {
       ) : null}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} variant="underline">
-        <TabsList aria-label={t('patient.patients.detail.title')}>
+        <TabsList
+          aria-label={t('patient.patients.detail.title')}
+          className="max-w-full justify-start overflow-x-auto"
+        >
           <TabsTrigger value="data">{t('patient.patients.tabs.data')}</TabsTrigger>
           <TabsTrigger value="addresses">{t('patient.patients.tabs.addresses')}</TabsTrigger>
           <TabsTrigger value="contacts">{t('patient.patients.tabs.contacts')}</TabsTrigger>
+          {showVisitsTab ? (
+            <TabsTrigger value="visits">{t('patient.patients.tabs.visits')}</TabsTrigger>
+          ) : null}
           {showClinicalTabs ? (
             <>
               <TabsTrigger value="diagnoses">{t('patient.patients.tabs.diagnoses')}</TabsTrigger>
@@ -462,6 +477,12 @@ export function PatientDetail({ id }: { id: string }) {
         <TabsContent value="contacts">
           <PatientContactsSection patientId={id} readOnly={isArchived} onMutated={reload} />
         </TabsContent>
+
+        {showVisitsTab ? (
+          <TabsContent value="visits">
+            <PatientVisitsSection patientId={id} readOnly={isArchived} />
+          </TabsContent>
+        ) : null}
 
         {showClinicalTabs ? (
           <>

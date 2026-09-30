@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { callApi, cleanupPatient, createPatient, login, type CreatedPatient } from './helpers/api'
+import { login as browserLogin } from '@open-mercato/core/helpers/integration/auth'
+import {
+  callApi,
+  cleanupPatient,
+  createPatient,
+  login as actorLogin,
+  type CreatedPatient,
+} from './helpers/api'
 
 /**
  * PAT-T11 — the rendered surfaces and their required states.
@@ -12,15 +19,7 @@ import { callApi, cleanupPatient, createPatient, login, type CreatedPatient } fr
  */
 test.describe('PAT-T11: patient UI states', () => {
   test.beforeEach(async ({ page }) => {
-    const email = process.env.OM_INTEGRATION_ADMIN_EMAIL
-    const password = process.env.OM_INTEGRATION_ADMIN_PASSWORD
-    test.skip(!email || !password, 'Set OM_INTEGRATION_ADMIN_EMAIL and OM_INTEGRATION_ADMIN_PASSWORD.')
-    // Through the API so the browser holds the same `auth_token` cookie the app sets on login.
-    const response = await page.request.post('/api/auth/login', {
-      data: { email, password },
-      headers: { 'content-type': 'application/json' },
-    })
-    expect(response.ok(), `login failed: ${response.status()}`).toBeTruthy()
+    await browserLogin(page, 'admin')
   })
 
   test('renders the register with its heading and add action', async ({ page }) => {
@@ -31,7 +30,7 @@ test.describe('PAT-T11: patient UI states', () => {
   })
 
   test('never renders a raw identifier in the register', async ({ page, request }) => {
-    const actor = await login(request)
+    const actor = await actorLogin(request)
     let created: CreatedPatient | null = null
     try {
       created = await createPatient(request, actor, { firstName: 'Widoczna', lastName: 'Nazwa' })
@@ -67,7 +66,7 @@ test.describe('PAT-T11: patient UI states', () => {
   })
 
   test('opens the patient card and switches tabs by keyboard', async ({ page, request }) => {
-    const actor = await login(request)
+    const actor = await actorLogin(request)
     let created: CreatedPatient | null = null
     try {
       created = await createPatient(request, actor)
@@ -111,7 +110,7 @@ test.describe('PAT-T11: patient UI states', () => {
   })
 
   test('hides the clinical tabs from an actor without the clinical feature', async ({ page, request }) => {
-    const actor = await login(request)
+    const actor = await actorLogin(request)
     const probe = await callApi(request, 'GET', '/api/patient/diagnoses?patientId=99999999-9999-4999-8999-999999999999&pageSize=1', actor)
     // This assertion is only meaningful for an actor that LACKS the feature; the default
     // integration admin usually has it, so the case documents the contract and skips otherwise.
