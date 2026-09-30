@@ -31,6 +31,7 @@
 | 2 | 2.12-review-fix | Render non-actionable availability and exception bands inside the calendar grid | inline | done | this commit |
 | 2 | 2.13-runtime-fix | Observe late calendar event classes and align the isolation oracle with the stable denial payload | inline | done | this commit |
 | 2 | 2.14-runtime-fix | Reapply non-interactive band semantics after calendar reconciliation | inline | done | this commit |
+| 2 | 2.15-runtime-fix | Start band normalization from the calendar mount callback instead of a data-state race | inline | done | this commit |
 
 ## Goal
 

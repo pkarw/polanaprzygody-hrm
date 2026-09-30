@@ -143,6 +143,17 @@ function filterString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function normalizeAvailabilityBands(root: HTMLElement): void {
+  for (const element of root.querySelectorAll<HTMLElement>(
+    '.schedule-event-availability, .schedule-event-exception',
+  )) {
+    if (element.tabIndex !== -1) element.tabIndex = -1
+    if (element.getAttribute('aria-hidden') !== 'true') element.setAttribute('aria-hidden', 'true')
+    if (!element.classList.contains('pointer-events-none')) element.classList.add('pointer-events-none')
+    if (!element.classList.contains('cursor-default')) element.classList.add('cursor-default')
+  }
+}
+
 export function VisitsCalendar() {
   const t = useT()
   const locale = useLocale()
@@ -153,7 +164,22 @@ export function VisitsCalendar() {
   const scopeVersion = useOrganizationScopeVersion()
   const queryClient = useQueryClient()
   const access = usePatientVisitAccess()
-  const scheduleRootRef = React.useRef<HTMLDivElement>(null)
+  const scheduleObserverRef = React.useRef<MutationObserver | null>(null)
+  const setScheduleRootRef = React.useCallback((root: HTMLDivElement | null) => {
+    scheduleObserverRef.current?.disconnect()
+    scheduleObserverRef.current = null
+    if (!root) return
+    const normalize = () => normalizeAvailabilityBands(root)
+    normalize()
+    const observer = new MutationObserver(normalize)
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'tabindex', 'aria-hidden'],
+    })
+    scheduleObserverRef.current = observer
+  }, [])
   const [state, setState] = React.useState<CalendarState>(() => initialState(new URLSearchParams(searchString)))
   const [dialog, setDialog] = React.useState<VisitCalendarDialogState | null>(null)
   const range = React.useMemo(() => apiRange(state.range, state.timeZone), [state.range, state.timeZone])
@@ -251,32 +277,6 @@ export function VisitsCalendar() {
     })
     return [...laneItems, ...visits]
   }, [query.data, state.timeZone, t])
-
-  React.useEffect(() => {
-    const root = scheduleRootRef.current
-    if (!root) return
-    const makeBandsNonInteractive = () => {
-      for (const element of root.querySelectorAll<HTMLElement>(
-        '.schedule-event-availability, .schedule-event-exception',
-      )) {
-        if (element.tabIndex !== -1) element.tabIndex = -1
-        if (element.getAttribute('aria-hidden') !== 'true') element.setAttribute('aria-hidden', 'true')
-        if (!element.classList.contains('pointer-events-none')) element.classList.add('pointer-events-none')
-        if (!element.classList.contains('cursor-default')) element.classList.add('cursor-default')
-      }
-    }
-    makeBandsNonInteractive()
-    const observer = new MutationObserver(makeBandsNonInteractive)
-    // react-big-calendar can attach event-kind classes after inserting the
-    // event node, so observe class changes as well as subtree additions.
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'tabindex', 'aria-hidden'],
-    })
-    return () => observer.disconnect()
-  }, [scheduleItems, state.view])
 
   const filterValues = React.useMemo<FilterValues>(() => ({ ...state.filters }), [state.filters])
   const invalidateVisits = React.useCallback(async () => {
@@ -461,7 +461,7 @@ export function VisitsCalendar() {
               </ul>
             </section>
           ) : null}
-          <div ref={scheduleRootRef}>
+          <div ref={setScheduleRootRef}>
             <ScheduleView
               className="min-w-0 patient-visits-calendar"
               items={scheduleItems}
