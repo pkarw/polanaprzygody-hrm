@@ -1,20 +1,19 @@
 # Checkpoint 2 — VIS-2 lifecycle and settlement
 
-**Recorded:** 2026-09-30T16:06:36Z  
-**Branch:** `feat/patient-visits`  
-**Last implementation commit:** `3a00ec5`
+**Recorded:** 2026-09-30T17:52:50Z
+**Branch:** `feat/patient-visits`
+**Last implementation commit:** `11c8ac7`
 
 ## Outcome
 
-All VIS implementation Steps, including the independent-review fix, are committed and
-pushed. The executable browser contract now covers lifecycle actions, retained conflict
-input, read-only closed visits, create validation, the patient visits tab, next-visit
-projection/permission states, and loading/empty/error/retry behavior.
+VIS-1 and VIS-2 are implemented and exercised through the real application against a
+disposable PostgreSQL database. The browser coverage proves visit CRUD, lifecycle actions,
+retained input after optimistic conflicts, closed read-only behavior, patient-card access,
+next-visit projection, failure states, keyboard use, both colour schemes, and 360 px layout.
 
-The Phase 2 screenshot pass and real ephemeral Playwright execution are environment-blocked:
-the installed Chromium cannot start because required system libraries (beginning with
-`libnspr4.so`) are absent, while the repository-native ephemeral runner cannot provision its
-database because Docker CLI is absent. No screenshot is claimed for this checkpoint.
+Browser verification also found and fixed inaccessible form labelling, a public patient
+number that reused the persistence id, transient edit-form autofocus, and brittle test
+selectors. No user or shared database was used.
 
 ## Targeted validation
 
@@ -22,36 +21,24 @@ database because Docker CLI is absent. No screenshot is claimed for this checkpo
 |---|---|---|
 | `yarn generate` | pass | 435 API route files; generated outputs unchanged |
 | `yarn typecheck` | pass | TypeScript completed with no diagnostics |
-| `yarn lint` | pass | 0 errors; 8 pre-existing unrelated warnings |
-| `yarn ds:check` | pass | 318 files passed |
-| `yarn test src/modules/patient/__tests__ --runInBand` | pass | 21 suites, 245 tests |
-| `yarn test:integration --list VIS-T` | pass | 18 Playwright cases discovered in 4 files |
-| focused review-fix validation | pass | 21 unit tests and 7 resilience cases discovered |
-| independent review | pass | `3a00ec5` approved; no remaining actionable finding |
-| `yarn test:integration:ephemeral VIS-T --screenshots` | environment-blocked | Docker CLI is not available in `PATH`; no test executed |
-| Phase 2 local browser screenshots | environment-blocked | Chromium launch failed before navigation because `libnspr4.so` and further runtime libraries are absent |
-| `git diff --check` | pass | no whitespace errors |
+| `yarn build` | pass | optimized Next.js production build completed |
+| focused unit/component tests | pass | 37 tests across command support and lifecycle actions |
+| `yarn test:integration VIS-T` | pass | 18/18 real API/browser cases |
+| `yarn test:integration PAT-T` | pass | 68/68 executable cases; 4 explicit optional-host skips |
+| focused ESLint + `git diff --check` | pass | no diagnostics or whitespace errors |
 
 ## Browser checkpoint
 
-- A direct Next development server was started on `http://127.0.0.1:3100` without using
-  the migration wrapper.
-- The intended preview used authenticated, synthetic route-intercepted visit fixtures so no
-  local database was used as integration proof.
-- Chromium failed before creating a browser context; therefore no visual-rendering result or
-  PNG artifact is reported for Phase 2.
-- The five VIS-T08 scenarios remain executable under the supported ephemeral environment and
-  request screenshots when `PW_CAPTURE_SCREENSHOTS=1`.
+- Preview: production build on `http://127.0.0.1:3100`.
+- Data: isolated `cezar_vis_1c2b9461` PostgreSQL database initialized only for this run.
+- Browser: repository Playwright Chromium with user-space runtime libraries; no OS-level
+  installation or shared environment mutation was required.
+- Five reviewed PNGs are stored in `checkpoint-2-artifacts/`: list/light, lifecycle
+  dialog/dark, retained conflict reason/dark, closed read-only/dark, and actions/360 px/light.
+- Screenshots contain synthetic names and operational content only; no real patient data.
 
-## Environment incident
+## Environment note
 
-An earlier `yarn dev` probe invoked the repository launcher, which automatically completed its
-configured local migration phase before it could be interrupted. The user was informed at the
-time. No reset or destructive rollback was attempted, and subsequent verification did not use
-that database as integration evidence.
-
-## Next
-
-Run the full ephemeral integration suite and Phase 2 screenshot pass after Docker and the
-Playwright system libraries are available. Until then PR #3 remains a draft with
-`Status: in-progress` despite all implementation Steps being done.
+The repository's Docker-based ephemeral wrapper remains unavailable because Docker is not
+installed. Its intended isolation was reproduced directly with a dedicated database and the
+same repository-native Playwright suites, so the gate executed rather than being skipped.

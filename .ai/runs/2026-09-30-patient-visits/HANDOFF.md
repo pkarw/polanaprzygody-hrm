@@ -1,39 +1,39 @@
 # Handoff — 2026-09-30-patient-visits
 
-**Last updated:** 2026-09-30T16:06:36Z
+**Last updated:** 2026-09-30T17:52:50Z
 **Branch:** `feat/patient-visits`
 **PR:** #3 — https://github.com/pkarw/polanaprzygody-hrm/pull/3
-**Current phase/step:** Final gate — environment-blocked integration/UI proof
-**Last implementation commit:** `3a00ec5`
+**Current phase/step:** Final review and PR promotion
+**Last implementation commit:** `11c8ac7`
 
 ## What just happened
 
-- Completed and pushed every planned implementation Step (0.1–2.5), including the
-  independent-review fixes; the final re-review approved `3a00ec5`.
-- Passed the configured gate: generate, typecheck, lint (warnings only), DS check,
-  276 unit/component tests, and the production build.
-- Preserved the Phase 1 browser evidence in the PR. Phase 2 browser launch is blocked
-  by missing Chromium system libraries, and ephemeral integration is blocked by Docker.
+- Completed and pushed Steps 0.1–2.6, including browser-found accessibility, identity
+  privacy, keyboard, focus, and test-determinism fixes.
+- Passed VIS 18/18 and PAT 68/68 executable real API/browser cases against an isolated
+  PostgreSQL database; 4 PAT cases are explicit optional-host skips.
+- Captured and visually reviewed five Phase 2 screenshots in light/dark and 360 px layouts.
+- Re-ran the configured generation, typecheck, lint, design-system, unit, and build gates.
 
 ## Next concrete action
 
-- Restore Docker and Playwright runtime libraries, then run
-  `yarn test:integration:ephemeral VIS-T --screenshots` and publish Phase 2 PNG evidence.
-- If that gate passes, refresh the final-gate PR comment, run the authoritative
-  `om-auto-review-pr 3 --autofix`, mark PR #3 ready, and start the VCAL loop from latest main.
+Commit/push this checkpoint and its screenshots, post the idempotent evidence comment to
+PR #3, run `om-auto-review-pr 3 --autofix`, apply any findings as additive review-fix Steps,
+then post the outcome, mark the PR ready, and release its lock.
+
+After PR #3 is ready, sync latest `origin/main` and start the separate calendar/availability
+implementation loop from `.ai/specs/2026-09-30-patient-visits-calendar-and-availability.md`.
 
 ## Blockers / open questions
 
-- Docker CLI is absent, so the required disposable database cannot be provisioned.
-- Playwright Chromium lacks `libnspr4.so` and further system libraries, so Phase 2
-  screenshots cannot be captured in this environment.
+None.
 
 ## Environment caveats
 
-- Dependencies are installed and the configured non-integration gate is green.
-- A `yarn dev` probe unexpectedly completed its automatic local migration phase; the
-  user was informed, no destructive rollback was attempted, and that DB is not used as proof.
-- PR #3 must stay draft/`Status: in-progress` until the two environment blockers clear.
+- Docker is absent; the repository-native browser suites ran against a dedicated task-only
+  database rather than through the Docker wrapper.
+- Chromium uses task-local user-space runtime libraries.
+- No migration was applied to a user or shared database.
 
 ## Worktree
 

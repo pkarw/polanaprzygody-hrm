@@ -48,3 +48,16 @@
   and subsequent validation did not use the local DB as integration evidence.
 - Decision: PR #3 stays draft with `Status: in-progress`; resume at the required integration
   and screenshot gate when the environment prerequisites become available.
+
+## 2026-09-30T17:52:50Z — checkpoint 2 unblocked and browser fixes landed
+
+- Decision: reproduced the ephemeral runner's isolation with the dedicated task-only
+  PostgreSQL database because Docker is absent; no user/shared database was used.
+- Delegation: a focused subagent fixed independent patient-number generation and stable
+  PatientCreateForm labels; the parent reviewed, integrated, and verified those changes.
+- Browser verification found and fixed visit date/notes labels, edit-form autofocus,
+  lifecycle keyboard handling, and deterministic selectors without changing public routes.
+- VIS passed 18/18 and PAT passed 68/68 executable real API/browser cases; 4 PAT cases are
+  explicit optional-host skips.
+- Five polished Phase 2 screenshots were captured and reviewed for light/dark, conflict,
+  closed read-only, and 360 px states. The earlier environment blockers are resolved.
