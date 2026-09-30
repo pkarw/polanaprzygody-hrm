@@ -262,6 +262,7 @@ export function VisitAvailabilityCheck({
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault()
+              event.stopPropagation()
               confirmOverride()
             }
           }}

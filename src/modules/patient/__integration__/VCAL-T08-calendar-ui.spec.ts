@@ -90,8 +90,12 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       const editDialog = page.getByRole('dialog')
       await expect(editDialog.getByRole('heading', { name: /Wizyta|Visit/i })).toBeVisible()
       await expect(editDialog.getByLabel(/Pacjent|Patient/i)).toBeDisabled()
-      await page.keyboard.press('Escape')
+      await editDialog.getByRole('button', { name: /Usuń|Delete/i }).click()
+      const deleteConfirmation = page.getByRole('alertdialog')
+      await expect(deleteConfirmation.getByText(/Usunąć tę wizytę|Delete this visit/i)).toBeVisible()
+      await deleteConfirmation.getByRole('button', { name: /Potwierdź|Confirm/i }).click()
       await expect(editDialog).toBeHidden()
+      visitId = null
 
       const selectableSlot = page.locator('.rbc-day-slot .rbc-time-slot').first()
       await expect(selectableSlot).toBeVisible()
@@ -140,7 +144,17 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
               subjectName: 'Quality-state clinician',
               hasSchedule: false,
               unknown: true,
-              windows: [],
+            windows: [{
+              id: 'member-lane-availability',
+              kind: 'availability',
+              from: '2099-05-10T08:00:00+02:00',
+              to: '2099-05-10T16:00:00+02:00',
+            }, {
+              id: 'member-lane-exception',
+              kind: 'exception',
+              from: '2099-05-10T12:00:00+02:00',
+              to: '2099-05-10T12:30:00+02:00',
+            }],
             }],
             degraded: [{
               code: 'availability_unknown',
@@ -173,9 +187,26 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       })
 
       await setTheme(page, 'dark')
+      await page.goto(calendarUrl({
+        teamMemberId,
+        from: '2099-05-01T00:00:00+02:00',
+        to: '2099-07-04T00:00:00+02:00',
+      }))
+      await expect(page.getByText(/Zakres kalendarza jest za szeroki|Calendar range is too wide/i)).toBeVisible()
+      await page.getByRole('button', { name: /Pokaż jeden miesiąc|Show one month/i }).click()
+      await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('month')
+      await expect(page.getByText(/Zakres kalendarza jest za szeroki|Calendar range is too wide/i)).toBeHidden()
+
       await page.goto(calendarUrl({ teamMemberId }))
       await expect(page.getByText(/Część dostępności jest nieznana|Some availability is unknown/i)).toBeVisible()
       await expect(page.getByText(/Brak grafiku dostępności|No availability schedule/i)).toBeVisible()
+      const laneEvents = page.locator('.schedule-event-availability, .schedule-event-exception')
+      await expect(laneEvents).toHaveCount(2)
+      for (const lane of await laneEvents.all()) {
+        await expect(lane).toHaveAttribute('aria-hidden', 'true')
+        await expect(lane).toHaveAttribute('tabindex', '-1')
+      }
+      await expect(page.locator('[data-visit-lane-summary]')).toContainText('Quality-state clinician')
       await attachScreenshot(page, testInfo, 'vcal-2-degraded-dark')
 
       await page.getByRole('button', { name: /Zaplanuj wizytę|Schedule visit/i }).first().click()
@@ -186,8 +217,21 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       const reason = overrideDialog.getByLabel(/Powód nadpisania|Override reason/i)
       await expect(reason).toBeFocused()
       await reason.fill('VCAL-T08 browser override reason')
+      await dialog.locator('form').evaluate((form) => {
+        const visitForm = form as HTMLFormElement
+        const original = visitForm.requestSubmit.bind(visitForm)
+        ;(window as typeof window & { __visitOuterSubmits?: number }).__visitOuterSubmits = 0
+        visitForm.requestSubmit = (submitter?: HTMLElement | null) => {
+          ;(window as typeof window & { __visitOuterSubmits?: number }).__visitOuterSubmits =
+            ((window as typeof window & { __visitOuterSubmits?: number }).__visitOuterSubmits ?? 0) + 1
+          original(submitter)
+        }
+      })
       await reason.press('Control+Enter')
       await expect(overrideDialog).toBeHidden()
+      await expect.poll(() => page.evaluate(() => (
+        window as typeof window & { __visitOuterSubmits?: number }
+      ).__visitOuterSubmits ?? 0)).toBe(0)
       await attachScreenshot(page, testInfo, 'vcal-2-warning-override-dark')
       await page.keyboard.press('Escape')
 

@@ -4,10 +4,23 @@ import {
   instantOffsetInTimeZone,
   resolveVisitInstant,
   toVisitLocalDateTime,
+  visitCalendarDayRange,
   visitInstantChoices,
 } from '../lib/visitDateTime'
 
 describe('visit local date-time conversion', () => {
+  it('builds DST-safe local day ranges for calendar deep links', () => {
+    expect(visitCalendarDayRange('2026-03-29T10:00:00+02:00', 'Europe/Warsaw')).toEqual({
+      from: '2026-03-28T23:00:00.000Z',
+      to: '2026-03-29T22:00:00.000Z',
+    })
+    expect(visitCalendarDayRange('2026-10-25T10:00:00+01:00', 'Europe/Warsaw')).toEqual({
+      from: '2026-10-24T22:00:00.000Z',
+      to: '2026-10-25T23:00:00.000Z',
+    })
+    expect(visitCalendarDayRange('invalid', 'Europe/Warsaw')).toBeNull()
+  })
+
   it('resolves an ordinary Warsaw time to its explicit offset', () => {
     expect(visitInstantChoices('2026-10-05T10:00', 'Europe/Warsaw')).toEqual([
       { instant: '2026-10-05T10:00:00+02:00', offset: '+02:00' },

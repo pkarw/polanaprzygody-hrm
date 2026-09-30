@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from '@jest/globals'
 import { patientVisitCalendarResponseSchema } from '../api/openapi'
+import { readPatientCalendarStore } from '../lib/patientCalendarStorage'
 import { patientVisitCalendarQuerySchema } from '../data/validators'
 
 const id = (value: number) => `${String(value).repeat(8)}-aaaa-4bbb-8ccc-dddddddddddd`
@@ -11,6 +12,18 @@ const routeSource = readFileSync(
 )
 
 describe('patient visit calendar route', () => {
+  it('maps patient-owned storage failures to the documented stable 503', async () => {
+    await expect(readPatientCalendarStore(async () => {
+      throw new Error('database detail that must not escape')
+    })).rejects.toMatchObject({
+      status: 503,
+      body: {
+        error: 'The patient calendar data store is unavailable',
+        code: 'visit_calendar_store_unavailable',
+      },
+    })
+  })
+
   it('accepts a 62-day range and rejects reversed, wider, offset-free, and scoped inputs', () => {
     const valid = {
       from: '2026-09-01T00:00:00Z',
@@ -91,6 +104,7 @@ describe('patient visit calendar route', () => {
     expect(routeSource).not.toContain('requireActiveTeamMember')
     expect(routeSource).not.toContain('requireActiveResource')
     expect(routeSource).toContain('findWithDecryption(')
+    expect(routeSource).toContain('readPatientCalendarStore(() => findWithDecryption(')
     expect(routeSource).toContain('limit: PATIENT_VISIT_CALENDAR_MAX_ITEMS + 1')
     expect(routeSource).toContain("code: 'visit_calendar_too_many_items'")
   })

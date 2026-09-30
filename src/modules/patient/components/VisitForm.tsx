@@ -4,6 +4,10 @@ import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CrudForm, type CrudField, type CrudFieldOption, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
 import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
+import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
+import { withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
+import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
+import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
@@ -438,6 +442,8 @@ export function VisitDetailForm({
 }: { id: string } & EmbeddedVisitFormProps) {
   const t = useT()
   const access = usePatientVisitAccess()
+  const { confirm, ConfirmDialogElement } = useConfirmDialog()
+  const [isDeleting, setIsDeleting] = React.useState(false)
   const query = useQuery<PatientPagedResponse<PatientVisitItem>>({
     queryKey: ['patient.visits', 'detail', id],
     queryFn: () => fetchCrudList<PatientVisitItem>('patient/visits', { id, pageSize: 1 }),
@@ -492,7 +498,8 @@ export function VisitDetailForm({
   const readOnly = record.status !== 'planned' || access.status !== 'ready' || !access.canManage
   const initialValues = toEditValues(record)
   return (
-    <CrudForm<VisitFormValues>
+    <>
+      <CrudForm<VisitFormValues>
       title={embedded ? undefined : t('patient.visits.detail.title')}
       titleHeadingLevel={embedded ? 2 : 1}
       backHref={embedded ? undefined : LIST_HREF}
@@ -518,6 +525,39 @@ export function VisitDetailForm({
       successRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.updated'))}&type=success`}
       deleteRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.deleted'))}&type=success`}
       deleteVisible={!readOnly && !record.isSettled}
+      extraActions={embedded && !readOnly && !record.isSettled ? (
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={isDeleting}
+          data-visit-dialog-delete=""
+          onClick={async () => {
+            const approved = await confirm({
+              title: t('patient.visits.confirm.delete.title'),
+              description: t('patient.visits.confirm.delete.body'),
+              variant: 'destructive',
+            })
+            if (!approved) return
+            setIsDeleting(true)
+            try {
+              await withScopedApiRequestHeaders(
+                buildOptimisticLockHeader(record.updatedAt),
+                () => deleteCrud('patient/visits', record.id),
+              )
+              flash(t('patient.visits.flash.deleted'), 'success')
+              await onSaved?.()
+            } catch (error) {
+              if (!surfaceRecordConflict(error, t, { onRefresh: () => { void query.refetch() } })) {
+                flash(error instanceof Error ? error.message : t('patient.errors.unexpected'), 'error')
+              }
+            } finally {
+              setIsDeleting(false)
+            }
+          }}
+        >
+          {t('patient.visits.actions.delete')}
+        </Button>
+      ) : undefined}
       contentHeader={(
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2" aria-live="polite">
@@ -574,7 +614,9 @@ export function VisitDetailForm({
         if (embedded) flash(t('patient.visits.flash.deleted'), 'success')
         await onSaved?.()
       }}
-    />
+      />
+      {ConfirmDialogElement}
+    </>
   )
 }
 
@@ -605,6 +647,10 @@ export function VisitCalendarDialog({
         aria-describedby={undefined}
         onKeyDown={(event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            const originDialog = event.target instanceof Element
+              ? event.target.closest('[data-dialog-content]')
+              : null
+            if (originDialog !== contentRef.current) return
             event.preventDefault()
             const form = contentRef.current?.querySelector('form')
             if (form instanceof HTMLFormElement) form.requestSubmit()

@@ -13,6 +13,7 @@ import type {
 import type { PatientReferenceService } from '../../../lib/patientReferenceService'
 import type { VisitSubjectAvailability } from '../../../lib/visitConflicts'
 import { VISIT_CONFLICT_CODES } from '../../../lib/visitConflicts'
+import { readPatientCalendarStore } from '../../../lib/patientCalendarStorage'
 import type {
   PatientVisitAvailabilityLane,
   PatientVisitAvailabilityLaneWindow,
@@ -145,7 +146,7 @@ export async function GET(request: Request) {
         ],
       }],
     }
-    const visits = await findWithDecryption(
+    const visits = await readPatientCalendarStore(() => findWithDecryption(
       em,
       PatientVisit,
       where,
@@ -171,7 +172,7 @@ export async function GET(request: Request) {
         limit: PATIENT_VISIT_CALENDAR_MAX_ITEMS + 1,
       },
       scope,
-    )
+    ))
     if (visits.length > PATIENT_VISIT_CALENDAR_MAX_ITEMS) {
       throw new CrudHttpError(400, {
         error: 'The calendar contains too many visits; narrow the range or add a filter',
@@ -181,7 +182,7 @@ export async function GET(request: Request) {
     }
     const patientIds = Array.from(new Set(visits.map((visit) => String(visit.patientId))))
     const patients = patientIds.length > 0
-      ? await findWithDecryption(
+      ? await readPatientCalendarStore(() => findWithDecryption(
           em,
           Patient,
           {
@@ -191,7 +192,7 @@ export async function GET(request: Request) {
           } as FilterQuery<Patient>,
           { fields: ['id', 'firstName', 'lastName'] },
           scope,
-        )
+        ))
       : []
     const patientNames = new Map(patients.map((patient) => {
       const name = [patient.firstName, patient.lastName].filter(Boolean).join(' ').trim()

@@ -21,6 +21,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import type { PatientPagedResponse, PatientVisitItem } from '../types'
+import { visitCalendarDayRange } from '../lib/visitDateTime'
 import {
   loadPatientOptions,
   loadResourceOptions,
@@ -54,10 +55,10 @@ function localDayBoundary(value: string, nextDay = false): string | null {
 function visitCalendarHref(visit?: PatientVisitItem): string {
   const params = new URLSearchParams({ view: 'day' })
   if (visit) {
-    const startsAt = new Date(visit.startsAt)
-    if (Number.isFinite(startsAt.getTime())) {
-      params.set('from', startsAt.toISOString())
-      params.set('to', new Date(startsAt.getTime() + 24 * 60 * 60 * 1000).toISOString())
+    const range = visitCalendarDayRange(visit.startsAt, visit.timeZone)
+    if (range) {
+      params.set('from', range.from)
+      params.set('to', range.to)
     }
     params.set('patientId', visit.patientId)
     params.set('teamMemberId', visit.teamMemberId)
