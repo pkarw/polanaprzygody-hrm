@@ -86,6 +86,7 @@ describe('patient visit contracts', () => {
     const maps = new Map(defaultEncryptionMaps.map((map) => [map.entityId, map.fields.map((field) => field.field)]))
     expect(maps.get('patient:patient_visit')).toEqual(expect.arrayContaining([
       'team_member_name_snapshot',
+      'resource_name_snapshot',
       'description',
       'status_reason',
       'settlement_reason',

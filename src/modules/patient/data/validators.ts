@@ -526,8 +526,9 @@ export const patientVisitDeleteSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
 }).strict()
 
-export const patientVisitListQuerySchema = z.object({
+const patientVisitListQueryFields = {
   id: z.string().uuid().optional(),
+  ids: z.string().optional(),
   patientId: z.string().uuid().optional(),
   teamMemberId: z.string().uuid().optional(),
   resourceId: z.string().uuid().optional(),
@@ -537,7 +538,14 @@ export const patientVisitListQuerySchema = z.object({
   to: patientVisitInstantSchema.optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
-}).strict().refine((value) => !value.from || !value.to || Date.parse(value.to) > Date.parse(value.from), {
+  sortField: z.enum(['id', 'starts_at', 'startsAt', 'ends_at', 'endsAt', 'status', 'is_settled', 'isSettled', 'updated_at', 'updatedAt']).optional().default('starts_at'),
+  sortDir: z.enum(['asc', 'desc']).optional().default('asc'),
+}
+
+/** Unrefined twin used by the installed OpenAPI CRUD helper, which extends object schemas. */
+export const patientVisitListOpenApiQuerySchema = z.object(patientVisitListQueryFields).strict()
+
+export const patientVisitListQuerySchema = z.object(patientVisitListQueryFields).strict().refine((value) => !value.from || !value.to || Date.parse(value.to) > Date.parse(value.from), {
   message: 'The range end must be later than its start',
   path: ['to'],
 })

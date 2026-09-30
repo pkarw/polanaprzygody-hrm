@@ -110,6 +110,7 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
     entityId: 'patient:patient_visit',
     fields: [
       { field: 'team_member_name_snapshot' },
+      { field: 'resource_name_snapshot' },
       { field: 'description' },
       { field: 'status_reason' },
       { field: 'settlement_reason' },

@@ -40,6 +40,7 @@ import type { PatientReferenceService, ResolvedReference } from '../../lib/patie
 import { toIsoTimestamp } from '../../lib/commandSupport'
 import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
+import { enrichPatientNextVisits } from '../../lib/visitApi'
 import {
   createPatientCrudOpenApi,
   createPatientPagedListResponseSchema,
@@ -381,6 +382,12 @@ type PatientItem = {
   archivedAt?: string | null
   createdAt: string | null
   updatedAt: string | null
+  nextVisit?: {
+    startsAt: string
+    timeZone: string
+    resourceNameSnapshot: string | null
+    confirmedAt: string | null
+  } | null
 }
 
 /** `null` rather than an empty string when both halves are missing, so the UI can branch. */
@@ -530,6 +537,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     afterList: async (res: { items?: PatientItem[] }, ctx: CrudCtx) => {
       const items = Array.isArray(res?.items) ? res.items : []
       if (items.length === 0) return
+      await enrichPatientNextVisits(items, ctx)
       const tenantId = ctx.auth?.tenantId ?? null
       const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
       if (!tenantId || !organizationId) return
@@ -537,22 +545,23 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const ownerIds = items
         .map((item) => item.ownerTeamMemberId)
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      if (ownerIds.length === 0) return
 
-      const references = ctx.container.resolve<PatientReferenceService>('patientReferenceService')
-      const resolved: Map<string, ResolvedReference> = await references.resolveTeamMembers(ownerIds, {
-        tenantId,
-        organizationId,
-      })
-      for (const item of items) {
-        if (!item.ownerTeamMemberId) continue
-        const reference = resolved.get(item.ownerTeamMemberId)
-        // A reference that resolves to nothing is left null rather than rendered as a raw
-        // uuid: the spec forbids showing identifiers in the UI, and "unavailable" is the
-        // honest label for a staff member this scope can no longer see.
-        item.owner = reference
-          ? { id: reference.id, name: reference.displayName, isAvailable: reference.isAvailable }
-          : null
+      if (ownerIds.length > 0) {
+        const references = ctx.container.resolve<PatientReferenceService>('patientReferenceService')
+        const resolved: Map<string, ResolvedReference> = await references.resolveTeamMembers(ownerIds, {
+          tenantId,
+          organizationId,
+        })
+        for (const item of items) {
+          if (!item.ownerTeamMemberId) continue
+          const reference = resolved.get(item.ownerTeamMemberId)
+          // A reference that resolves to nothing is left null rather than rendered as a raw
+          // uuid: the spec forbids showing identifiers in the UI, and "unavailable" is the
+          // honest label for a staff member this scope can no longer see.
+          item.owner = reference
+            ? { id: reference.id, name: reference.displayName, isAvailable: reference.isAvailable }
+            : null
+        }
       }
     },
   },

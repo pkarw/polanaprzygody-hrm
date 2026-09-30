@@ -42,6 +42,13 @@ export const patientReferenceSchema = z.object({
   isAvailable: z.boolean(),
 })
 
+export const patientNextVisitSchema = z.object({
+  startsAt: z.string(),
+  timeZone: z.string(),
+  resourceNameSnapshot: z.string().nullable(),
+  confirmedAt: z.string().nullable(),
+})
+
 /**
  * The patient list row.
  *
@@ -65,6 +72,8 @@ export const patientListItemSchema = z
     status: z.enum(['active', 'archived']),
     createdAt: z.string().nullable(),
     updatedAt: z.string().nullable(),
+    // Omitted entirely when the caller lacks `patient.visits.view`.
+    nextVisit: patientNextVisitSchema.nullable().optional(),
   })
   .passthrough()
 
@@ -157,6 +166,59 @@ export const patientAttachmentLinkItemSchema = z.object({
   fileName: z.string().nullable(),
   state: z.enum(['active', 'detached']),
   updatedAt: z.string().nullable(),
+})
+
+export const patientVisitServiceItemSchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid(),
+  title: z.string(),
+  sku: z.string().nullable(),
+  position: z.number().int().min(0),
+})
+
+export const patientVisitListItemSchema = z.object({
+  id: z.string().uuid(),
+  patientId: z.string().uuid(),
+  patientName: z.string().nullable(),
+  teamMemberId: z.string().uuid(),
+  teamMemberName: z.string(),
+  resourceId: z.string().uuid().nullable(),
+  resourceName: z.string().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string().nullable(),
+  timeZone: z.string(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  confirmedAt: z.string().nullable(),
+  isConfirmed: z.boolean(),
+  confirmationApplicable: z.boolean(),
+  isSettled: z.boolean(),
+  settledAt: z.string().nullable(),
+  services: z.array(patientVisitServiceItemSchema),
+  updatedAt: z.string(),
+  /** Present only for an explicit `?id=` detail lookup. */
+  description: z.string().nullable().optional(),
+})
+
+export const patientVisitDetailSchema = patientVisitListItemSchema.safeExtend({
+  description: z.string().nullable(),
+})
+
+export const patientVisitCreatedSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  confirmedAt: z.string().nullable(),
+  isSettled: z.boolean(),
+  updatedAt: z.string(),
+})
+
+export const patientVisitVersionedResultSchema = z.object({
+  ok: z.literal(true),
+  id: z.string().uuid(),
+  updatedAt: z.string(),
+})
+
+export const patientVisitDeletedResultSchema = patientVisitVersionedResultSchema.extend({
+  deleted: z.literal(true),
 })
 
 export function createPatientPagedListResponseSchema(itemSchema: ZodTypeAny) {
