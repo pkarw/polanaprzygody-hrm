@@ -25,6 +25,7 @@
 | 2 | 2.7 | Resolve latest-main review conflict and import the VCAL source spec | inline | done | 087835b |
 | 2 | 2.8 | Apply authoritative review fixes for upgrades, scope, concurrency, and bounded reads | inline | done | f9e68af |
 | 2 | 2.9 | Preserve pre-existing encryption maps during review-fix rollback | inline | done | 035f30f |
+| 2 | 2.10 | Prove migration and compatibility behavior against the isolated database | inline | done | b716ac2 |
 
 ## Goal
 
@@ -151,6 +152,13 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
 - Keep VIS encryption maps during rollback because the idempotent upgrade cannot distinguish
   rows it inserted from maps previously created by tenant setup or an operator seed.
 - Pin the non-destructive rollback behavior in the migration contract test.
+
+#### Step 2.10 — Prove migration and compatibility behavior against the isolated database
+
+- Execute the real projection and upgrade migration classes through `up → down → up` against
+  the disposable integration database.
+- Prove legacy-number exact/general API lookup, canonical privacy, rollback restoration, and
+  preservation of encryption-map rows that predate the upgrade.
 
 ## Checkpoint and final verification
 
