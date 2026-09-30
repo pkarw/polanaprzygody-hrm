@@ -20,6 +20,7 @@ describe('patient visit UI contracts', () => {
       read('components', 'VisitForm.tsx'),
       read('components', 'VisitLifecycleActions.tsx'),
       read('components', 'VisitAvailabilityCheck.tsx'),
+      read('components', 'VisitsCalendar.tsx'),
       read('components', 'VisitsTable.tsx'),
       read('components', 'VisitServicesField.tsx'),
     ].join('\n')
@@ -61,6 +62,28 @@ describe('patient visit UI contracts', () => {
     expect(form).toContain('event.metaKey || event.ctrlKey')
     expect(form).toContain('startsAtLocal: startsAt ? toVisitLocalDateTime(startsAt, timeZone)')
     expect(form).toContain('await onSaved?.()')
+  })
+
+  it('builds the calendar on the public schedule surface with timezone-safe URL state', () => {
+    const calendar = read('components', 'VisitsCalendar.tsx')
+    const table = read('components', 'VisitsTable.tsx')
+    const pageMeta = read('backend', 'patient', 'visits', 'calendar', 'page.meta.ts')
+    expect(calendar).toContain("from '@open-mercato/ui/backend/schedule'")
+    expect(calendar).toContain('toZonedTime(new Date(value), timeZone)')
+    expect(calendar).toContain('fromZonedTime(normalized.start, state.timeZone)')
+    expect(calendar).toContain("queryKey: ['patient.visits', 'calendar', queryString, scopeVersion]")
+    expect(calendar).toContain("next.set('from', serializedRange.from)")
+    expect(calendar).toContain("next.set('view', state.view)")
+    expect(calendar).toContain("next.set('timeZone', state.timeZone)")
+    expect(calendar).toContain('enabled: access.status === \'ready\' && access.canView && !rangeTooWide')
+    expect(calendar).toContain("linkLabel: t('patient.visits.actions.open')")
+    expect(calendar).toContain("onSlotClick={access.canManage ? openCreate : undefined}")
+    expect(calendar).toContain("state.view === 'month'")
+    expect(calendar).toContain('<VisitCalendarDialog')
+    expect(table).toContain("t('patient.visits.actions.calendar')")
+    expect(table).toContain("t('patient.visits.actions.showInCalendar')")
+    expect(pageMeta).toContain("icon: 'calendar'")
+    expect(pageMeta).toContain('pagePriority: 10')
   })
 
   it('pins immutable patients, versioned mutations, snapshots, and owner suggestions', () => {

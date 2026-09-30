@@ -19,7 +19,7 @@
 | 1 | 1.5 | Add shared availability and override UI to the VIS form | inline | done | 16fb62e |
 | 2 | 2.1 | Expose the bounded calendar API with availability lanes | inline | done | 5232508 |
 | 2 | 2.2 | Build the reusable calendar visit dialog on the VIS form | inline | done | 63488c0 |
-| 2 | 2.3 | Deliver the ScheduleView calendar, filters, navigation, and list links | inline | todo | — |
+| 2 | 2.3 | Deliver the ScheduleView calendar, filters, navigation, and list links | inline | done | 75c3bf3 |
 | 2 | 2.4 | Complete VCAL-T01–T10 integration and browser coverage | dispatch | todo | — |
 
 ## Goal

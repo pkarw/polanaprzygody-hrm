@@ -51,6 +51,21 @@ function localDayBoundary(value: string, nextDay = false): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+function visitCalendarHref(visit?: PatientVisitItem): string {
+  const params = new URLSearchParams({ view: 'day' })
+  if (visit) {
+    const startsAt = new Date(visit.startsAt)
+    if (Number.isFinite(startsAt.getTime())) {
+      params.set('from', startsAt.toISOString())
+      params.set('to', new Date(startsAt.getTime() + 24 * 60 * 60 * 1000).toISOString())
+    }
+    params.set('patientId', visit.patientId)
+    params.set('teamMemberId', visit.teamMemberId)
+    params.set('timeZone', visit.timeZone)
+  }
+  return `${LIST_HREF}/calendar?${params.toString()}`
+}
+
 function visitColumns(t: Translate, locale: string | undefined, hidePatient: boolean): ColumnDef<PatientVisitItem>[] {
   return [
     {
@@ -199,9 +214,23 @@ export function VisitsTable({
       <DataTable<PatientVisitItem>
         title={embedded ? undefined : t('patient.visits.title')}
         titleHeadingLevel={embedded ? 2 : 1}
-        actions={!readOnly && access.canManage ? (
+        actions={embedded ? (!readOnly && access.canManage ? (
           <Button asChild><Link href={createHref}>{t('patient.visits.actions.schedule')}</Link></Button>
-        ) : undefined}
+        ) : undefined) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-md border p-0.5" role="group" aria-label={t('patient.visits.calendar.viewSwitcher')}>
+              <Button size="sm" variant="secondary" aria-current="page" disabled>
+                {t('patient.visits.calendar.listView')}
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link href={visitCalendarHref()}>{t('patient.visits.actions.calendar')}</Link>
+              </Button>
+            </div>
+            {!readOnly && access.canManage ? (
+              <Button asChild><Link href={createHref}>{t('patient.visits.actions.schedule')}</Link></Button>
+            ) : null}
+          </div>
+        )}
         columns={columns}
         data={query.data?.items ?? []}
         entityId="patient:patient_visit"
@@ -248,6 +277,11 @@ export function VisitsTable({
         rowActions={(row) => (
           <RowActions items={[
             { id: 'patient.visits.open', label: t('patient.visits.actions.open'), href: `${LIST_HREF}/${row.id}` },
+            ...(!embedded ? [{
+              id: 'patient.visits.show-in-calendar',
+              label: t('patient.visits.actions.showInCalendar'),
+              href: visitCalendarHref(row),
+            }] : []),
             ...(!readOnly && access.canManage && row.status === 'planned' && !row.isSettled ? [{
               id: 'patient.visits.delete',
               label: t('patient.visits.actions.delete'),
