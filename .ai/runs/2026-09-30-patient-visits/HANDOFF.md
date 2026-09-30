@@ -1,29 +1,38 @@
 # Handoff — 2026-09-30-patient-visits
 
-**Last updated:** 2026-09-30T09:37:35Z
+**Last updated:** 2026-09-30T13:01:17Z
 **Branch:** `feat/patient-visits`
-**PR:** not yet opened
-**Current phase/step:** Phase 0 Step 0.1
-**Last commit:** none — run folder not committed yet
+**PR:** #3 — https://github.com/pkarw/polanaprzygody-hrm/pull/3
+**Current phase/step:** Phase 2 Step 2.1
+**Last implementation commit:** `0ac0107`
 
 ## What just happened
 
-- Classified and routed the full spec implementation; confirmed PAT-1 is implemented.
-- Claimed a free run slot and drafted the 1:1 Step-to-commit execution plan.
+- Completed and pushed Steps 1.1–1.5 for the VIS-1 aggregate, commands, API,
+  projection, UI, focused tests, and browser-discovered form entity correction.
+- Ran the Phase 1 browser preview and saved four screenshot artifacts covering list,
+  create, dark detail, and narrow patient-card surfaces.
+- Confirmed the repository-native ephemeral integration runner cannot provision its
+  database because Docker CLI is absent. No migration was applied to the local DB.
 
 ## Next concrete action
 
-- Commit and push this run folder, open/claim the draft PR, then execute Step 0.1.
+- Implement Step 2.1: lifecycle, confirmation, status, reopen, and settlement commands
+  with transition-matrix, scope, feature, concurrency, audit, undo, and idempotency tests.
+- Push that Step as one lean commit, then continue directly through Steps 2.2–2.4.
 
 ## Blockers / open questions
 
-- none
+- Full real-database integration execution is environment-blocked until Docker is
+  available or the user approves applying migrations to a separate disposable target.
+  UI verification must not block development, so implementation continues.
 
 ## Environment caveats
 
-- Dev runtime runnable: unknown; dependencies installed successfully.
-- Browser / UI checks: required after VIS-1 and VIS-2 through the repository's ephemeral preview.
-- Database/migration state: clean; future schema probe must not be applied to the user database.
+- Dependencies are installed and generation/typecheck/unit/DS validation passes.
+- The existing local DB predates visit tables; browser checkpoint fixtures were
+  route-intercepted synthetic data and are explicitly documented as such.
+- Browser engine requires the repository's existing Playwright library path setup.
 
 ## Worktree
 
