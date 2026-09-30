@@ -1,11 +1,18 @@
 # Patient — kalendarz wizyt i kontrola dostępności
 
 **Date**: 2026-09-30
-**Status**: Draft
+**Status**: Ready for implementation
 **Spec ID**: VCAL
-**Zakres**: projekt, bez implementacji.
+**Zakres**: pełna implementacja VCAL-1 i VCAL-2.
 **Zależność**: [VIS — wizyty pacjenta](2026-09-29-patient-visits.md), faza VIS-1 (ten sam moduł `patient`). VIS zależy od [PAT](2026-09-29-patient-ehr-base.md) faza PAT-1.
-**Tryb**: run autonomiczny — brama Open Questions rozstrzygnięta domyślnymi wartościami, patrz [Resolved assumptions](#resolved-assumptions-autonomous-defaults). Każde założenie jest odwracalne i opisane; status `Ready for implementation` wymaga ich potwierdzenia.
+**Tryb**: run autonomiczny — brama Open Questions rozstrzygnięta domyślnymi wartościami, patrz [Resolved assumptions](#resolved-assumptions-autonomous-defaults). Użytkownik potwierdził te założenia zleceniem pełnej, autonomicznej implementacji 2026-09-30.
+
+## Implementation status
+
+| Phase | Status | Tracking |
+|---|---|---|
+| VCAL-1 — kontrola dostępności | in progress | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/PLAN.md` |
+| VCAL-2 — kalendarz | planned | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/PLAN.md` |
 
 ## TLDR
 
@@ -549,9 +556,9 @@ Rollback VCAL-2 usuwa stronę i trasę kalendarza; lista, formularz i cała kont
 | Fazy mają zależności, wycinki, testy, wartość i obserwowalne bramki | pass — projekt | VCAL-1 i VCAL-2 z listą wycinków, oracles i kryteriami wyjścia |
 | Zgodność wsteczna | pass — projekt | Zmiany addytywne: nowe pola opcjonalne, nowe trasy, nowy feature; kody konfliktów jako `enum` objęty protokołem deprecjacji |
 | Brama Open Questions | pass — z zastrzeżeniem | Rozstrzygnięta autonomicznie; cztery założenia poniżej czekają na potwierdzenie człowieka |
-| Zgoda na implementację | pending | Zlecenie dotyczy specyfikacji; nie uruchamiano testów implementacyjnych ani migracji |
+| Zgoda na implementację | pass | Użytkownik zlecił pełną autonomiczną implementację VCAL-1 i VCAL-2 2026-09-30 |
 
-**Verdict:** Blocked — rozpoczęcie implementacji wymaga potwierdzenia założeń autonomicznych i ukończonej fazy VIS-1.
+**Verdict:** Ready for implementation — Q1–Q4 są potwierdzone, a wymagane VIS-1/VIS-2 są dostarczone i zweryfikowane w PR #3.
 
 ## Resolved assumptions (autonomous defaults)
 
@@ -583,3 +590,4 @@ Dodatkowo, bez osobnego pytania: VCAL zakłada dostarczoną fazę VIS-1 i **nie*
 |---|---|
 | 2026-09-30 | Szkielet VCAL: TLDR, problem, miary, mapa reuse z ustaleniem, że dostępność ma już silnik w `planner` + `staff` + `resources`; brama Open Questions Q1–Q4 |
 | 2026-09-30 | Run autonomiczny: brama rozstrzygnięta (jedna specyfikacja z dwiema fazami; dwie wagi konfliktu; reguły `planner` + własne wizyty; `ScheduleView`); pełny dokument — macierz konfliktów, kontrakt nadpisania z sygnaturami, pola audytu i indeksy, dwie trasy API, kontrakty UI, dziesięć testów integracyjnych, fazy VCAL-1/VCAL-2, traceability, rollout, ryzyka i kryteria akceptacji |
+| 2026-09-30 | Założenia Q1–Q4 potwierdzone przez jawne zlecenie pełnej autonomicznej implementacji; status zmieniony na Ready for implementation i powiązany z runem/PR #6 |
