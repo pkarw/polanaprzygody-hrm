@@ -15,6 +15,7 @@
 | 1 | 1.2 | Implement scoped visit CRUD commands and patient archive invariant | inline | done | 5ba3efc |
 | 1 | 1.3 | Expose visit CRUD API, OpenAPI, and next-visit projection | inline | done | 358afd2 |
 | 1 | 1.4 | Deliver VIS-1 list, forms, patient surfaces, translations, and focused tests | inline | done | 912756e |
+| 1 | 1.5 | Align the visit form entity contract found during browser verification | inline | done | c400204 |
 | 2 | 2.1 | Implement confirmation, lifecycle, and settlement commands | inline | todo | — |
 | 2 | 2.2 | Expose guarded lifecycle action routes and integration coverage | inline | todo | — |
 | 2 | 2.3 | Deliver lifecycle dialogs, read-only states, and settlement UI | inline | todo | — |
@@ -84,6 +85,11 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
 - Add service ordering/picker UX, patient-card visits entry, and patients-list next-visit column with required loading/empty/error/validation/conflict/success states.
 - Add Polish/English copy, semantic status badges, responsive 360 px layout, keyboard/a11y handling, and focused component/integration tests.
 - Phase checkpoint: start the local ephemeral preview, exercise VIS-1 in a browser, capture screenshots for list/create/detail/patient surfaces in light/dark and narrow layout, and attach them to the PR.
+
+#### Step 1.5 — Align the visit form entity contract found during browser verification
+
+- Preserve the published `crud-form:patient.visit` extension slot while binding the form to the aggregate's canonical `patient:patient_visit` entity identifier.
+- Keep the regression assertion beside the extension-host contract and regenerate discovery outputs before closing the Phase 1 checkpoint.
 
 ### Phase 2 — VIS-2 lifecycle and settlement
 

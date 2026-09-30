@@ -39,7 +39,7 @@ export const extensionPoints = defineModuleExtensionPoints({
       source: 'components/VisitsTable.tsx',
     }),
     visitForm: crudFormExtensionHost({
-      entityId: 'patient.visit',
+      entityId: 'patient.patient_visit',
       spotId: 'crud-form:patient.visit',
       source: 'components/VisitForm.tsx',
     }),

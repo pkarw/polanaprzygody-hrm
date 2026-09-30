@@ -11,7 +11,7 @@ describe('patient visit UI contracts', () => {
   it('publishes stable extension hosts for the list and form', () => {
     expect(extensionPoints.hosts.visitsTable.tableId).toBe('patient.visits.list')
     expect(extensionPoints.hosts.visitsTable.family).toBe('data-table')
-    expect(extensionPoints.hosts.visitForm.entityId).toBe('patient.visit')
+    expect(extensionPoints.hosts.visitForm.entityId).toBe('patient.patient_visit')
     expect(extensionPoints.hosts.visitForm.spotId).toBe('crud-form:patient.visit')
   })
 
