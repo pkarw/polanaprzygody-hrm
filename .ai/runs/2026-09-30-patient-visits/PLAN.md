@@ -18,7 +18,7 @@
 | 1 | 1.5 | Align the visit form entity contract found during browser verification | inline | done | c400204 |
 | 2 | 2.1 | Implement confirmation, lifecycle, and settlement commands | inline | done | 845aac7 |
 | 2 | 2.2 | Expose guarded lifecycle action routes and integration coverage | inline | done | 68f7ee4 |
-| 2 | 2.3 | Deliver lifecycle dialogs, read-only states, and settlement UI | inline | todo | — |
+| 2 | 2.3 | Deliver lifecycle dialogs, read-only states, and settlement UI | inline | done | 5cf8ab3 |
 | 2 | 2.4 | Complete VIS acceptance, concurrency, security, and browser coverage | inline | todo | — |
 
 ## Goal

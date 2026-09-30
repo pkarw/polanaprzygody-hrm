@@ -19,6 +19,7 @@ import {
 } from './referencePickers'
 import { VisitServicesField, type VisitServiceSeed } from './VisitServicesField'
 import { VisitTeamMemberField } from './VisitTeamMemberField'
+import { VisitLifecycleActions } from './VisitLifecycleActions'
 import { usePatientVisitAccess } from './usePatientVisitAccess'
 import {
   defaultVisitTimeZone,
@@ -344,23 +345,45 @@ export function VisitDetailForm({ id }: { id: string }) {
       initialValues={initialValues}
       optimisticLockUpdatedAt={record.updatedAt}
       readOnly={readOnly}
-      readOnlyOverlay={record.status !== 'planned' ? <p>{t('patient.visits.readOnly.closed')}</p> : undefined}
+      readOnlyOverlay={record.status !== 'planned'
+        ? <p>{t('patient.visits.readOnly.closed')}</p>
+        : access.status !== 'ready'
+          ? <p>{t('patient.visits.readOnly.permissionUnavailable')}</p>
+          : !access.canManage
+            ? <p>{t('patient.visits.readOnly.noManage')}</p>
+            : undefined}
       submitLabel={t('patient.visits.actions.save')}
       cancelHref={LIST_HREF}
       successRedirect={`${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.updated'))}&type=success`}
       deleteRedirect={`${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.deleted'))}&type=success`}
       deleteVisible={!readOnly && !record.isSettled}
       contentHeader={(
-        <div className="flex flex-wrap items-center gap-2" aria-live="polite">
-          <StatusBadge variant={record.status === 'planned' ? 'info' : 'neutral'} dot>
-            {t(`patient.visits.status.${record.status}`)}
-          </StatusBadge>
-          <StatusBadge variant={record.isConfirmed ? 'success' : 'warning'} appearance="light">
-            {record.isConfirmed ? t('patient.visits.confirmation.confirmed') : t('patient.visits.confirmation.unconfirmed')}
-          </StatusBadge>
-          <StatusBadge variant={record.isSettled ? 'success' : 'neutral'} appearance="light">
-            {record.isSettled ? t('patient.visits.settlement.settled') : t('patient.visits.settlement.unsettled')}
-          </StatusBadge>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2" aria-live="polite">
+            <StatusBadge
+              variant={record.status === 'planned'
+                ? 'info'
+                : record.status === 'completed'
+                  ? 'success'
+                  : record.status === 'no_show'
+                    ? 'warning'
+                    : 'neutral'}
+              dot
+            >
+              {t(`patient.visits.status.${record.status}`)}
+            </StatusBadge>
+            <StatusBadge variant={record.isConfirmed ? 'success' : 'warning'} appearance="light">
+              {record.isConfirmed ? t('patient.visits.confirmation.confirmed') : t('patient.visits.confirmation.unconfirmed')}
+            </StatusBadge>
+            <StatusBadge variant={record.isSettled ? 'success' : 'neutral'} appearance="light">
+              {record.isSettled ? t('patient.visits.settlement.settled') : t('patient.visits.settlement.unsettled')}
+            </StatusBadge>
+          </div>
+          <VisitLifecycleActions
+            visit={record}
+            access={access}
+            onSaved={() => query.refetch()}
+          />
         </div>
       )}
       onSubmit={async (values) => {

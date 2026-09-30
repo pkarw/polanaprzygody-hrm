@@ -18,6 +18,7 @@ describe('patient visit UI contracts', () => {
   it('keeps visit translations complete and in parity', () => {
     const sources = [
       read('components', 'VisitForm.tsx'),
+      read('components', 'VisitLifecycleActions.tsx'),
       read('components', 'VisitsTable.tsx'),
       read('components', 'VisitServicesField.tsx'),
     ].join('\n')
@@ -50,9 +51,32 @@ describe('patient visit UI contracts', () => {
     const detail = read('components', 'PatientDetail.tsx')
     expect(access).toContain('useOrganizationScopeDetail')
     expect(access).toContain('[organizationId, tenantId]')
-    expect(access).toContain("status: 'unknown', canView: false, canManage: false")
+    expect(access).toContain("status: 'unknown'")
+    for (const permission of ['canView', 'canManage', 'canCorrect', 'canSettle']) {
+      expect(access).toContain(`${permission}: false`)
+    }
     expect(detail).toContain("resolvedTab === 'visits'")
     expect(detail).toContain('overflow-x-auto')
+  })
+
+  it('keeps lifecycle actions guarded, versioned, accessible, and outside the read-only form body', () => {
+    const form = read('components', 'VisitForm.tsx')
+    const actions = read('components', 'VisitLifecycleActions.tsx')
+    expect(form).toContain('<VisitLifecycleActions')
+    expect(form).toContain('contentHeader={(')
+    expect(actions).toContain('useGuardedMutation<')
+    expect(actions).toContain('readApiResultOrThrow<VisitLifecycleResult>')
+    expect(actions).toContain('const requestPayload = { ...payload, expectedUpdatedAt: visit.updatedAt }')
+    expect(actions).toContain("resourceKind: 'patient.visit'")
+    expect(actions).toContain('retryLastMutation,')
+    expect(actions).toContain("value.code !== 'version_conflict'")
+    expect(actions).toContain('showRecordConflict({')
+    expect(actions).toContain('onRefresh: () => { void onSaved() }')
+    expect(actions).toContain('maxLength={2000}')
+    expect(actions).toContain('event.metaKey || event.ctrlKey')
+    expect(actions).toContain('onCloseAutoFocus=')
+    expect(actions).toContain('role="status" aria-live="polite"')
+    expect(actions).toContain('data-confirmation-reset-warning')
   })
 
   it('uses a strict patient sort allowlist and guards the visit projection', () => {

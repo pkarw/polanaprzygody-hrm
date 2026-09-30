@@ -7,6 +7,8 @@ export type PatientVisitAccess = {
   status: 'unknown' | 'ready' | 'unavailable'
   canView: boolean
   canManage: boolean
+  canCorrect: boolean
+  canSettle: boolean
 }
 
 type FeatureCheckResponse = { granted?: string[] }
@@ -17,21 +19,42 @@ export function usePatientVisitAccess(): PatientVisitAccess {
     status: 'unknown',
     canView: false,
     canManage: false,
+    canCorrect: false,
+    canSettle: false,
   })
 
   React.useEffect(() => {
     let cancelled = false
-    setAccess({ status: 'unknown', canView: false, canManage: false })
+    setAccess({
+      status: 'unknown',
+      canView: false,
+      canManage: false,
+      canCorrect: false,
+      canSettle: false,
+    })
     void (async () => {
       try {
         const response = await apiCall<FeatureCheckResponse>('/api/auth/feature-check', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ features: ['patient.visits.view', 'patient.visits.manage'] }),
+          body: JSON.stringify({
+            features: [
+              'patient.visits.view',
+              'patient.visits.manage',
+              'patient.visits.correct',
+              'patient.visits.settle',
+            ],
+          }),
         })
         if (cancelled) return
         if (!response.ok) {
-          setAccess({ status: 'unavailable', canView: false, canManage: false })
+          setAccess({
+            status: 'unavailable',
+            canView: false,
+            canManage: false,
+            canCorrect: false,
+            canSettle: false,
+          })
           return
         }
         const granted = new Set(Array.isArray(response.result?.granted) ? response.result.granted : [])
@@ -39,9 +62,19 @@ export function usePatientVisitAccess(): PatientVisitAccess {
           status: 'ready',
           canView: granted.has('patient.visits.view'),
           canManage: granted.has('patient.visits.manage'),
+          canCorrect: granted.has('patient.visits.correct'),
+          canSettle: granted.has('patient.visits.settle'),
         })
       } catch {
-        if (!cancelled) setAccess({ status: 'unavailable', canView: false, canManage: false })
+        if (!cancelled) {
+          setAccess({
+            status: 'unavailable',
+            canView: false,
+            canManage: false,
+            canCorrect: false,
+            canSettle: false,
+          })
+        }
       }
     })()
     return () => { cancelled = true }
