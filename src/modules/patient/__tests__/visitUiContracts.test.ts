@@ -19,6 +19,7 @@ describe('patient visit UI contracts', () => {
     const sources = [
       read('components', 'VisitForm.tsx'),
       read('components', 'VisitLifecycleActions.tsx'),
+      read('components', 'VisitAvailabilityCheck.tsx'),
       read('components', 'VisitsTable.tsx'),
       read('components', 'VisitServicesField.tsx'),
     ].join('\n')
@@ -30,6 +31,22 @@ describe('patient visit UI contracts', () => {
     }
     expect(Object.keys(en).filter((key) => key.startsWith('patient.visits.')).sort())
       .toEqual(Object.keys(pl).filter((key) => key.startsWith('patient.visits.')).sort())
+  })
+
+  it('reuses one debounced availability gate and renders the override audit without UUIDs', () => {
+    const availability = read('components', 'VisitAvailabilityCheck.tsx')
+    const form = read('components', 'VisitForm.tsx')
+    const access = read('components', 'usePatientVisitAccess.ts')
+    const route = read('api', 'visits', 'route.ts')
+    expect(availability).toContain("['patient.visits', 'availability-check', debouncedUrl]")
+    expect(availability).toContain('window.setTimeout(() => setDebouncedUrl(probeUrl), 300)')
+    expect(availability).toContain('acknowledgedSignatures: Array.from(new Set(')
+    expect(availability).toContain('event.metaKey || event.ctrlKey')
+    expect(form).toContain('<VisitAvailabilityCheck')
+    expect(form).toContain('<VisitConflictOverrideAudit visit={record} />')
+    expect(form).not.toContain('{visit.conflictOverrideByUserId}')
+    expect(access).toContain("'patient.visits.override_conflict'")
+    expect(route).toContain('references.resolveUsers(overrideUserIds')
   })
 
   it('pins immutable patients, versioned mutations, snapshots, and owner suggestions', () => {

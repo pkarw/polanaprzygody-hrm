@@ -72,3 +72,31 @@ export function instantOffsetInTimeZone(instant: string, timeZone: string): stri
 export function defaultVisitTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 }
+
+export type VisitScheduleFormValue = {
+  startsAtLocal: string
+  endsAtLocal?: string | null
+  timeZone: string
+  startOffset?: string | null
+  endOffset?: string | null
+}
+
+export function buildVisitSchedule(
+  value: VisitScheduleFormValue,
+  labels: { gap: string; fold: string; offset: string; endAfterStart: string },
+): { startsAt: string; endsAt: string | null } {
+  const resolve = (local: string, offset?: string | null) => {
+    const choices = visitInstantChoices(local, value.timeZone)
+    if (choices.length === 0) throw new Error(labels.gap)
+    if (choices.length > 1 && !offset) throw new Error(labels.fold)
+    const selected = resolveVisitInstant(local, value.timeZone, offset)
+    if (!selected) throw new Error(labels.offset)
+    return selected.instant
+  }
+  const startsAt = resolve(value.startsAtLocal, value.startOffset)
+  const endsAt = value.endsAtLocal ? resolve(value.endsAtLocal, value.endOffset) : null
+  if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw new Error(labels.endAfterStart)
+  }
+  return { startsAt, endsAt }
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import {
+  buildVisitSchedule,
   instantOffsetInTimeZone,
   resolveVisitInstant,
   toVisitLocalDateTime,
@@ -32,5 +33,34 @@ describe('visit local date-time conversion', () => {
     const instant = '2026-12-01T15:45:00+09:00'
     expect(toVisitLocalDateTime(instant, 'Asia/Tokyo')).toBe('2026-12-01T15:45')
     expect(instantOffsetInTimeZone(instant, 'Asia/Tokyo')).toBe('+09:00')
+  })
+
+  it('builds a schedule once for both the availability probe and mutation payload', () => {
+    expect(buildVisitSchedule({
+      startsAtLocal: '2026-10-05T10:00',
+      endsAtLocal: '2026-10-05T11:00',
+      timeZone: 'Europe/Warsaw',
+    }, {
+      gap: 'gap',
+      fold: 'fold',
+      offset: 'offset',
+      endAfterStart: 'end',
+    })).toEqual({
+      startsAt: '2026-10-05T10:00:00+02:00',
+      endsAt: '2026-10-05T11:00:00+02:00',
+    })
+  })
+
+  it('rejects a schedule whose end is not after its start', () => {
+    expect(() => buildVisitSchedule({
+      startsAtLocal: '2026-10-05T10:00',
+      endsAtLocal: '2026-10-05T10:00',
+      timeZone: 'UTC',
+    }, {
+      gap: 'gap',
+      fold: 'fold',
+      offset: 'offset',
+      endAfterStart: 'end',
+    })).toThrow('end')
   })
 })

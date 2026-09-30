@@ -154,6 +154,12 @@ export type PatientVisitItem = {
   description?: string | null
   status: PatientVisitStatusValue
   confirmedAt: string | null
+  conflictOverrideAt?: string | null
+  conflictOverrideByUserId?: string | null
+  conflictOverrideByUserName?: string | null
+  conflictOverrideCodes?: string[] | null
+  /** Present only for an explicit detail lookup. */
+  conflictOverrideReason?: string | null
   isConfirmed: boolean
   confirmationApplicable: boolean
   isSettled: boolean

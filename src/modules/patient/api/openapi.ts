@@ -210,6 +210,10 @@ export const patientVisitListItemSchema = z.object({
   timeZone: z.string(),
   status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
   confirmedAt: z.string().nullable(),
+  conflictOverrideAt: z.string().nullable().optional(),
+  conflictOverrideByUserId: z.string().uuid().nullable().optional(),
+  conflictOverrideByUserName: z.string().nullable().optional(),
+  conflictOverrideCodes: z.array(z.string()).nullable().optional(),
   isConfirmed: z.boolean(),
   confirmationApplicable: z.boolean(),
   isSettled: z.boolean(),
@@ -218,10 +222,13 @@ export const patientVisitListItemSchema = z.object({
   updatedAt: z.string(),
   /** Present only for an explicit `?id=` detail lookup. */
   description: z.string().nullable().optional(),
+  /** Present only for an explicit `?id=` detail lookup. */
+  conflictOverrideReason: z.string().nullable().optional(),
 })
 
 export const patientVisitDetailSchema = patientVisitListItemSchema.safeExtend({
   description: z.string().nullable(),
+  conflictOverrideReason: z.string().nullable(),
 })
 
 export const patientVisitCreatedSchema = z.object({
