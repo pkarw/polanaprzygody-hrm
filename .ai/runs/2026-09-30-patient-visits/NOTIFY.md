@@ -70,3 +70,12 @@
   both VIS changelog rows in the sole conflicted spec file, and import all unrelated main
   changes unchanged.
 - The full gate will be rerun before the review verdict is submitted.
+
+## 2026-09-30T19:01:00Z — final gate and authoritative review passed
+
+- The final configured gate passed at `38179d7`: generated outputs current, typecheck clean,
+  lint 0 errors (8 unrelated warnings), DS 320 files, 31 suites / 286 tests, and build.
+- The full patient integration run passed 87/87 executable cases with 4 declared optional-host
+  skips; the real migration upgrade/rollback harness passed 1/1.
+- The authoritative re-review approved `e58f198..38179d7` with no remaining blocker, major,
+  minor, or nit findings.
