@@ -29,4 +29,17 @@ if (!entry) {
   process.exit(1)
 }
 
+// `mercato init` falls back to the framework's "Acme Corp" placeholder when no
+// organization name is given. This app installs itself as Polana Przygody, so
+// supply that default here — every install path (`yarn setup`, `yarn initialize`,
+// `yarn reinstall`, a bare `yarn mercato init`) goes through this launcher.
+// An explicit `--org=`/`--orgName=` on the command line still wins, and
+// OM_INIT_ORG_NAME overrides the built-in default for a differently named site.
+const DEFAULT_INIT_ORG_NAME = 'Polana Przygody'
+const initArgs = process.argv.slice(2)
+if (initArgs[0] === 'init' && !initArgs.some((arg) => arg.startsWith('--org=') || arg.startsWith('--orgName='))) {
+  const configured = process.env.OM_INIT_ORG_NAME?.trim()
+  process.argv.push(`--org=${configured && configured.length > 0 ? configured : DEFAULT_INIT_ORG_NAME}`)
+}
+
 await import(pathToFileURL(entry).href)

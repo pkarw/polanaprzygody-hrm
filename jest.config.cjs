@@ -38,5 +38,15 @@ module.exports = {
     ],
   },
   transformIgnorePatterns: ['/node_modules/(?!(@open-mercato|@mikro-orm|@tanstack/react-table|@tanstack/table-core|@tanstack/react-store|@tanstack/store)/)'],
-  testPathIgnorePatterns: ['/node_modules/', '/.next/', '/.mercato/', '/.ai/qa/'],
+  // `__integration__` holds Playwright specs, which import `@playwright/test` and describe
+  // browser/API journeys against a running app. Jest would collect them as unit suites and fail
+  // every one of them at import time. The header above always said they run through Playwright;
+  // the pattern was simply never needed until a module shipped some.
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/.next/',
+    '/.mercato/',
+    '/.ai/qa/',
+    '/__integration__/',
+  ],
 }
