@@ -10,7 +10,7 @@
 
 | Phase | Step | Title | Exec | Status | Commit |
 |-------|------|-------|------|--------|--------|
-| 0 | 0.1 | Approve VIS readiness and initialize implementation status | inline | todo | — |
+| 0 | 0.1 | Approve VIS readiness and initialize implementation status | inline | done | 334181e |
 | 1 | 1.1 | Add visit aggregate schema, validation, ACL, encryption, events, and migration | inline | todo | — |
 | 1 | 1.2 | Implement scoped visit CRUD commands and patient archive invariant | inline | todo | — |
 | 1 | 1.3 | Expose visit CRUD API, OpenAPI, and next-visit projection | inline | todo | — |
