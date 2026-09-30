@@ -26,3 +26,9 @@
 - Blocker handled: Docker is unavailable, so the repository's ephemeral container runner could not start. Decision: use the documented dedicated-database fallback with repository-native Playwright and task-local Chromium libraries; no shared/user database was touched.
 - Decision: installed `ScheduleView` exposes availability items as keyboard buttons, so selected availability windows are rendered in a visible, non-interactive lane summary adjacent to the grid; visit items remain the only actionable calendar events.
 - Next: full gate, full patient integration suite, authoritative PR review/autofix, final PR report/ready transition, and final port 3000 preview.
+
+## 2026-09-30T21:23:08Z — final-gate retry race corrected
+
+- Full patient integration first pass completed with 93 passed, 4 expected host-capability skips, and one failed VIS-T06 concurrent idempotency assertion.
+- Root cause: after availability enforcement was added, the serialized loser could observe the winner as a blocking overlap before reaching the unique index, bypassing the existing unique-violation replay recovery.
+- Decision: recover an exact committed idempotent replay after expected 409/422 contention as well as after a unique-index race; infrastructure and side-effect failures remain visible.

@@ -4,7 +4,7 @@ import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { runCrudCommandWrite } from '@open-mercato/shared/lib/commands/runCrudCommandWrite'
-import { conflict, CrudHttpError, forbidden } from '@open-mercato/shared/lib/crud/errors'
+import { conflict, CrudHttpError, forbidden, isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
@@ -852,7 +852,16 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         }),
       })
     } catch (error) {
-      if (error instanceof UniqueConstraintViolationException) {
+      // Availability enforcement can observe the winner before this retry reaches the
+      // unique index: both requests miss the optimistic replay read, the first commits,
+      // and the second then sees that same visit as an overlap after the patient lock.
+      // In either race shape, an identical committed request is the authoritative result.
+      // Keep infrastructure/side-effect failures visible; only expected contention and
+      // validation failures are eligible for the replay recovery.
+      const mayBeConcurrentReplay = error instanceof UniqueConstraintViolationException || (
+        isCrudHttpError(error) && (error.status === 409 || error.status === 422)
+      )
+      if (mayBeConcurrentReplay) {
         const raced = await resolveIdempotentVisit(
           (ctx.container.resolve('em') as EntityManager).fork(),
           parsed.clientRequestId,

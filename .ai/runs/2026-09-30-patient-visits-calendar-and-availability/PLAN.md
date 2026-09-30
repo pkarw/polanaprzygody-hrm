@@ -23,6 +23,7 @@
 | 2 | 2.4 | Complete VCAL-T01–T10 integration and browser coverage | dispatch | done | 3d73a6b |
 | 2 | 2.5-review-fix | Fix independent Phase 2 review findings before runtime verification | inline | done | 4cd23af |
 | 2 | 2.6-runtime-fix | Correct issues exposed by the live Phase 2 browser and API checkpoint | inline | done | fb5e598 |
+| 2 | 2.7-gate-fix | Preserve idempotent visit retries after conflict enforcement serializes concurrent creates | inline | done | this commit |
 
 ## Goal
 
