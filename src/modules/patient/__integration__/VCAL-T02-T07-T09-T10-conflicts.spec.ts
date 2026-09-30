@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { Client } from 'pg'
 import {
   createUserFixture,
   deleteUserIfExists,
@@ -240,6 +241,7 @@ test.describe('VCAL-T02–T07: save-path availability and conflict decisions', (
       const signatures = warning.body.conflicts
         ?.filter((conflict) => conflict.severity === 'warning')
         .map((conflict) => conflict.signature) ?? []
+      const overrideReason = unique('Clinical scheduling decision')
 
       const incomplete = await readConflict(request, actor, {
         patientId: patient.id,
@@ -260,9 +262,44 @@ test.describe('VCAL-T02–T07: save-path availability and conflict decisions', (
         endsAt: '2099-05-14T10:45:00+02:00',
         timeZone: 'Europe/Warsaw',
         clientRequestId: newRequestId(),
-        conflictOverride: { acknowledgedSignatures: signatures, reason: 'Clinical scheduling decision' },
+        conflictOverride: { acknowledgedSignatures: signatures, reason: overrideReason },
       })
       visitIds.push(overridden.id)
+
+      const databaseUrl = process.env.DATABASE_URL
+      expect(databaseUrl, 'DATABASE_URL is required for the override encryption proof').toBeTruthy()
+      const db = new Client({ connectionString: databaseUrl })
+      await db.connect()
+      try {
+        const stored = await db.query(
+          `select tenant_id, organization_id, conflict_override_reason
+             from patient_visits
+            where id = $1`,
+          [overridden.id],
+        ) as { rows: Array<{
+          tenant_id: string
+          organization_id: string
+          conflict_override_reason: string
+        }> }
+        expect(stored.rows).toHaveLength(1)
+        expect(stored.rows[0]?.conflict_override_reason).not.toBe(overrideReason)
+        expect(stored.rows[0]?.conflict_override_reason).not.toContain(overrideReason)
+
+        const maps = await db.query(
+          `select fields_json
+             from encryption_maps
+            where tenant_id = $1 and organization_id = $2
+              and entity_id = 'patient:patient_visit'
+              and deleted_at is null and is_active = true`,
+          [stored.rows[0]?.tenant_id, stored.rows[0]?.organization_id],
+        ) as { rows: Array<{ fields_json: Array<{ field?: string }> }> }
+        expect(maps.rows).toHaveLength(1)
+        expect(maps.rows[0]?.fields_json).toEqual(expect.arrayContaining([
+          expect.objectContaining({ field: 'conflict_override_reason' }),
+        ]))
+      } finally {
+        await db.end()
+      }
 
       const inactive = await readConflict(request, actor, {
         patientId: patient.id,
@@ -339,14 +376,34 @@ test.describe('VCAL-T09–T10: degraded schedules and serialized writes', () => 
         timeZone: 'Europe/Warsaw',
         clientRequestId: sharedRequestId,
       }
-      const firstRetry = await callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput)
-      const secondRetry = await callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput)
+      const [firstRetry, secondRetry] = await Promise.all([
+        callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput),
+        callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput),
+      ])
       expect(
         [firstRetry.status, secondRetry.status].every((status) => status >= 200 && status < 300),
         JSON.stringify([firstRetry, secondRetry]),
       ).toBe(true)
       expect(firstRetry.body.id).toBe(secondRetry.body.id)
       visitIds.push(firstRetry.body.id)
+
+      const databaseUrl = process.env.DATABASE_URL
+      expect(databaseUrl, 'DATABASE_URL is required for the idempotency row proof').toBeTruthy()
+      const scope = actorScope(actor)
+      const db = new Client({ connectionString: databaseUrl })
+      await db.connect()
+      try {
+        const rows = await db.query(
+          `select id
+             from patient_visits
+            where tenant_id = $1 and organization_id = $2
+              and client_request_id = $3 and deleted_at is null`,
+          [scope.tenantId, scope.organizationId, sharedRequestId],
+        ) as { rows: Array<{ id: string }> }
+        expect(rows.rows).toEqual([{ id: firstRetry.body.id }])
+      } finally {
+        await db.end()
+      }
 
       const makeConcurrent = (clientRequestId: string) => callApi<ConflictBody>(
         request,

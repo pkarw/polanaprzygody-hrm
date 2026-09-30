@@ -49,3 +49,9 @@
 - Authoritative review identified a data-loss blocker: VCAL-1 rollback dropped the four conflict-override audit columns even though the spec requires their data and history to survive.
 - Decision: rollback removes enforcement indexes and the consistency check only; it retains audit columns, ciphertext, and the encryption-map entry. The forward DDL is repeatable so a later redeploy can restore enforcement without losing history.
 - Delegation: a read-only subagent located repository-native raw-ciphertext, active encryption-map, and second-organization integration patterns; no files were edited by the subagent.
+
+## 2026-09-30T21:56:00Z — final review integration-proof fix
+
+- Added live raw-database proof that conflict override reasons are ciphertext and the exact field is present in the active scoped encryption map.
+- The idempotent retry oracle now issues both requests concurrently and verifies one scoped database row for the shared request ID.
+- Calendar and availability APIs are exercised from a second selected organization to prove that visits, lanes, and subject references do not cross scope.

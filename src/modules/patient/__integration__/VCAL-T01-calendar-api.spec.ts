@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import {
+  createOrganizationFixture,
+  deleteOrganizationIfExists,
+} from '@open-mercato/core/helpers/integration/authFixtures'
+import {
   createAvailabilityRuleFixture,
   deleteAvailabilityRuleIfExists,
 } from '@open-mercato/core/helpers/integration/plannerFixtures'
@@ -75,6 +79,7 @@ test.describe('VCAL-T01: scoped visit calendar API', () => {
     let otherTeamMemberId: string | null = null
     let resourceId: string | null = null
     let ruleId: string | null = null
+    let foreignOrganizationId: string | null = null
     try {
       const patient = await createPatient(request, actor, {
         firstName: 'Calendar',
@@ -195,6 +200,40 @@ test.describe('VCAL-T01: scoped visit calendar API', () => {
         actor,
       )
       expect(unknownSubject).toMatchObject({ items: [], lanes: [], degraded: [] })
+
+      foreignOrganizationId = await createOrganizationFixture(request, actor.token, {
+        name: unique('VCAL foreign organization'),
+        tenantId: scope.tenantId,
+      })
+      const foreignActor: ScopedActor = {
+        token: actor.token,
+        headers: {
+          ...actor.headers,
+          cookie: `om_selected_org=${foreignOrganizationId}`,
+        },
+      }
+      const foreignCalendar = await callApiOk<CalendarResponse>(
+        request,
+        'GET',
+        calendarPath(from, to),
+        foreignActor,
+      )
+      expect(foreignCalendar).toMatchObject({ items: [], lanes: [], degraded: [] })
+
+      const foreignAvailability = await callApi<{ code?: string }>(
+        request,
+        'GET',
+        `/api/patient/visits/availability-check?${new URLSearchParams({
+          teamMemberId,
+          startsAt: '2099-05-10T10:00:00+02:00',
+          endsAt: '2099-05-10T10:30:00+02:00',
+        }).toString()}`,
+        foreignActor,
+      )
+      expect(foreignAvailability).toMatchObject({
+        status: 422,
+        body: { code: 'visit_reference_unavailable' },
+      })
     } finally {
       for (const visitId of visitIds.reverse()) await cleanupVisit(request, actor, visitId)
       for (const patient of patients.reverse()) await cleanupPatient(request, actor, patient.id)
@@ -208,6 +247,7 @@ test.describe('VCAL-T01: scoped visit calendar API', () => {
       )
       await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', otherTeamMemberId)
       await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
+      await deleteOrganizationIfExists(request, actor.token, foreignOrganizationId)
     }
   })
 })
