@@ -40,6 +40,7 @@
   "patient.common.retry": "Spróbuj ponownie",
   "patient.common.unavailableReference": "Niedostępny",
   "patient.errors.protectedFields": "Te pola ustawia serwer i nie można ich przesłać.",
+  "patient.errors.invalidInput": "Dane żądania są nieprawidłowe.",
   "patient.errors.unauthorized": "Brak autoryzacji",
   "patient.errors.unexpected": "Nie udało się wykonać żądania.",
   "patient.files.notImplemented": "Przechowywanie plików klinicznych nie jest dostępne na tej instalacji.",

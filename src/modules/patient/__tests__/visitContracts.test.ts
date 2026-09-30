@@ -2,8 +2,11 @@ import { describe, expect, it } from '@jest/globals'
 import {
   patientVisitCreateSchema,
   patientVisitConfirmationActionSchema,
+  patientVisitConfirmationRequestSchema,
   patientVisitListQuerySchema,
+  patientVisitSettlementRequestSchema,
   patientVisitSettleSchema,
+  patientVisitStatusRequestSchema,
   patientVisitTransitionSchema,
   patientVisitUnsettleSchema,
   patientVisitUpdateSchema,
@@ -87,6 +90,24 @@ describe('patient visit contracts', () => {
     expect(patientVisitSettleSchema.safeParse({ ...versioned, reason: 'Advance recorded' }).success).toBe(true)
     expect(patientVisitUnsettleSchema.safeParse(versioned).success).toBe(false)
     expect(patientVisitUnsettleSchema.safeParse({ ...versioned, reason: 'Correction' }).success).toBe(true)
+  })
+
+  it('validates action-route intent without accepting path, scope, or actor fields', () => {
+    const version = { expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }
+    expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: true }).success).toBe(true)
+    expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: true, id: uuid(1) }).success).toBe(false)
+    expect(patientVisitStatusRequestSchema.safeParse({ ...version, status: 'cancelled', reason: 'Operator decision' }).success).toBe(true)
+    expect(patientVisitStatusRequestSchema.safeParse({ ...version, status: 'cancelled' }).success).toBe(false)
+    expect(patientVisitSettlementRequestSchema.safeParse({ ...version, isSettled: true }).success).toBe(true)
+    expect(patientVisitSettlementRequestSchema.safeParse({ ...version, isSettled: false }).success).toBe(false)
+    expect(patientVisitSettlementRequestSchema.safeParse({ ...version, isSettled: false, reason: 'Correction' }).success).toBe(true)
+    for (const forbiddenKey of ['tenantId', 'organizationId', 'actorId', 'userId']) {
+      expect(patientVisitConfirmationRequestSchema.safeParse({
+        ...version,
+        confirmed: true,
+        [forbiddenKey]: uuid(9),
+      }).success).toBe(false)
+    }
   })
 
   it('validates half-open list ranges', () => {

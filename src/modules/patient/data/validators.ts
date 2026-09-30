@@ -533,6 +533,27 @@ const patientVisitActionBase = {
 
 const patientVisitActionReasonSchema = z.string().trim().min(1).max(2_000)
 
+function addPatientVisitTransitionIssues(
+  value: { status: 'planned' | 'completed' | 'cancelled' | 'no_show'; reason?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const reasonRequired = value.status === 'planned' || value.status === 'cancelled' || value.status === 'no_show'
+  if (reasonRequired && !value.reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A reason is required for this visit status change',
+      path: ['reason'],
+    })
+  }
+  if (value.status === 'completed' && value.reason !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A completion does not accept a reason',
+      path: ['reason'],
+    })
+  }
+}
+
 /** Commands are split by action so a caller cannot smuggle the target state. */
 export const patientVisitConfirmationActionSchema = z.object(patientVisitActionBase).strict()
 
@@ -543,23 +564,7 @@ export const patientVisitTransitionSchema = z
     reason: patientVisitActionReasonSchema.optional(),
   })
   .strict()
-  .superRefine((value, ctx) => {
-    const reasonRequired = value.status === 'planned' || value.status === 'cancelled' || value.status === 'no_show'
-    if (reasonRequired && !value.reason) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'A reason is required for this visit status change',
-        path: ['reason'],
-      })
-    }
-    if (value.status === 'completed' && value.reason !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'A completion does not accept a reason',
-        path: ['reason'],
-      })
-    }
-  })
+  .superRefine(addPatientVisitTransitionIssues)
 
 export const patientVisitSettleSchema = z.object({
   ...patientVisitActionBase,
@@ -570,6 +575,32 @@ export const patientVisitUnsettleSchema = z.object({
   ...patientVisitActionBase,
   reason: patientVisitActionReasonSchema,
 }).strict()
+
+/** HTTP action bodies keep the record id in the path and reject all scope/actor keys. */
+export const patientVisitConfirmationRequestSchema = z.object({
+  confirmed: z.boolean(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+export const patientVisitStatusRequestSchema = z.object({
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  reason: patientVisitActionReasonSchema.optional(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict().superRefine(addPatientVisitTransitionIssues)
+
+export const patientVisitSettlementRequestSchema = z.object({
+  isSettled: z.boolean(),
+  reason: patientVisitActionReasonSchema.optional(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict().superRefine((value, ctx) => {
+  if (!value.isSettled && !value.reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A reason is required to remove manual settlement',
+      path: ['reason'],
+    })
+  }
+})
 
 const patientVisitListQueryFields = {
   id: z.string().uuid().optional(),

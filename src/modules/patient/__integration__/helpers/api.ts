@@ -160,10 +160,41 @@ export type VisitRecord = {
   endsAt: string | null
   timeZone: string
   status: 'planned' | 'completed' | 'cancelled' | 'no_show'
+  confirmedAt: string | null
   isConfirmed: boolean
   isSettled: boolean
+  settledAt: string | null
   services: Array<{ id: string; productId: string; title: string; sku: string | null; position: number }>
   updatedAt: string
+}
+
+export type VisitLifecycleResult = {
+  ok: true
+  id: string
+  status: VisitRecord['status']
+  confirmedAt: string | null
+  isConfirmed: boolean
+  confirmationApplicable: boolean
+  isSettled: boolean
+  settledAt: string | null
+  updatedAt: string
+}
+
+/** Executes one of the guarded visit lifecycle endpoints. */
+export async function visitAction(
+  request: APIRequestContext,
+  actor: ScopedActor,
+  id: string,
+  action: 'confirmation' | 'status' | 'settlement',
+  data: Record<string, unknown>,
+): Promise<VisitLifecycleResult> {
+  return await callApiOk<VisitLifecycleResult>(
+    request,
+    'POST',
+    `/api/patient/visits/${encodeURIComponent(id)}/${action}`,
+    actor,
+    data,
+  )
 }
 
 export async function createVisit(

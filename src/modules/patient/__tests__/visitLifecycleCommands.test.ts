@@ -30,9 +30,17 @@ type Harness = {
   commit: jest.MockedFunction<() => Promise<void>>
   rollback: jest.MockedFunction<() => Promise<void>>
   markOrmEntityChange: jest.Mock
+  userHasAllFeatures: jest.MockedFunction<(
+    userId: string,
+    features: string[],
+    scope: { tenantId: string; organizationId: string },
+  ) => Promise<boolean>>
 }
 
-function createHarness(overrides: Partial<PatientVisit> = {}): Harness {
+function createHarness(
+  overrides: Partial<PatientVisit> = {},
+  grantedFeatures: string[] | null = null,
+): Harness {
   const initialUpdatedAt = new Date('2026-09-30T09:00:00.000Z')
   const patient = {
     id: ids.patient,
@@ -94,7 +102,10 @@ function createHarness(overrides: Partial<PatientVisit> = {}): Harness {
     fork: () => em,
     isInTransaction: () => false,
   } as unknown as EntityManager
-  const userHasAllFeatures = jest.fn(async () => true)
+  const userHasAllFeatures = jest.fn(async (
+    _userId: string,
+    features: string[],
+  ) => grantedFeatures === null || features.every((feature) => grantedFeatures.includes(feature)))
   const encryptEntityPayload = jest.fn(async (
     _entityId: string,
     payload: Record<string, unknown>,
@@ -115,7 +126,7 @@ function createHarness(overrides: Partial<PatientVisit> = {}): Harness {
     organizationIds: [ids.organization],
   }
   jest.mocked(findOneWithDecryption).mockResolvedValue(visit as never)
-  return { context, patient, visit, commit, rollback, markOrmEntityChange }
+  return { context, patient, visit, commit, rollback, markOrmEntityChange, userHasAllFeatures }
 }
 
 async function execute(
@@ -275,6 +286,38 @@ describe('patient visit lifecycle command behavior', () => {
     expect(harness.commit).not.toHaveBeenCalled()
     expect(harness.rollback).toHaveBeenCalledTimes(1)
     expect(harness.markOrmEntityChange).not.toHaveBeenCalled()
+    expect(emitPatientEvent).not.toHaveBeenCalled()
+  })
+
+  it('requires visits.correct to reopen and visits.settle for settlement without side effects', async () => {
+    const reopenHarness = createHarness(
+      { status: 'completed' },
+      ['patient.visits.manage'],
+    )
+    await expect(execute('patient.visits.transition', {
+      id: ids.visit,
+      expectedUpdatedAt: reopenHarness.visit.updatedAt.toISOString(),
+      status: 'planned',
+      reason: 'Correction denied',
+    }, reopenHarness.context)).rejects.toMatchObject({ status: 403 })
+    expect(reopenHarness.visit.status).toBe('completed')
+    expect(reopenHarness.userHasAllFeatures).toHaveBeenCalledWith(
+      ids.actor,
+      ['patient.visits.manage', 'patient.visits.correct'],
+      { tenantId: ids.tenant, organizationId: ids.organization },
+    )
+
+    const settlementHarness = createHarness({}, ['patient.visits.manage'])
+    await expect(execute('patient.visits.settle', {
+      id: ids.visit,
+      expectedUpdatedAt: settlementHarness.visit.updatedAt.toISOString(),
+    }, settlementHarness.context)).rejects.toMatchObject({ status: 403 })
+    expect(settlementHarness.visit.isSettled).toBe(false)
+    expect(settlementHarness.userHasAllFeatures).toHaveBeenCalledWith(
+      ids.actor,
+      ['patient.visits.settle'],
+      { tenantId: ids.tenant, organizationId: ids.organization },
+    )
     expect(emitPatientEvent).not.toHaveBeenCalled()
   })
 

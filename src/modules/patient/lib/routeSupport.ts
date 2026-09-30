@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { ZodError } from 'zod'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { getAuthFromRequest } from '@open-mercato/shared/lib/auth/server'
 import { resolveOrganizationScopeForRequest } from '@open-mercato/core/modules/directory/utils/organizationScope'
@@ -114,6 +115,15 @@ export function toPatientErrorResponse(
 ): NextResponse {
   if (isCrudHttpError(err)) {
     return NextResponse.json(err.body, { status: err.status })
+  }
+  if (err instanceof ZodError) {
+    return NextResponse.json(
+      {
+        error: translate('patient.errors.invalidInput', 'The request payload is invalid.'),
+        details: err.issues,
+      },
+      { status: 400 },
+    )
   }
   const interceptorRejection = getCommandInterceptorHttpRejection(err)
   if (interceptorRejection) {

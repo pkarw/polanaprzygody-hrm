@@ -217,6 +217,15 @@ export const patientVisitVersionedResultSchema = z.object({
   updatedAt: z.string(),
 })
 
+export const patientVisitLifecycleResultSchema = patientVisitVersionedResultSchema.extend({
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  confirmedAt: z.string().nullable(),
+  isConfirmed: z.boolean(),
+  confirmationApplicable: z.boolean(),
+  isSettled: z.boolean(),
+  settledAt: z.string().nullable(),
+})
+
 export const patientVisitDeletedResultSchema = patientVisitVersionedResultSchema.extend({
   deleted: z.literal(true),
 })
@@ -244,6 +253,6 @@ export const patientWriteErrors = [
   { status: 403, description: 'The required feature is not granted, or the payload targets another tenant', schema: patientErrorSchema },
   { status: 404, description: 'The record is not visible in this scope', schema: patientErrorSchema },
   { status: 409, description: 'Stale version, or the write would break an invariant', schema: patientErrorSchema },
-  { status: 422, description: 'A referenced record is not active in this scope', schema: patientErrorSchema },
+  { status: 422, description: 'A referenced record is inactive, or the requested lifecycle transition is not yet allowed', schema: patientErrorSchema },
   { status: 503, description: 'Encryption, storage or an owner-authorization contract is unavailable', schema: patientErrorSchema },
 ] as const

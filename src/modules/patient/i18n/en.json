@@ -40,6 +40,7 @@
   "patient.common.retry": "Try again",
   "patient.common.unavailableReference": "Unavailable",
   "patient.errors.protectedFields": "These fields are set by the server and cannot be supplied.",
+  "patient.errors.invalidInput": "The request payload is invalid.",
   "patient.errors.unauthorized": "Unauthorized",
   "patient.errors.unexpected": "The request could not be completed.",
   "patient.files.notImplemented": "Clinical file storage is not available on this installation.",
