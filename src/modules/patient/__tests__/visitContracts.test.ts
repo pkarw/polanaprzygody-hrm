@@ -33,7 +33,27 @@ describe('patient visit contracts', () => {
     expect(patientVisitCreateSchema.safeParse({ ...createInput, startsAt: '2026-10-05T10:00:00' }).success).toBe(false)
     expect(patientVisitCreateSchema.safeParse({ ...createInput, timeZone: 'Warsaw' }).success).toBe(false)
     expect(patientVisitCreateSchema.safeParse({ ...createInput, endsAt: createInput.startsAt }).success).toBe(false)
-    expect(patientVisitCreateSchema.safeParse({ ...createInput, timeZone: 'GMT' }).success).toBe(true)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      startsAt: '2026-10-05T08:00:00Z',
+      endsAt: '2026-10-05T09:00:00Z',
+      timeZone: 'GMT',
+    }).success).toBe(true)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      startsAt: '2026-03-29T02:30:00+01:00',
+      endsAt: null,
+    }).success).toBe(false)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      startsAt: '2026-10-25T02:30:00+02:00',
+      endsAt: null,
+    }).success).toBe(true)
+    expect(patientVisitCreateSchema.safeParse({
+      ...createInput,
+      startsAt: '2026-10-25T02:30:00+01:00',
+      endsAt: null,
+    }).success).toBe(true)
   })
 
   it('keeps omitted services distinct from an explicit empty update', () => {

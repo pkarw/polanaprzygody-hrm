@@ -46,6 +46,9 @@ const EXPLICIT_TRANSACTION_SITES: Record<string, number> = {
   // Undo has no `runCrudCommandWrite` to open a transaction for it, so it calls `em.begin()`
   // and owns the commit/rollback.
   'patients.ts': 1,
+  // Create/update/delete undo each owns an explicit transaction and preserves the same
+  // patient → visit lock order as the forward command.
+  'visits.ts': 3,
 }
 
 function readCommandSources(): Array<{ file: string; source: string }> {

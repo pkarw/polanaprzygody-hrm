@@ -4,6 +4,8 @@ import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { CustomerEntity } from '@open-mercato/core/modules/customers/data/entities'
 import { StaffTeamMember } from '@open-mercato/core/modules/staff/data/entities'
 import { User } from '@open-mercato/core/modules/auth/data/entities'
+import { ResourcesResource } from '@open-mercato/core/modules/resources/data/entities'
+import { CatalogProduct } from '@open-mercato/core/modules/catalog/data/entities'
 
 /**
  * Resolves the scalar references this module stores into display names.
@@ -52,6 +54,10 @@ export type ResolvedReference = {
   isAvailable: boolean
 }
 
+export type ResolvedProductReference = ResolvedReference & {
+  sku: string | null
+}
+
 export type PatientReferenceService = {
   resolveCrmPeople(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
   resolveTeamMembers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
@@ -64,10 +70,16 @@ export type PatientReferenceService = {
    * still refused.
    */
   resolveUsers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
+  resolveResources(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
+  resolveProducts(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedProductReference>>
   /** Throws 422 unless the id is an active CRM person in scope. */
   requireActiveCrmPerson(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
   /** Throws 422 unless the id is an active staff team member in scope. */
   requireActiveTeamMember(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
+  /** Throws 422 unless the id is an active resource in scope. */
+  requireActiveResource(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
+  /** Returns all active products in input order or throws 422 without disclosing which foreign id failed. */
+  requireActiveProducts(ids: string[], scope: PatientReferenceScope): Promise<ResolvedProductReference[]>
 }
 
 /** Drops blanks and duplicates so one repeated id is one row in the `IN (…)` list. */
@@ -200,6 +212,53 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     return resolved
   }
 
+  async function resolveResources(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<Map<string, ResolvedReference>> {
+    const wanted = normalizeIds(ids)
+    const resolved = new Map<string, ResolvedReference>()
+    if (wanted.length === 0) return resolved
+
+    const rows = await em.find(ResourcesResource, {
+      id: { $in: wanted },
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    } as FilterQuery<ResourcesResource>)
+    for (const row of rows) {
+      resolved.set(String(row.id), {
+        id: String(row.id),
+        displayName: String(row.name ?? ''),
+        isAvailable: row.isActive !== false && !row.deletedAt,
+      })
+    }
+    return resolved
+  }
+
+  async function resolveProducts(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<Map<string, ResolvedProductReference>> {
+    const wanted = normalizeIds(ids)
+    const resolved = new Map<string, ResolvedProductReference>()
+    if (wanted.length === 0) return resolved
+
+    const rows = await em.find(CatalogProduct, {
+      id: { $in: wanted },
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    } as FilterQuery<CatalogProduct>)
+    for (const row of rows) {
+      resolved.set(String(row.id), {
+        id: String(row.id),
+        displayName: String(row.title ?? ''),
+        sku: row.sku ?? null,
+        isAvailable: row.isActive !== false && !row.deletedAt,
+      })
+    }
+    return resolved
+  }
+
   /**
    * 422, not 404, for both `require*` helpers.
    *
@@ -226,11 +285,35 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     return resolved
   }
 
+  async function requireActiveResource(id: string, scope: PatientReferenceScope): Promise<ResolvedReference> {
+    const resolved = (await resolveResources([id], scope)).get(id)
+    if (!resolved || !resolved.isAvailable) {
+      throw new CrudHttpError(422, { error: 'Referenced resource is not active in this scope' })
+    }
+    return resolved
+  }
+
+  async function requireActiveProducts(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<ResolvedProductReference[]> {
+    const resolved = await resolveProducts(ids, scope)
+    const ordered = ids.map((id) => resolved.get(id))
+    if (ordered.some((product) => !product?.isAvailable)) {
+      throw new CrudHttpError(422, { error: 'One or more referenced services are not active in this scope' })
+    }
+    return ordered as ResolvedProductReference[]
+  }
+
   return {
     resolveCrmPeople,
     resolveTeamMembers,
     resolveUsers,
+    resolveResources,
+    resolveProducts,
     requireActiveCrmPerson,
     requireActiveTeamMember,
+    requireActiveResource,
+    requireActiveProducts,
   }
 }

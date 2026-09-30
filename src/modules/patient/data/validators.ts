@@ -430,6 +430,59 @@ const visitEndAfterStartIssue = {
   path: ['endsAt'],
 }
 
+/**
+ * Confirms that the wall-clock part submitted by the client exists in the named zone and
+ * that the explicit offset selects the same instant. This rejects DST gaps while allowing
+ * either explicit offset of an autumn fold.
+ */
+export function patientVisitInstantMatchesTimeZone(instant: string, timeZone: string): boolean {
+  const wallClock = instant.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!wallClock) return false
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(instant))
+    const byType = new Map(parts.map((part) => [part.type, part.value]))
+    return (
+      byType.get('year') === wallClock[1] &&
+      byType.get('month') === wallClock[2] &&
+      byType.get('day') === wallClock[3] &&
+      byType.get('hour') === wallClock[4] &&
+      byType.get('minute') === wallClock[5] &&
+      byType.get('second') === (wallClock[6] ?? '00')
+    )
+  } catch {
+    return false
+  }
+}
+
+function addVisitTimeZoneIssues(
+  value: { startsAt: string; endsAt?: string | null; timeZone: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (!patientVisitInstantMatchesTimeZone(value.startsAt, value.timeZone)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'The visit start does not exist at that offset in the selected time zone',
+      path: ['startsAt'],
+    })
+  }
+  if (value.endsAt && !patientVisitInstantMatchesTimeZone(value.endsAt, value.timeZone)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'The visit end does not exist at that offset in the selected time zone',
+      path: ['endsAt'],
+    })
+  }
+}
+
 const serviceProductIdsSchema = z
   .array(z.string().uuid())
   .max(100)
@@ -447,6 +500,7 @@ export const patientVisitCreateSchema = z
   })
   .strict()
   .refine(visitEndsAfterStart, visitEndAfterStartIssue)
+  .superRefine(addVisitTimeZoneIssues)
 
 export const patientVisitUpdateSchema = z
   .object({

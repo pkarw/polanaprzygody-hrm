@@ -59,6 +59,8 @@ describe('createPatientReferenceService DI contract', () => {
     expect((await service.resolveTeamMembers([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect((await service.resolveCrmPeople([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect((await service.resolveUsers([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
+    expect((await service.resolveResources([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
+    expect((await service.resolveProducts([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect(find).not.toHaveBeenCalled()
   })
 
@@ -78,6 +80,41 @@ describe('createPatientReferenceService DI contract', () => {
         tenantId: 't',
         organizationId: 'o',
       }),
+    ).rejects.toMatchObject({ status: 422 })
+
+    await expect(
+      service.requireActiveResource('11111111-1111-4111-8111-111111111111', {
+        tenantId: 't',
+        organizationId: 'o',
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+
+    await expect(
+      service.requireActiveProducts(['11111111-1111-4111-8111-111111111111'], {
+        tenantId: 't',
+        organizationId: 'o',
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+  })
+
+  it('returns product snapshots in request order and rejects any inactive member', async () => {
+    const rows = [
+      { id: 'product-b', title: 'Consultation', sku: null, isActive: true, deletedAt: null },
+      { id: 'product-a', title: 'Examination', sku: 'EXAM', isActive: true, deletedAt: null },
+    ]
+    const em = { find: async () => rows, getMetadata: () => undefined } as never
+    const service = createPatientReferenceService(em)
+
+    await expect(
+      service.requireActiveProducts(['product-a', 'product-b'], { tenantId: 't', organizationId: 'o' }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: 'product-a', displayName: 'Examination', sku: 'EXAM' }),
+      expect.objectContaining({ id: 'product-b', displayName: 'Consultation', sku: null }),
+    ])
+
+    rows[1].isActive = false
+    await expect(
+      service.requireActiveProducts(['product-a', 'product-b'], { tenantId: 't', organizationId: 'o' }),
     ).rejects.toMatchObject({ status: 422 })
   })
 })
