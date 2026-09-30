@@ -40,6 +40,8 @@ Kartoteka pacjenta nie mówi, kiedy i u kogo pacjent ma wizytę, jakie usługi o
 
 Faktury, płatności, kwoty, ceny, waluty, rabaty, ubezpieczenia, podział płatności między opiekunów, sales order, automatyczna rezerwacja zasobów, konflikty grafiku, cykliczne wizyty, kalendarz drag-and-drop, wiele osób realizujących jedną wizytę, wiele gabinetów na wizytę, przypomnienia i portal. Brak auto-przenoszenia diagnoz lub dokumentów do wizyty. Zmiana terminu nie jest workflow z kolejką.
 
+**Rozszerzenie po VIS:** widok kalendarza oraz kontrolę dostępności wykonawcy (urlop/zwolnienie z `staff`) i gabinetu (`resources` + `planner`) projektuje osobna specyfikacja [VCAL — kalendarz wizyt i kontrola dostępności](2026-09-30-patient-visits-calendar-and-availability.md), zależna od fazy VIS-1. Powyższe non-goals pozostają w mocy dla samej VIS; VCAL zdejmuje z tej listy wyłącznie „konflikty grafiku” i kalendarz (bez drag-and-drop, bez rezerwacji zasobu i bez wizyt cyklicznych) oraz dokłada do modelu wizyty cztery pola audytu świadomego nadpisania ostrzeżenia.
+
 ## Proposed Solution
 
 `PatientVisit` jest agregatem, `PatientVisitService` jego listą usług. Zapis nagłówka, zmiana usług, potwierdzenie i rozliczenie blokują ten sam rekord wizyty i podnoszą jego wersję. Wszystkie ekrany odczytują ten sam model.
@@ -427,3 +429,4 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 | 2026-09-29 | Pole `nextVisit` i kolumna „Kolejna wizyta” na liście pacjentów: kontrakt, ACL, jedno zapytanie na stronę, oracle VIS-T08 |
 | 2026-09-30 | Makiety M01–M14 szczegółów wizyty (wszystkie zakładki, formularze, dialogi, stany, 360 px) wraz z odnośnikami w sekcji UI, fazach i VIS-T08; bez zmian modelu, API i faz |
 | 2026-09-30 | Zatwierdzenie pełnej implementacji VIS-1/VIS-2; PAT-1 potwierdzone jako wdrożone; dodano ledger implementacji i ustawiono VIS-1 jako in progress |
+| 2026-09-30 | Odsyłacz do VCAL w non-goals: kalendarz i kontrola dostępności mają własną specyfikację zależną od VIS-1; model, API i fazy VIS bez zmian |

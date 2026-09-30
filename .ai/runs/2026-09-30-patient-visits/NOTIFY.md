@@ -61,3 +61,12 @@
   explicit optional-host skips.
 - Five polished Phase 2 screenshots were captured and reviewed for light/dark, conflict,
   closed read-only, and 360 px states. The earlier environment blockers are resolved.
+
+## 2026-09-30T18:03:00Z — latest main conflict resolved during review
+
+- The authoritative review found PR #3 conflicting after main added the VCAL spec and
+  documentation/fixture updates.
+- Decision: merge `origin/main` into the feature branch without history rewriting, preserve
+  both VIS changelog rows in the sole conflicted spec file, and import all unrelated main
+  changes unchanged.
+- The full gate will be rerun before the review verdict is submitted.

@@ -22,6 +22,7 @@
 | 2 | 2.4 | Complete VIS acceptance, concurrency, security, and browser coverage | inline | done | 1ad6de4 |
 | 2 | 2.5 | Preserve timestamp precision and align persisted update assertions | inline | done | 6679eeb |
 | 2 | 2.6 | Fix browser-found accessibility, identity privacy, and deterministic UI coverage | inline | done | 339bdbc |
+| 2 | 2.7 | Resolve latest-main review conflict and import the VCAL source spec | inline | done | 087835b |
 
 ## Goal
 
@@ -126,6 +127,13 @@ Deliver the complete VIS specification so staff can create, edit, confirm, close
   invariant in API/browser regression coverage.
 - Make lifecycle keyboard submission and browser scenarios deterministic, retaining the
   operator's input through optimistic-conflict recovery.
+
+#### Step 2.7 — Resolve latest-main review conflict and import the VCAL source spec
+
+- Merge the current `origin/main` without rewriting history so PR #3 remains reviewable.
+- Preserve both the completed VIS implementation ledger and main's additive VCAL reference.
+- Import the approved VCAL spec/assets and unrelated latest-main documentation/fixture updates
+  unchanged, then rerun the full validation gate on the merged tree.
 
 ## Checkpoint and final verification
 
