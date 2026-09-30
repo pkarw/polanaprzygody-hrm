@@ -204,7 +204,16 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       await page.goto(calendarUrl({ teamMemberId }))
       await expect(page.getByText(/Część dostępności jest nieznana|Some availability is unknown/i)).toBeVisible()
       await expect(page.getByText(/Brak grafiku dostępności|No availability schedule/i)).toBeVisible()
-      await expect(page.locator('.schedule-event-availability, .schedule-event-exception')).toHaveCount(0)
+      const availabilityBands = page.locator('.schedule-event-availability, .schedule-event-exception')
+      await expect(availabilityBands).toHaveCount(2)
+      await expect(page.locator('.schedule-event-availability')).toContainText(/Quality-state clinician/)
+      await expect(page.locator('.schedule-event-exception')).toContainText(/Quality-state clinician/)
+      for (const band of [page.locator('.schedule-event-availability'), page.locator('.schedule-event-exception')]) {
+        await expect(band).toHaveAttribute('aria-hidden', 'true')
+        await expect(band).toHaveAttribute('tabindex', '-1')
+        await expect(band.getByRole('button')).toHaveCount(0)
+        await expect(band).toHaveCSS('pointer-events', 'none')
+      }
       const laneSummary = page.locator('[data-visit-availability-lanes]')
       await expect(laneSummary).toContainText('Quality-state clinician')
       await expect(laneSummary.getByRole('button')).toHaveCount(0)

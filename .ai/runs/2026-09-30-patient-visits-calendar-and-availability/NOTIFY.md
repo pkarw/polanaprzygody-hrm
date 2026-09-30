@@ -55,3 +55,9 @@
 - Added live raw-database proof that conflict override reasons are ciphertext and the exact field is present in the active scoped encryption map.
 - The idempotent retry oracle now issues both requests concurrently and verifies one scoped database row for the shared request ID.
 - Calendar and availability APIs are exercised from a second selected organization to prove that visits, lanes, and subject references do not cross scope.
+
+## 2026-09-30T22:05:00Z — final review calendar-band fix
+
+- Availability and exception windows now use the shared `ScheduleView` item contract so each window is aligned to its actual day and time inside the calendar grid.
+- The grid bands are informational: the visible lane summary remains the screen-reader source, while band events are removed from the tab order, hidden from assistive technology, and made pointer-transparent so they cannot open visit actions.
+- Browser coverage now requires both semantic band kinds in the grid and proves that neither band exposes a button or pointer interaction.

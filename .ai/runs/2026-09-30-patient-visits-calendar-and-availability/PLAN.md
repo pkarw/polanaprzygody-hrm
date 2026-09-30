@@ -28,6 +28,7 @@
 | 2 | 2.9-review-fix | Degrade resource-state read failures without inventing an inactive-resource block | inline | done | this commit |
 | 2 | 2.10-review-fix | Preserve conflict-override audit history across rollback and keep redeploy repeatable | inline | done | this commit |
 | 2 | 2.11-review-fix | Prove concurrent replay, encrypted override storage, active maps, and two-organization isolation | inline | done | this commit |
+| 2 | 2.12-review-fix | Render non-actionable availability and exception bands inside the calendar grid | inline | done | this commit |
 
 ## Goal
 

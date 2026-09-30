@@ -153,6 +153,7 @@ export function VisitsCalendar() {
   const scopeVersion = useOrganizationScopeVersion()
   const queryClient = useQueryClient()
   const access = usePatientVisitAccess()
+  const scheduleRootRef = React.useRef<HTMLDivElement>(null)
   const [state, setState] = React.useState<CalendarState>(() => initialState(new URLSearchParams(searchString)))
   const [dialog, setDialog] = React.useState<VisitCalendarDialogState | null>(null)
   const range = React.useMemo(() => apiRange(state.range, state.timeZone), [state.range, state.timeZone])
@@ -209,6 +210,22 @@ export function VisitsCalendar() {
 
   const scheduleItems = React.useMemo<ScheduleItem[]>(() => {
     if (!query.data) return []
+    const laneItems = query.data.lanes.flatMap((lane) => lane.windows.map((window): ScheduleItem => {
+      const laneLabel = window.kind === 'availability'
+        ? t('patient.visits.calendar.availableLane', undefined, { name: lane.subjectName })
+        : t('patient.visits.calendar.unavailableLane', undefined, { name: lane.subjectName })
+      return {
+        id: `lane:${lane.subjectType}:${lane.subjectId}:${window.id}`,
+        kind: window.kind,
+        title: window.reasonLabel ? `${laneLabel} · ${window.reasonLabel}` : laneLabel,
+        startsAt: displayInstant(window.from, state.timeZone),
+        endsAt: displayInstant(window.to, state.timeZone),
+        status: window.kind === 'availability' ? 'confirmed' : 'cancelled',
+        subjectType: lane.subjectType,
+        subjectId: lane.subjectId,
+        metadata: { itemType: 'availability-band' },
+      }
+    }))
     const visits = query.data.items.map((visit): ScheduleItem => {
       const startsAt = displayInstant(visit.startsAt, state.timeZone)
       const endsAt = visit.endsAt
@@ -232,8 +249,26 @@ export function VisitsCalendar() {
         metadata: { visitId: visit.id, itemType: 'visit' },
       }
     })
-    return visits
+    return [...laneItems, ...visits]
   }, [query.data, state.timeZone, t])
+
+  React.useEffect(() => {
+    const root = scheduleRootRef.current
+    if (!root) return
+    const makeBandsNonInteractive = () => {
+      for (const element of root.querySelectorAll<HTMLElement>(
+        '.schedule-event-availability, .schedule-event-exception',
+      )) {
+        element.tabIndex = -1
+        element.setAttribute('aria-hidden', 'true')
+        element.classList.add('pointer-events-none', 'cursor-default')
+      }
+    }
+    makeBandsNonInteractive()
+    const observer = new MutationObserver(makeBandsNonInteractive)
+    observer.observe(root, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [scheduleItems, state.view])
 
   const filterValues = React.useMemo<FilterValues>(() => ({ ...state.filters }), [state.filters])
   const invalidateVisits = React.useCallback(async () => {
@@ -418,26 +453,28 @@ export function VisitsCalendar() {
               </ul>
             </section>
           ) : null}
-          <ScheduleView
-            className="min-w-0 patient-visits-calendar"
-            items={scheduleItems}
-            view={state.view}
-            range={state.range}
-            timezone={state.timeZone}
-            onRangeChange={(nextRange) => setState((current) => ({ ...current, range: nextRange }))}
-            onViewChange={(view) => setState((current) => ({ ...current, view }))}
-            onTimezoneChange={(timeZone) => setState((current) => ({
-              ...current,
-              timeZone: validTimeZone(timeZone),
-            }))}
-            onSlotClick={access.canManage ? openCreate : undefined}
-            onItemClick={(item) => {
-              const visitId = item.metadata?.itemType === 'visit' && typeof item.metadata.visitId === 'string'
-                ? item.metadata.visitId
-                : null
-              if (visitId) setDialog({ mode: 'edit', visitId })
-            }}
-          />
+          <div ref={scheduleRootRef}>
+            <ScheduleView
+              className="min-w-0 patient-visits-calendar"
+              items={scheduleItems}
+              view={state.view}
+              range={state.range}
+              timezone={state.timeZone}
+              onRangeChange={(nextRange) => setState((current) => ({ ...current, range: nextRange }))}
+              onViewChange={(view) => setState((current) => ({ ...current, view }))}
+              onTimezoneChange={(timeZone) => setState((current) => ({
+                ...current,
+                timeZone: validTimeZone(timeZone),
+              }))}
+              onSlotClick={access.canManage ? openCreate : undefined}
+              onItemClick={(item) => {
+                const visitId = item.metadata?.itemType === 'visit' && typeof item.metadata.visitId === 'string'
+                  ? item.metadata.visitId
+                  : null
+                if (visitId) setDialog({ mode: 'edit', visitId })
+              }}
+            />
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground" aria-live="polite">
             <span>{t('patient.visits.calendar.count', undefined, { count: query.data?.items.length ?? 0 })}</span>
             <div className="flex flex-wrap items-center gap-2" aria-label={t('patient.visits.calendar.legend')}>
