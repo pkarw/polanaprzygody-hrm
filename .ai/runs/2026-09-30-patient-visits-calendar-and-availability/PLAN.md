@@ -26,6 +26,7 @@
 | 2 | 2.7-gate-fix | Preserve idempotent visit retries after conflict enforcement serializes concurrent creates | inline | done | this commit |
 | 2 | 2.8-review-fix | Narrow concurrent retry recovery to availability conflict outcomes | inline | done | this commit |
 | 2 | 2.9-review-fix | Degrade resource-state read failures without inventing an inactive-resource block | inline | done | this commit |
+| 2 | 2.10-review-fix | Preserve conflict-override audit history across rollback and keep redeploy repeatable | inline | done | this commit |
 
 ## Goal
 

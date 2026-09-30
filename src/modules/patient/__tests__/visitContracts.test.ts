@@ -232,7 +232,7 @@ describe('patient visit contracts', () => {
     expect(byId.get('patient.visit.conflict_overridden')?.payloadSchema?.fields).toContainEqual({ path: 'codes', type: 'object' })
   })
 
-  it('ships the reversible conflict-audit migration with scoped busy indexes', () => {
+  it('ships a repeatable conflict-audit migration with non-destructive rollback', () => {
     const migration = readFileSync(
       path.join(__dirname, '..', 'migrations', 'Migration20260930190908_patient.ts'),
       'utf8',
@@ -252,8 +252,18 @@ describe('patient visit contracts', () => {
     expect(migration).toContain(`"entity_id" = 'patient:patient_visit'`)
     expect(migration).toContain('conflict_override_reason')
     expect(migration).toContain('jsonb_array_elements')
+    expect(migration).toContain('add column if not exists "conflict_override_reason"')
+    expect(migration).toContain('create index if not exists "patient_visits_member_busy_idx"')
     const down = migration.slice(migration.indexOf('override down()'))
     expect(down).toContain('drop constraint')
-    expect(down).toContain('drop column "conflict_override_reason"')
+    expect(down).toContain('drop index if exists "patient_visits_member_busy_idx"')
+    for (const column of [
+      'conflict_override_reason',
+      'conflict_override_at',
+      'conflict_override_by_user_id',
+      'conflict_override_codes',
+    ]) {
+      expect(down).not.toContain(`drop column "${column}"`)
+    }
   })
 })

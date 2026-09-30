@@ -43,3 +43,9 @@
 - Authoritative review found that a transient `resources` QueryEngine failure escaped before the service's degradation boundary and could abort visit create/update instead of returning `availability_unknown`.
 - Decision: catch only the failed resource-state read and degrade it to unknown; a successful read proving the resource inactive or absent remains fail-closed and blocking.
 - A focused regression test distinguishes transient unknown state from an invented `resource_inactive` result.
+
+## 2026-09-30T21:49:00Z — final review rollback decision and security-test delegation
+
+- Authoritative review identified a data-loss blocker: VCAL-1 rollback dropped the four conflict-override audit columns even though the spec requires their data and history to survive.
+- Decision: rollback removes enforcement indexes and the consistency check only; it retains audit columns, ciphertext, and the encryption-map entry. The forward DDL is repeatable so a later redeploy can restore enforcement without losing history.
+- Delegation: a read-only subagent located repository-native raw-ciphertext, active encryption-map, and second-organization integration patterns; no files were edited by the subagent.
