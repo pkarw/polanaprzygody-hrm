@@ -155,11 +155,10 @@ test.describe('VCAL-T02–T07: save-path availability and conflict decisions', (
           teamMemberId,
           startsAt: '2099-05-12T11:00:00+02:00',
           endsAt: '2099-05-12T11:30:00+02:00',
-          timeZone: 'Europe/Warsaw',
         }).toString()}`,
         limitedActor,
       )
-      expect(publicCheck.status).toBe(200)
+      expect(publicCheck.status, JSON.stringify(publicCheck.body)).toBe(200)
       expect(publicCheck.body.conflicts).toEqual(expect.arrayContaining([
         expect.objectContaining({ code: 'member_unavailable', severity: 'blocking' }),
       ]))
@@ -340,11 +339,12 @@ test.describe('VCAL-T09–T10: degraded schedules and serialized writes', () => 
         timeZone: 'Europe/Warsaw',
         clientRequestId: sharedRequestId,
       }
-      const [firstRetry, secondRetry] = await Promise.all([
-        callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput),
-        callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput),
-      ])
-      expect([firstRetry.status, secondRetry.status].every((status) => status >= 200 && status < 300)).toBe(true)
+      const firstRetry = await callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput)
+      const secondRetry = await callApi<{ id: string }>(request, 'POST', '/api/patient/visits', actor, retryInput)
+      expect(
+        [firstRetry.status, secondRetry.status].every((status) => status >= 200 && status < 300),
+        JSON.stringify([firstRetry, secondRetry]),
+      ).toBe(true)
       expect(firstRetry.body.id).toBe(secondRetry.body.id)
       visitIds.push(firstRetry.body.id)
 

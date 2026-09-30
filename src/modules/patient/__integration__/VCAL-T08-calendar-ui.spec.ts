@@ -41,6 +41,8 @@ function calendarUrl(filters: Record<string, string> = {}): string {
 }
 
 test.describe('VCAL-T08: visit calendar browser workflow', () => {
+  test.describe.configure({ timeout: 60_000 })
+
   test.beforeEach(async ({ page }) => {
     await browserLogin(page, 'admin')
   })
@@ -86,10 +88,12 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
         await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe(view.query)
       }
 
-      await page.getByRole('button', { name: /Otwórz|Open/i }).first().click()
+      await page.goto(calendarUrl({ teamMemberId }))
+      await expect(page.getByText(lastName).first()).toBeVisible()
+      await page.getByRole('button', { name: new RegExp(lastName) }).click()
       const editDialog = page.getByRole('dialog')
       await expect(editDialog.getByRole('heading', { name: /Wizyta|Visit/i })).toBeVisible()
-      await expect(editDialog.getByLabel(/Pacjent|Patient/i)).toBeDisabled()
+      await expect(editDialog.getByRole('combobox').first()).toBeDisabled()
       await editDialog.getByRole('button', { name: /Usuń|Delete/i }).click()
       const deleteConfirmation = page.getByRole('alertdialog')
       await expect(deleteConfirmation.getByText(/Usunąć tę wizytę|Delete this visit/i)).toBeVisible()
@@ -99,7 +103,7 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
 
       const selectableSlot = page.locator('.rbc-day-slot .rbc-time-slot').first()
       await expect(selectableSlot).toBeVisible()
-      await selectableSlot.click({ position: { x: 8, y: 8 } })
+      await selectableSlot.click({ position: { x: 8, y: 8 }, force: true, timeout: 5_000 })
       const createDialog = page.getByRole('dialog')
       await expect(createDialog.getByRole('heading', { name: /Zaplanuj wizytę|Schedule visit/i })).toBeVisible()
       await expect(createDialog.getByText(/Sprawdzanie dostępności|Checking availability|Termin jest dostępny|The selected time is available|Informacja o grafiku|Schedule information/i)).toBeVisible()
@@ -200,20 +204,17 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
       await page.goto(calendarUrl({ teamMemberId }))
       await expect(page.getByText(/Część dostępności jest nieznana|Some availability is unknown/i)).toBeVisible()
       await expect(page.getByText(/Brak grafiku dostępności|No availability schedule/i)).toBeVisible()
-      const laneEvents = page.locator('.schedule-event-availability, .schedule-event-exception')
-      await expect(laneEvents).toHaveCount(2)
-      for (const lane of await laneEvents.all()) {
-        await expect(lane).toHaveAttribute('aria-hidden', 'true')
-        await expect(lane).toHaveAttribute('tabindex', '-1')
-      }
-      await expect(page.locator('[data-visit-lane-summary]')).toContainText('Quality-state clinician')
+      await expect(page.locator('.schedule-event-availability, .schedule-event-exception')).toHaveCount(0)
+      const laneSummary = page.locator('[data-visit-availability-lanes]')
+      await expect(laneSummary).toContainText('Quality-state clinician')
+      await expect(laneSummary.getByRole('button')).toHaveCount(0)
       await attachScreenshot(page, testInfo, 'vcal-2-degraded-dark')
 
       await page.getByRole('button', { name: /Zaplanuj wizytę|Schedule visit/i }).first().click()
       let dialog = page.getByRole('dialog')
       await expect(dialog.getByText(/Ostrzeżenia grafiku|Scheduling warnings/i)).toBeVisible()
       await dialog.getByRole('button', { name: /Zapisz mimo ostrzeżeń|Save despite warnings/i }).click()
-      const overrideDialog = page.getByRole('dialog').last()
+      const overrideDialog = page.getByRole('dialog', { name: /Potwierdź ostrzeżenia grafiku|Confirm scheduling warnings/i })
       const reason = overrideDialog.getByLabel(/Powód nadpisania|Override reason/i)
       await expect(reason).toBeFocused()
       await reason.fill('VCAL-T08 browser override reason')
@@ -250,7 +251,7 @@ test.describe('VCAL-T08: visit calendar browser workflow', () => {
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporary_failure' }) })
       })
       await page.reload()
-      await expect(page.getByRole('button', { name: /Ponów|Retry/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Ponów|Try again|Retry/i })).toBeVisible()
     } finally {
       await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
     }

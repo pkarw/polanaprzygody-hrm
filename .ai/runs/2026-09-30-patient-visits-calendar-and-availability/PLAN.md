@@ -22,6 +22,7 @@
 | 2 | 2.3 | Deliver the ScheduleView calendar, filters, navigation, and list links | inline | done | 75c3bf3 |
 | 2 | 2.4 | Complete VCAL-T01–T10 integration and browser coverage | dispatch | done | 3d73a6b |
 | 2 | 2.5-review-fix | Fix independent Phase 2 review findings before runtime verification | inline | done | 4cd23af |
+| 2 | 2.6-runtime-fix | Correct issues exposed by the live Phase 2 browser and API checkpoint | inline | done | fb5e598 |
 
 ## Goal
 

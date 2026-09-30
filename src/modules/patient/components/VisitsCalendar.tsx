@@ -153,7 +153,6 @@ export function VisitsCalendar() {
   const scopeVersion = useOrganizationScopeVersion()
   const queryClient = useQueryClient()
   const access = usePatientVisitAccess()
-  const calendarRootRef = React.useRef<HTMLDivElement | null>(null)
   const [state, setState] = React.useState<CalendarState>(() => initialState(new URLSearchParams(searchString)))
   const [dialog, setDialog] = React.useState<VisitCalendarDialogState | null>(null)
   const range = React.useMemo(() => apiRange(state.range, state.timeZone), [state.range, state.timeZone])
@@ -233,37 +232,8 @@ export function VisitsCalendar() {
         metadata: { visitId: visit.id, itemType: 'visit' },
       }
     })
-    const lanes = query.data.lanes.flatMap((lane) => lane.windows.map((window): ScheduleItem => ({
-      id: `lane:${window.id}`,
-      kind: window.kind,
-      title: window.kind === 'availability'
-        ? t('patient.visits.calendar.availableLane', undefined, { name: lane.subjectName })
-        : window.reasonLabel || t('patient.visits.calendar.unavailableLane', undefined, { name: lane.subjectName }),
-      startsAt: displayInstant(window.from, state.timeZone),
-      endsAt: displayInstant(window.to, state.timeZone),
-      subjectType: lane.subjectType,
-      subjectId: lane.subjectId,
-      metadata: { itemType: 'lane' },
-    })))
-    return [...lanes, ...visits]
+    return visits
   }, [query.data, state.timeZone, t])
-
-  React.useEffect(() => {
-    const root = calendarRootRef.current
-    if (!root) return
-    const makeLanesDecorative = () => {
-      root.querySelectorAll<HTMLElement>('.schedule-event-availability, .schedule-event-exception')
-        .forEach((element) => {
-          element.tabIndex = -1
-          element.setAttribute('aria-hidden', 'true')
-          element.setAttribute('role', 'presentation')
-        })
-    }
-    makeLanesDecorative()
-    const observer = new MutationObserver(makeLanesDecorative)
-    observer.observe(root, { childList: true, subtree: true })
-    return () => observer.disconnect()
-  }, [scheduleItems, state.view])
 
   const filterValues = React.useMemo<FilterValues>(() => ({ ...state.filters }), [state.filters])
   const invalidateVisits = React.useCallback(async () => {
@@ -420,45 +390,54 @@ export function VisitsCalendar() {
               ) : undefined}
             />
           ) : null}
-          <div ref={calendarRootRef}>
-            <style>{`.patient-visits-calendar .schedule-event-availability, .patient-visits-calendar .schedule-event-exception { pointer-events: none; opacity: 0.58; }`}</style>
-            <ScheduleView
-              className="min-w-0 patient-visits-calendar"
-              items={scheduleItems}
-              view={state.view}
-              range={state.range}
-              timezone={state.timeZone}
-              onRangeChange={(nextRange) => setState((current) => ({ ...current, range: nextRange }))}
-              onViewChange={(view) => setState((current) => ({ ...current, view }))}
-              onTimezoneChange={(timeZone) => setState((current) => ({
-                ...current,
-                timeZone: validTimeZone(timeZone),
-              }))}
-              onSlotClick={access.canManage ? openCreate : undefined}
-              onItemClick={(item) => {
-                const visitId = item.metadata?.itemType === 'visit' && typeof item.metadata.visitId === 'string'
-                  ? item.metadata.visitId
-                  : null
-                if (visitId) setDialog({ mode: 'edit', visitId })
-              }}
-            />
-          </div>
           {query.data?.lanes.length ? (
-            <section className="sr-only" aria-label={t('patient.visits.calendar.laneSummaryHeading')} data-visit-lane-summary="">
-              <h2>{t('patient.visits.calendar.laneSummaryHeading')}</h2>
-              <ul>
+            <section
+              className="space-y-2 rounded-lg border bg-muted/30 p-3"
+              aria-label={t('patient.visits.calendar.laneSummaryHeading')}
+              data-visit-availability-lanes=""
+            >
+              <h2 className="text-sm font-medium">{t('patient.visits.calendar.laneSummaryHeading')}</h2>
+              <ul className="space-y-2 text-sm">
                 {query.data.lanes.map((lane) => (
-                  <li key={`${lane.subjectType}:${lane.subjectId}`}>
-                    {t('patient.visits.calendar.laneSummary', undefined, {
-                      name: lane.subjectName,
-                      available: lane.windows.filter((window) => window.kind === 'availability').length,
-                      unavailable: lane.windows.filter((window) => window.kind === 'exception').length,
-                    })}
+                  <li key={`${lane.subjectType}:${lane.subjectId}`} className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{lane.subjectName}</span>
+                    {lane.windows.map((window) => (
+                      <span key={window.id} className="rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                        {format(displayInstant(window.from, state.timeZone), 'HH:mm')}–{format(displayInstant(window.to, state.timeZone), 'HH:mm')}
+                        {' · '}
+                        {window.kind === 'availability'
+                          ? t('patient.visits.calendar.availableLane', undefined, { name: lane.subjectName })
+                          : window.reasonLabel || t('patient.visits.calendar.unavailableLane', undefined, { name: lane.subjectName })}
+                      </span>
+                    ))}
+                    {lane.windows.length === 0 ? (
+                      <span className="text-muted-foreground">{t('patient.visits.calendar.noScheduleTitle')}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             </section>
           ) : null}
+          <ScheduleView
+            className="min-w-0 patient-visits-calendar"
+            items={scheduleItems}
+            view={state.view}
+            range={state.range}
+            timezone={state.timeZone}
+            onRangeChange={(nextRange) => setState((current) => ({ ...current, range: nextRange }))}
+            onViewChange={(view) => setState((current) => ({ ...current, view }))}
+            onTimezoneChange={(timeZone) => setState((current) => ({
+              ...current,
+              timeZone: validTimeZone(timeZone),
+            }))}
+            onSlotClick={access.canManage ? openCreate : undefined}
+            onItemClick={(item) => {
+              const visitId = item.metadata?.itemType === 'visit' && typeof item.metadata.visitId === 'string'
+                ? item.metadata.visitId
+                : null
+              if (visitId) setDialog({ mode: 'edit', visitId })
+            }}
+          />
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground" aria-live="polite">
             <span>{t('patient.visits.calendar.count', undefined, { count: query.data?.items.length ?? 0 })}</span>
             <div className="flex flex-wrap items-center gap-2" aria-label={t('patient.visits.calendar.legend')}>

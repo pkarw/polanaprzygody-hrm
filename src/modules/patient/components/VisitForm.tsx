@@ -525,39 +525,6 @@ export function VisitDetailForm({
       successRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.updated'))}&type=success`}
       deleteRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.deleted'))}&type=success`}
       deleteVisible={!readOnly && !record.isSettled}
-      extraActions={embedded && !readOnly && !record.isSettled ? (
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={isDeleting}
-          data-visit-dialog-delete=""
-          onClick={async () => {
-            const approved = await confirm({
-              title: t('patient.visits.confirm.delete.title'),
-              description: t('patient.visits.confirm.delete.body'),
-              variant: 'destructive',
-            })
-            if (!approved) return
-            setIsDeleting(true)
-            try {
-              await withScopedApiRequestHeaders(
-                buildOptimisticLockHeader(record.updatedAt),
-                () => deleteCrud('patient/visits', record.id),
-              )
-              flash(t('patient.visits.flash.deleted'), 'success')
-              await onSaved?.()
-            } catch (error) {
-              if (!surfaceRecordConflict(error, t, { onRefresh: () => { void query.refetch() } })) {
-                flash(error instanceof Error ? error.message : t('patient.errors.unexpected'), 'error')
-              }
-            } finally {
-              setIsDeleting(false)
-            }
-          }}
-        >
-          {t('patient.visits.actions.delete')}
-        </Button>
-      ) : undefined}
       contentHeader={(
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2" aria-live="polite">
@@ -579,6 +546,40 @@ export function VisitDetailForm({
             <StatusBadge variant={record.isSettled ? 'success' : 'neutral'} appearance="light">
               {record.isSettled ? t('patient.visits.settlement.settled') : t('patient.visits.settlement.unsettled')}
             </StatusBadge>
+            {embedded && !readOnly && !record.isSettled ? (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={isDeleting}
+                data-visit-dialog-delete=""
+                onClick={async () => {
+                  const approved = await confirm({
+                    title: t('patient.visits.confirm.delete.title'),
+                    description: t('patient.visits.confirm.delete.body'),
+                    variant: 'destructive',
+                  })
+                  if (!approved) return
+                  setIsDeleting(true)
+                  try {
+                    await withScopedApiRequestHeaders(
+                      buildOptimisticLockHeader(record.updatedAt),
+                      () => deleteCrud('patient/visits', record.id),
+                    )
+                    flash(t('patient.visits.flash.deleted'), 'success')
+                    await onSaved?.()
+                  } catch (error) {
+                    if (!surfaceRecordConflict(error, t, { onRefresh: () => { void query.refetch() } })) {
+                      flash(error instanceof Error ? error.message : t('patient.errors.unexpected'), 'error')
+                    }
+                  } finally {
+                    setIsDeleting(false)
+                  }
+                }}
+              >
+                {t('patient.visits.actions.delete')}
+              </Button>
+            ) : null}
           </div>
           <VisitConflictOverrideAudit visit={record} />
           <VisitLifecycleActions
