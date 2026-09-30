@@ -21,7 +21,7 @@ type AvailabilityRule = {
   reasonValue: string | null
 }
 
-type PlannerAvailabilityService = {
+export type PlannerAvailabilityService = {
   getMergedAvailabilityWindows(params: {
     rules: Array<{
       id?: string
@@ -98,7 +98,7 @@ export function createPatientAvailabilityService(
     subjectIds: string[],
   ): Promise<AvailabilityRule[]> {
     if (subjectIds.length === 0) return []
-    const { items } = await queryEngine.query<Record<string, unknown>>(
+    const result = await queryEngine.query<Record<string, unknown>>(
       'planner:planner_availability_rule',
       {
         fields: [
@@ -117,7 +117,27 @@ export function createPatientAvailabilityService(
         organizationId: scope.organizationId,
       },
     )
-    return items.map(toRule).filter((rule): rule is AvailabilityRule => rule !== null)
+    if (result.total > result.items.length) {
+      throw new Error('[internal] Availability rule limit exceeded')
+    }
+    return result.items.map(toRule).filter((rule): rule is AvailabilityRule => rule !== null)
+  }
+
+  async function readMemberRuleSetId(scope: PatientReferenceScope, id: string): Promise<string | null> {
+    const { items } = await queryEngine.query<Record<string, unknown>>(
+      'staff:staff_team_member',
+      {
+        fields: ['id', 'availability_rule_set_id'],
+        filters: { id },
+        page: { page: 1, pageSize: 1 },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+      },
+    )
+    const row = items[0]
+    return row && readText(row, 'id') === id
+      ? readNullableText(row, 'availability_rule_set_id')
+      : null
   }
 
   async function readResource(
@@ -245,6 +265,9 @@ export function createPatientAvailabilityService(
       }))
     },
     async getSubjectAvailability(query) {
+      const memberRuleSetId = query.teamMember
+        ? await readMemberRuleSetId(query.scope, query.teamMember.id)
+        : null
       let resourceState: { isActive: boolean; ruleSetId: string | null } | null = null
       if (query.resource) {
         resourceState = await readResource(query.scope, query.resource.id)
@@ -263,7 +286,8 @@ export function createPatientAvailabilityService(
       }
 
       const directIds = [query.teamMember?.id, query.resource?.id].filter((id): id is string => Boolean(id))
-      const ruleSetIds = resourceState?.ruleSetId ? [resourceState.ruleSetId] : []
+      const ruleSetIds = Array.from(new Set([memberRuleSetId, resourceState?.ruleSetId]
+        .filter((id): id is string => Boolean(id))))
       try {
         const rules = await queryRules(query.scope, [...directIds, ...ruleSetIds])
         return [
@@ -272,7 +296,7 @@ export function createPatientAvailabilityService(
             query.teamMember.id,
             query.teamMember.name,
             rules.filter((rule) => rule.subjectType === 'member' && rule.subjectId === query.teamMember?.id),
-            [],
+            rules.filter((rule) => rule.subjectType === 'ruleset' && rule.subjectId === memberRuleSetId),
             query,
             undefined,
             query.teamMember.exposeReason,

@@ -15,6 +15,14 @@ function queryResult(items: Record<string, unknown>[]) {
 }
 
 describe('patientAvailabilityService', () => {
+  it('keeps CLASSIC injection parameter names stable', () => {
+    const source = createPatientAvailabilityService.toString()
+    const params = source.slice(source.indexOf('(') + 1, source.indexOf(')'))
+      .split(',')
+      .map((value) => value.replace(/:.*$/, '').trim())
+    expect(params.slice(0, 2)).toEqual(['em', 'queryEngine'])
+  })
+
   it('uses scoped QueryEngine reads and overlays a direct leave on ruleset availability', async () => {
     const query = jest.fn(async (entityId: string, _options: unknown) => entityId === 'resources:resources_resource'
       ? queryResult([{

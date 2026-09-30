@@ -72,6 +72,10 @@ const VISIT_PROTECTED_KEYS = [
   'statusChangedByUserId',
   'statusReason',
   'settlementReason',
+  'conflictOverrideReason',
+  'conflictOverrideAt',
+  'conflictOverrideByUserId',
+  'conflictOverrideCodes',
 ] as const
 
 type VisitRow = {
