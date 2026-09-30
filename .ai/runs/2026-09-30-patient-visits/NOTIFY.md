@@ -20,3 +20,31 @@
 - Blocker: `yarn test:integration:ephemeral VIS-T --screenshots` cannot provision its
   isolated environment because Docker CLI is absent. Development continues per the
   non-blocking UI-verification contract; the real integration gate remains pending.
+
+## 2026-09-30T15:47:49Z — Step 2.4 delegated coverage landed
+
+- Delegation: a subagent edited only `VIS-T08-ui-states.spec.ts`; the parent validated
+  and landed its five browser scenarios with the rest of Step 2.4 in `6dceaf4`.
+- Decision: the installed `audit_logs:action_log` encryption map is the approved protected
+  snapshot seam; sanitizing command snapshots would break undo, so executable coverage pins
+  encrypted payload/snapshot fields while events remain identifier-only.
+
+## 2026-09-30T16:01:00Z — independent review approved after fix
+
+- Review found two defects: timestamp reconstruction lost sub-minute precision and a test
+  asserted fields absent from the mutation response contract.
+- Both were fixed and pushed as Step 2.5 (`3a00ec5`); the independent re-review approved it
+  with no remaining actionable finding.
+
+## 2026-09-30T16:06:36Z — checkpoint 2 and final gate environment-blocked
+
+- The configured gate passed: generate, typecheck, lint without errors, DS check, all 276
+  unit/component tests, and the optimized production build.
+- Blocker: the full ephemeral VIS suite cannot start because Docker CLI is unavailable.
+- Skipped UI proof: Phase 2 screenshot capture cannot start because Chromium is missing
+  `libnspr4.so` and other runtime libraries; no screenshot is claimed or fabricated.
+- Important incident: an earlier `yarn dev` probe completed its automatic local migration
+  phase before interruption. The user was informed; no destructive rollback was attempted,
+  and subsequent validation did not use the local DB as integration evidence.
+- Decision: PR #3 stays draft with `Status: in-progress`; resume at the required integration
+  and screenshot gate when the environment prerequisites become available.
