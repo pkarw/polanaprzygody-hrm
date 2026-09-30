@@ -1,6 +1,7 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { tryGetModules } from '@open-mercato/shared/lib/modules/registry'
+import { createLogger } from '@open-mercato/shared/lib/logger'
 import { PatientVisit } from '../data/entities'
 import type { PatientReferenceScope } from './patientReferenceService'
 import type {
@@ -9,6 +10,8 @@ import type {
   VisitConflictSubjectType,
   VisitSubjectAvailability,
 } from './visitConflicts'
+
+const logger = createLogger('patient').child({ component: 'availability' })
 
 type AvailabilityRule = {
   id: string
@@ -272,6 +275,7 @@ export function createPatientAvailabilityService(
           memberRuleSetId = await readMemberRuleSetId(query.scope, query.teamMember.id)
         } catch {
           memberRuleSetUnknown = true
+          logger.warn('Availability reference read degraded', { failureClass: 'member_ruleset_read' })
         }
       }
       let resourceState: { isActive: boolean; ruleSetId: string | null } | null = null
@@ -281,6 +285,7 @@ export function createPatientAvailabilityService(
           resourceState = await readResource(query.scope, query.resource.id)
         } catch {
           resourceStateUnknown = true
+          logger.warn('Availability reference read degraded', { failureClass: 'resource_state_read' })
         }
       }
       if (!plannerEnabled() || !query.plannerAvailabilityService) {
@@ -337,6 +342,7 @@ export function createPatientAvailabilityService(
               )] : []),
         ]
       } catch {
+        logger.warn('Availability rules read degraded', { failureClass: 'planner_rules_read' })
         return [
           ...(query.teamMember ? [mergeSubject(
             'member', query.teamMember.id, query.teamMember.name, [], [],

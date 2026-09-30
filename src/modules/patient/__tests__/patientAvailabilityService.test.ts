@@ -1,4 +1,8 @@
 import { describe, expect, it, jest } from '@jest/globals'
+import {
+  registerLoggerExtension,
+  type LoggerExtensionRecord,
+} from '@open-mercato/shared/lib/logger'
 import { createPatientAvailabilityService } from '../lib/patientAvailabilityService'
 
 const scope = { tenantId: 'tenant-1', organizationId: 'org-1' }
@@ -142,6 +146,42 @@ describe('patientAvailabilityService', () => {
     })
     expect(result).toMatchObject({ subjectType: 'resource', unknown: true, hasSchedule: false })
     expect(result?.isActive).toBeUndefined()
+  })
+
+  it('logs only sanitized failure classes for degraded availability reads', async () => {
+    const records: LoggerExtensionRecord[] = []
+    const releaseLogger = registerLoggerExtension({ emit: (record) => records.push(record) })
+    const sensitiveFailure = 'patient-sensitive database detail'
+    const query = jest.fn(async (entityId: string, _options: unknown) => {
+      if (entityId === 'staff:staff_team_member') throw new Error(sensitiveFailure)
+      if (entityId === 'resources:resources_resource') throw new Error(sensitiveFailure)
+      throw new Error(sensitiveFailure)
+    })
+    try {
+      const service = createPatientAvailabilityService({ find: jest.fn() } as never, { query } as never)
+      const result = await service.getSubjectAvailability({
+        scope,
+        range,
+        teamMember: { id: memberId, name: 'Sensitive member name' },
+        resource: { id: resourceId, name: 'Sensitive resource name' },
+        plannerAvailabilityService: { getMergedAvailabilityWindows: () => [] },
+      })
+      expect(result).toHaveLength(2)
+    } finally {
+      releaseLogger()
+    }
+
+    expect(records.map((record) => record.fields.failureClass)).toEqual([
+      'member_ruleset_read',
+      'resource_state_read',
+      'planner_rules_read',
+    ])
+    const serialized = JSON.stringify(records)
+    expect(serialized).not.toContain(memberId)
+    expect(serialized).not.toContain(resourceId)
+    expect(serialized).not.toContain('Sensitive member name')
+    expect(serialized).not.toContain('Sensitive resource name')
+    expect(serialized).not.toContain(sensitiveFailure)
   })
 
   it('keeps the installed planner merger as the DST oracle', async () => {

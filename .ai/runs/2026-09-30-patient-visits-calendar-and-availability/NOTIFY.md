@@ -82,3 +82,8 @@
 
 - The independent re-review found that grid bands were correctly hidden from assistive technology, but their text alternative exposed only times and could not distinguish windows on different dates.
 - Decision: each lane-summary window now exposes a locale- and timezone-aware date-and-time range; browser coverage uses two dates and requires both distinct accessible dates.
+
+## 2026-09-30T22:38:00Z — final review degradation logging fix
+
+- The independent re-review found that intentional availability degradation was not represented in technical logs.
+- Decision: emit one warning containing only a stable degraded-read class for member, resource, or planner failures; the exception, subject identifiers, names, and clinical data are never logged. A runtime logger-extension test proves the record is PII-free.
