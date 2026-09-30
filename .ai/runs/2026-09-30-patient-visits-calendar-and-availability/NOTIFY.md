@@ -32,3 +32,8 @@
 - Full patient integration first pass completed with 93 passed, 4 expected host-capability skips, and one failed VIS-T06 concurrent idempotency assertion.
 - Root cause: after availability enforcement was added, the serialized loser could observe the winner as a blocking overlap before reaching the unique index, bypassing the existing unique-violation replay recovery.
 - Decision: recover an exact committed idempotent replay after expected 409/422 contention as well as after a unique-index race; infrastructure and side-effect failures remain visible.
+
+## 2026-09-30T21:23:42Z — retry fix independently reviewed
+
+- Delegation: a read-only subagent reproduced the live race as HTTP 201 + 422 and independently confirmed that conflict evaluation now precedes the unique-index recovery path.
+- Review decision: narrow replay recovery to the two availability-decision errors (`visit_conflict_blocking` and `visit_conflict_unacknowledged`) plus the existing unique-index race, so unrelated 409/422 and post-commit failures cannot be hidden.

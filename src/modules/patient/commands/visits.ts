@@ -856,10 +856,12 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       // unique index: both requests miss the optimistic replay read, the first commits,
       // and the second then sees that same visit as an overlap after the patient lock.
       // In either race shape, an identical committed request is the authoritative result.
-      // Keep infrastructure/side-effect failures visible; only expected contention and
-      // validation failures are eligible for the replay recovery.
+      // Keep unrelated validation, infrastructure and side-effect failures visible;
+      // only the two errors emitted by availability conflict evaluation are eligible.
       const mayBeConcurrentReplay = error instanceof UniqueConstraintViolationException || (
-        isCrudHttpError(error) && (error.status === 409 || error.status === 422)
+        isCrudHttpError(error) &&
+        error.status === 422 &&
+        (error.body.error === 'visit_conflict_blocking' || error.body.error === 'visit_conflict_unacknowledged')
       )
       if (mayBeConcurrentReplay) {
         const raced = await resolveIdempotentVisit(
