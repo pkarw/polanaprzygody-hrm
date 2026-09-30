@@ -464,6 +464,22 @@ export const patientVisitConflictOverrideSchema = z.object({
   reason: z.string().trim().min(1).max(2_000),
 }).strict()
 
+export const patientVisitAvailabilityCheckQuerySchema = z.object({
+  teamMemberId: z.string().uuid(),
+  startsAt: patientVisitInstantSchema,
+  endsAt: patientVisitInstantSchema.optional(),
+  resourceId: z.string().uuid().optional(),
+  excludeVisitId: z.string().uuid().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.endsAt && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endsAt'],
+      message: 'The visit end must be later than its start',
+    })
+  }
+})
+
 export const patientVisitCreateSchema = z
   .object({
     ...visitScheduleFields,

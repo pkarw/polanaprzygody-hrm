@@ -5,6 +5,7 @@ import {
   createPagedListResponseSchema as createSharedPagedListResponseSchema,
   type CrudOpenApiOptions,
 } from '@open-mercato/shared/lib/openapi/crud'
+import { VISIT_CONFLICT_CODES } from '../lib/visitConflicts'
 
 export const patientTag = 'Patients'
 
@@ -15,6 +16,25 @@ export const patientErrorSchema = z
   .passthrough()
 
 export const patientOkSchema = z.object({ ok: z.literal(true) })
+
+export const patientVisitConflictSchema = z.object({
+  code: z.enum(VISIT_CONFLICT_CODES),
+  severity: z.enum(['blocking', 'warning', 'info']),
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+  from: z.string(),
+  to: z.string().nullable(),
+  reasonLabel: z.string().optional(),
+  conflictingVisitId: z.string().uuid().optional(),
+  signature: z.string().regex(/^[a-f0-9]{64}$/),
+})
+
+export const patientVisitAvailabilityCheckResponseSchema = z.object({
+  conflicts: z.array(patientVisitConflictSchema),
+  worstSeverity: z.enum(['blocking', 'warning', 'info']).nullable(),
+  checkedAt: z.string(),
+})
 
 export const patientCreatedSchema = z.object({
   id: z.string().uuid(),
