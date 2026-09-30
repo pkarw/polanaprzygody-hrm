@@ -11,7 +11,7 @@
 
 | Phase | Status | Tracking |
 |---|---|---|
-| VCAL-1 — kontrola dostępności | in progress | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/PLAN.md` |
+| VCAL-1 — kontrola dostępności | implemented; checkpoint passed | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/checkpoint-1-checks.md` |
 | VCAL-2 — kalendarz | planned | `.ai/runs/2026-09-30-patient-visits-calendar-and-availability/PLAN.md` |
 
 ## TLDR
@@ -591,3 +591,4 @@ Dodatkowo, bez osobnego pytania: VCAL zakłada dostarczoną fazę VIS-1 i **nie*
 | 2026-09-30 | Szkielet VCAL: TLDR, problem, miary, mapa reuse z ustaleniem, że dostępność ma już silnik w `planner` + `staff` + `resources`; brama Open Questions Q1–Q4 |
 | 2026-09-30 | Run autonomiczny: brama rozstrzygnięta (jedna specyfikacja z dwiema fazami; dwie wagi konfliktu; reguły `planner` + własne wizyty; `ScheduleView`); pełny dokument — macierz konfliktów, kontrakt nadpisania z sygnaturami, pola audytu i indeksy, dwie trasy API, kontrakty UI, dziesięć testów integracyjnych, fazy VCAL-1/VCAL-2, traceability, rollout, ryzyka i kryteria akceptacji |
 | 2026-09-30 | Założenia Q1–Q4 potwierdzone przez jawne zlecenie pełnej autonomicznej implementacji; status zmieniony na Ready for implementation i powiązany z runem/PR #6 |
+| 2026-09-30 | VCAL-1 zaimplementowana i potwierdzona checkpointem: kontrola w komendach i formularzu VIS, audyt nadpisania, produkcyjny build, migracja na dedykowanej bazie, testy przeglądarkowe i cztery screenshoty w PR #6 |
