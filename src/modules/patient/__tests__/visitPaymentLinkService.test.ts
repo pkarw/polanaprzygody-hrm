@@ -26,6 +26,7 @@ type HarnessOptions = {
 function createHarness(options: HarnessOptions = {}) {
   const visit = {
     id: 'visit-1',
+    updatedAt: '2026-10-01T09:00:00.000Z',
     services: options.services ?? [{ productId: 'product-1', title: 'Terapia' }],
     paymentLinkId: options.paymentLinkId ?? null,
     paymentLinkSlug: options.paymentLinkSlug ?? null,
@@ -88,6 +89,10 @@ function createHarness(options: HarnessOptions = {}) {
       }
       links.push(link)
       return { id: link.id, slug: link.slug }
+    },
+    deactivateLink: async (id) => {
+      const link = links.find((candidate) => candidate.id === id)
+      if (link) link.status = 'inactive'
     },
     setVisitPaymentFields: async (_visitId, values, targetScope) => {
       writeScopes.push(targetScope)
@@ -257,6 +262,42 @@ describe('visit payment-link service', () => {
     })
     expect(harness.createInputs).toHaveLength(0)
     expect(harness.writeScopes).toHaveLength(0)
+  })
+
+  it('deactivates an unpaid link and refuses to deactivate a completed payment', async () => {
+    const unpaid = createHarness({
+      paymentLinkId: 'link-active',
+      paymentLinkSlug: 'active',
+      paymentLinkStatus: 'pending',
+    })
+    unpaid.links.push({ id: 'link-active', slug: 'active', status: 'active', visitId: 'visit-1', scope })
+
+    await expect(unpaid.service.deactivateForVisit('visit-1', scope, ctx)).resolves.toMatchObject({
+      id: 'link-active',
+      status: 'inactive',
+    })
+    expect(unpaid.links[0]?.status).toBe('inactive')
+    expect(unpaid.visit.paymentLinkStatus).toBe('inactive')
+
+    const paid = createHarness({
+      paymentLinkId: 'link-paid',
+      paymentLinkSlug: 'paid',
+      paymentLinkStatus: 'completed',
+    })
+    await expect(paid.service.deactivateForVisit('visit-1', scope, ctx)).rejects.toMatchObject({
+      code: 'visit_already_paid',
+    })
+  })
+
+  it('checks the expected visit version while holding the visit lock', async () => {
+    const harness = createHarness()
+    await expect(harness.service.ensureForVisit(
+      'visit-1',
+      scope,
+      ctx,
+      '2026-09-30T09:00:00.000Z',
+    )).rejects.toMatchObject({ status: 409 })
+    expect(harness.createInputs).toHaveLength(0)
   })
 
   it('keeps link lookup and writes inside the exact trusted scope', async () => {

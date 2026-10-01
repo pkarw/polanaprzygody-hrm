@@ -305,6 +305,25 @@ export const patientVisitLifecycleResultSchema = patientVisitVersionedResultSche
   settledAt: z.string().nullable(),
 })
 
+export const patientVisitPaymentLinkSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  url: z.string().url(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled', 'expired', 'inactive']),
+})
+
+export const patientVisitPaymentFailureSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+})
+
+export const patientVisitPaymentActionResultSchema = patientVisitLifecycleResultSchema.extend({
+  paymentLink: patientVisitPaymentLinkSchema.nullable(),
+  paymentLinkError: patientVisitPaymentFailureSchema.nullable(),
+  paymentLinkEmailQueued: z.boolean().optional(),
+  paymentLinkEmailError: patientVisitPaymentFailureSchema.nullable().optional(),
+})
+
 export const patientVisitDeletedResultSchema = patientVisitVersionedResultSchema.extend({
   deleted: z.literal(true),
 })

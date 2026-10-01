@@ -3,6 +3,7 @@ import type { z } from 'zod'
 import type { CommandBus } from '@open-mercato/shared/lib/commands'
 import { runRouteMutationGuards } from '@open-mercato/shared/lib/crud/route-mutation-guard'
 import { PatientVisit } from '../data/entities'
+import type { VisitPaymentActionResult } from '../commands/visits'
 import { requireActorUserId, requirePatientScope, toIsoTimestamp } from './commandSupport'
 import {
   attachOperationMetadata,
@@ -18,6 +19,7 @@ type VisitActionRouteOptions<TPayload extends VisitActionPayload> = {
   commandId(payload: TPayload): string
   commandInput(payload: TPayload, visitId: string): Record<string, unknown>
   errorContext: string
+  paymentResult?: boolean
 }
 
 function requiredTimestamp(value: unknown, field: string): string {
@@ -70,22 +72,41 @@ export async function runVisitActionRoute<TPayload extends VisitActionPayload>(
       ...(guard.modifiedPayload ?? {}),
     })
     const commandBus = ctx.container.resolve('commandBus') as CommandBus
-    const { result, logEntry } = await commandBus.execute<Record<string, unknown>, PatientVisit>(
+    const { result, logEntry } = await commandBus.execute<
+      Record<string, unknown>,
+      PatientVisit | VisitPaymentActionResult
+    >(
       options.commandId(guardedPayload),
       { input: options.commandInput(guardedPayload, params.id), ctx },
     )
+    const paymentResult = options.paymentResult
+      ? result as VisitPaymentActionResult
+      : null
+    const visit = paymentResult?.visit ?? result as PatientVisit
 
     const response = NextResponse.json(
       {
         ok: true as const,
-        id: String(result.id),
-        status: result.status,
-        confirmedAt: toIsoTimestamp(result.confirmedAt),
-        isConfirmed: Boolean(result.confirmedAt),
-        confirmationApplicable: result.status === 'planned',
-        isSettled: Boolean(result.isSettled),
-        settledAt: toIsoTimestamp(result.settledAt),
-        updatedAt: requiredTimestamp(result.updatedAt, 'updatedAt'),
+        id: String(visit.id),
+        status: visit.status,
+        confirmedAt: toIsoTimestamp(visit.confirmedAt),
+        isConfirmed: Boolean(visit.confirmedAt),
+        confirmationApplicable: visit.status === 'planned',
+        isSettled: Boolean(visit.isSettled),
+        settledAt: toIsoTimestamp(visit.settledAt),
+        updatedAt: requiredTimestamp(visit.updatedAt, 'updatedAt'),
+        ...(paymentResult
+          ? {
+              paymentLink: paymentResult.paymentLink,
+              paymentLinkError: paymentResult.paymentLinkError,
+              ...(paymentResult.paymentLinkEmailQueued === undefined
+                ? {}
+                : { paymentLinkEmailQueued: paymentResult.paymentLinkEmailQueued }),
+              ...(paymentResult.paymentLinkEmailError === undefined
+                ? {}
+                : { paymentLinkEmailError: paymentResult.paymentLinkEmailError }),
+            }
+          : {}),
       },
       { status: 200 },
     )

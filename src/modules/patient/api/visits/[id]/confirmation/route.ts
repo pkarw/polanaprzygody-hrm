@@ -3,7 +3,7 @@ import { patientVisitConfirmationRequestSchema } from '../../../../data/validato
 import { runVisitActionRoute } from '../../../../lib/visitActionRoute'
 import {
   patientTag,
-  patientVisitLifecycleResultSchema,
+  patientVisitPaymentActionResultSchema,
   patientWriteErrors,
 } from '../../../openapi'
 
@@ -18,8 +18,15 @@ export async function POST(
   return await runVisitActionRoute(req, routeCtx, {
     schema: patientVisitConfirmationRequestSchema,
     commandId: (payload) => payload.confirmed ? 'patient.visits.confirm' : 'patient.visits.unconfirm',
-    commandInput: (payload, id) => ({ id, expectedUpdatedAt: payload.expectedUpdatedAt }),
+    commandInput: (payload, id) => ({
+      id,
+      expectedUpdatedAt: payload.expectedUpdatedAt,
+      ...(payload.confirmed && payload.sendPaymentLinkEmail !== undefined
+        ? { sendPaymentLinkEmail: payload.sendPaymentLinkEmail }
+        : {}),
+    }),
     errorContext: 'visits.confirmation',
+    paymentResult: true,
   })
 }
 
@@ -30,13 +37,13 @@ export const openApi: OpenApiRouteDoc = {
     POST: {
       summary: 'Confirm or unconfirm a planned visit',
       description:
-        'Sets or clears server-owned confirmation actor/time fields for a planned visit. Requires `patient.visits.manage` and the current `expectedUpdatedAt` version.',
+        'Sets or clears server-owned confirmation actor/time fields for a planned visit. Confirmation creates or reuses a payment link after commit; checkout failure is returned additively and does not roll back confirmation. Requires `patient.visits.manage` and the current `expectedUpdatedAt` version.',
       tags: [patientTag],
       requestBody: { contentType: 'application/json', schema: patientVisitConfirmationRequestSchema },
       responses: [{
         status: 200,
         description: 'The current lifecycle state and new version.',
-        schema: patientVisitLifecycleResultSchema,
+        schema: patientVisitPaymentActionResultSchema,
       }],
       errors: [...patientWriteErrors],
     },

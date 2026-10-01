@@ -8,10 +8,12 @@ const routeSupport = read('lib', 'routeSupport.ts')
 const confirmationRoute = read('api', 'visits', '[id]', 'confirmation', 'route.ts')
 const statusRoute = read('api', 'visits', '[id]', 'status', 'route.ts')
 const settlementRoute = read('api', 'visits', '[id]', 'settlement', 'route.ts')
+const paymentLinkRoute = read('api', 'visits', '[id]', 'payment-link', 'route.ts')
+const paymentLinkEmailRoute = read('api', 'visits', '[id]', 'payment-link', 'email', 'route.ts')
 
 describe('patient visit action route contracts', () => {
   it('publishes per-method auth and the conditional reopen ACL at command level', () => {
-    for (const source of [confirmationRoute, statusRoute]) {
+    for (const source of [confirmationRoute, statusRoute, paymentLinkRoute, paymentLinkEmailRoute]) {
       expect(source).toContain("requireFeatures: ['patient.visits.manage']")
     }
     expect(settlementRoute).toContain("requireFeatures: ['patient.visits.settle']")
@@ -19,11 +21,15 @@ describe('patient visit action route contracts', () => {
   })
 
   it('declares request, success, and complete write-error OpenAPI contracts', () => {
-    for (const source of [confirmationRoute, statusRoute, settlementRoute]) {
+    for (const source of [confirmationRoute, statusRoute, settlementRoute, paymentLinkRoute, paymentLinkEmailRoute]) {
       expect(source).toContain('requestBody: {')
-      expect(source).toContain('patientVisitLifecycleResultSchema')
       expect(source).toContain('...patientWriteErrors')
     }
+    expect(confirmationRoute).toContain('patientVisitPaymentActionResultSchema')
+    expect(paymentLinkRoute).toContain('patientVisitPaymentActionResultSchema')
+    expect(paymentLinkEmailRoute).toContain('patientVisitPaymentActionResultSchema')
+    expect(statusRoute).toContain('patientVisitLifecycleResultSchema')
+    expect(settlementRoute).toContain('patientVisitLifecycleResultSchema')
   })
 
   it('runs all mutation guards with the CRUD resource kind and reparses modifications', () => {
@@ -47,7 +53,19 @@ describe('patient visit action route contracts', () => {
     expect(confirmationRoute).toContain("payload.confirmed ? 'patient.visits.confirm' : 'patient.visits.unconfirm'")
     expect(statusRoute).toContain("commandId: () => 'patient.visits.transition'")
     expect(settlementRoute).toContain("payload.isSettled ? 'patient.visits.settle' : 'patient.visits.unsettle'")
+    expect(paymentLinkRoute).toContain("commandId: () => 'patient.visits.ensurePaymentLink'")
+    expect(paymentLinkEmailRoute).toContain("commandId: () => 'patient.visits.sendPaymentLinkEmail'")
     expect(routeSupport).toContain('err instanceof ZodError')
     expect(routeSupport).toContain('{ status: 400 }')
+  })
+
+  it('serializes payment additions only for routes that opt into the structured result', () => {
+    expect(routeHelper).toContain('options.paymentResult')
+    expect(routeHelper).toContain('paymentLink: paymentResult.paymentLink')
+    expect(confirmationRoute).toContain('paymentResult: true')
+    expect(paymentLinkRoute).toContain('paymentResult: true')
+    expect(paymentLinkEmailRoute).toContain('paymentResult: true')
+    expect(statusRoute).not.toContain('paymentResult: true')
+    expect(settlementRoute).not.toContain('paymentResult: true')
   })
 })

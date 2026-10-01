@@ -2,12 +2,17 @@ import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { commandRegistry, type CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { Patient, PatientVisit } from '../data/entities'
 import { emitPatientEvent } from '../events'
 
 jest.mock('@open-mercato/shared/lib/encryption/find', () => ({
   findOneWithDecryption: jest.fn(),
   findWithDecryption: jest.fn(),
+}))
+
+jest.mock('@open-mercato/shared/lib/crud/custom-fields', () => ({
+  loadCustomFieldValues: jest.fn(async () => ({})),
 }))
 
 jest.mock('../events', () => ({
@@ -40,6 +45,7 @@ type Harness = {
 function createHarness(
   overrides: Partial<PatientVisit> = {},
   grantedFeatures: string[] | null = null,
+  extraDependencies: Record<string, unknown> = {},
 ): Harness {
   const initialUpdatedAt = new Date('2026-09-30T09:00:00.000Z')
   const patient = {
@@ -112,6 +118,7 @@ function createHarness(
   ) => Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, `enc:${String(value)}`])))
   const markOrmEntityChange = jest.fn()
   const resolve = (token: string) => {
+    if (Object.prototype.hasOwnProperty.call(extraDependencies, token)) return extraDependencies[token]
     if (token === 'em') return em
     if (token === 'rbacService') return { userHasAllFeatures }
     if (token === 'tenantEncryptionService') return { encryptEntityPayload }
@@ -146,6 +153,7 @@ describe('patient visit lifecycle command behavior', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+    jest.mocked(loadCustomFieldValues).mockResolvedValue({})
   })
 
   it('confirms and unconfirms only a planned visit with server actor/time and one event each', async () => {
@@ -189,6 +197,78 @@ describe('patient visit lifecycle command behavior', () => {
       body: { code: 'visit_confirmation_unchanged' },
     })
     expect(emitPatientEvent).toHaveBeenCalledTimes(2)
+  })
+
+  it('blocks unconfirm before mutation when the visit payment is completed', async () => {
+    const harness = createHarness({
+      confirmedAt: new Date('2026-09-30T09:05:00.000Z'),
+      confirmedByUserId: ids.actor,
+    })
+    jest.mocked(loadCustomFieldValues).mockResolvedValue({
+      [ids.visit]: { cf_payment_link_status: 'completed' },
+    })
+
+    await expect(execute('patient.visits.unconfirm', {
+      id: ids.visit,
+      expectedUpdatedAt: harness.visit.updatedAt.toISOString(),
+    }, harness.context)).rejects.toMatchObject({
+      status: 409,
+      body: { code: 'visit_already_paid' },
+    })
+    expect(harness.visit.confirmedAt).not.toBeNull()
+    expect(harness.commit).not.toHaveBeenCalled()
+    expect(emitPatientEvent).not.toHaveBeenCalled()
+  })
+
+  it('returns one post-commit payment link and isolates checkout failure from confirmation', async () => {
+    const paymentLink = {
+      id: 'payment-link-1',
+      slug: 'visit-payment',
+      url: 'https://payments.example.test/pay/visit-payment',
+      status: 'pending' as const,
+    }
+    const ensureForVisit = jest.fn(async (
+      _visitId: string,
+      _ctx: CommandRuntimeContext,
+      _expectedUpdatedAt?: string,
+    ) => paymentLink)
+    const successful = createHarness({}, null, {
+      visitPaymentLinkService: { ensureForVisit, deactivateForVisit: jest.fn() },
+    })
+
+    const result = await execute('patient.visits.confirm', {
+      id: ids.visit,
+      expectedUpdatedAt: successful.visit.updatedAt.toISOString(),
+    }, successful.context) as { visit: PatientVisit; paymentLink: typeof paymentLink; paymentLinkError: null }
+    expect(result.visit.confirmedAt).toBeInstanceOf(Date)
+    expect(result.paymentLink).toEqual(paymentLink)
+    expect(result.paymentLinkError).toBeNull()
+    expect(ensureForVisit).toHaveBeenCalledWith(
+      ids.visit,
+      successful.context,
+      successful.visit.updatedAt.toISOString(),
+    )
+
+    const failed = createHarness({}, null, {
+      visitPaymentLinkService: {
+        ensureForVisit: jest.fn(async () => {
+          throw new Error('provider credential must not leak')
+        }),
+        deactivateForVisit: jest.fn(),
+      },
+    })
+    const failedResult = await execute('patient.visits.confirm', {
+      id: ids.visit,
+      expectedUpdatedAt: failed.visit.updatedAt.toISOString(),
+    }, failed.context) as { visit: PatientVisit; paymentLink: null; paymentLinkError: { code: string; message: string } }
+    expect(failedResult.visit.confirmedAt).toBeInstanceOf(Date)
+    expect(failedResult.paymentLink).toBeNull()
+    expect(failedResult.paymentLinkError).toEqual({
+      code: 'payment_link_failed',
+      message: 'The payment link operation failed',
+    })
+    expect(failedResult.paymentLinkError.message).not.toContain('credential')
+    expect(failed.commit).toHaveBeenCalledTimes(1)
   })
 
   it('closes and reopens while preserving settlement and clearing confirmation', async () => {

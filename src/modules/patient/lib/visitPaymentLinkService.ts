@@ -8,6 +8,7 @@ import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { getSecurityEmailBaseUrl } from '@open-mercato/shared/lib/url'
 import { PatientVisit, PatientVisitService } from '../data/entities'
 import {
+  assertExpectedVersion,
   isLockWaitTimeout,
   requirePatientScope,
   resolvePatientLockWaitTimeoutMs,
@@ -38,6 +39,7 @@ type VisitServiceSnapshot = {
 
 type LockedVisitSnapshot = {
   id: string
+  updatedAt: string
   services: VisitServiceSnapshot[]
   paymentLinkId: string | null
   paymentLinkSlug: string | null
@@ -75,6 +77,7 @@ export type VisitPaymentLinkDependencies = {
   findMultiServiceTemplate(scope: PatientScope): Promise<TemplateRecord[]>
   resolveServicePrices(services: VisitServiceSnapshot[], scope: PatientScope): Promise<ResolvedServicePrice[]>
   createLink(input: Record<string, unknown>, ctx: CommandRuntimeContext): Promise<{ id: string; slug: string }>
+  deactivateLink(id: string, ctx: CommandRuntimeContext): Promise<void>
   setVisitPaymentFields(
     visitId: string,
     values: Record<string, string | null>,
@@ -94,7 +97,12 @@ export class VisitPaymentLinkError extends Error {
 }
 
 export type VisitPaymentLinkService = {
-  ensureForVisit(visitId: string, ctx: CommandRuntimeContext): Promise<VisitPaymentLink>
+  ensureForVisit(
+    visitId: string,
+    ctx: CommandRuntimeContext,
+    expectedUpdatedAt?: string,
+  ): Promise<VisitPaymentLink>
+  deactivateForVisit(visitId: string, ctx: CommandRuntimeContext): Promise<VisitPaymentLink | null>
 }
 
 function readString(record: Record<string, unknown>, ...keys: string[]): string | null {
@@ -165,15 +173,28 @@ function requireOneTemplate(templates: TemplateRecord[], code: string): Template
 export function createVisitPaymentLinkServiceCore(
   dependencies: VisitPaymentLinkDependencies,
 ): {
-  ensureForVisit(visitId: string, scope: PatientScope, ctx: CommandRuntimeContext): Promise<VisitPaymentLink>
+  ensureForVisit(
+    visitId: string,
+    scope: PatientScope,
+    ctx: CommandRuntimeContext,
+    expectedUpdatedAt?: string,
+  ): Promise<VisitPaymentLink>
+  deactivateForVisit(
+    visitId: string,
+    scope: PatientScope,
+    ctx: CommandRuntimeContext,
+  ): Promise<VisitPaymentLink | null>
 } {
   return {
-    async ensureForVisit(visitId, scope, ctx) {
+    async ensureForVisit(visitId, scope, ctx, expectedUpdatedAt) {
       if (!visitId || !scope.tenantId || !scope.organizationId) {
         throw new VisitPaymentLinkError('payment_scope_required', 'Visit payment links require tenant and organization scope')
       }
 
       return dependencies.withLockedVisit(visitId, scope, async (visit) => {
+        if (expectedUpdatedAt) {
+          assertExpectedVersion(expectedUpdatedAt, new Date(visit.updatedAt), PATIENT_VISIT_ENTITY_ID)
+        }
         if (visit.paymentLinkStatus === 'completed' || visit.paymentReceivedAt) {
           if (!visit.paymentLinkId) {
             throw new VisitPaymentLinkError(
@@ -270,6 +291,28 @@ export function createVisitPaymentLinkServiceCore(
           payment_link_status: 'pending',
         }, scope)
         return linkResult(created, 'pending', dependencies.resolveTrustedOrigin)
+      })
+    },
+    async deactivateForVisit(visitId, scope, ctx) {
+      if (!visitId || !scope.tenantId || !scope.organizationId) {
+        throw new VisitPaymentLinkError('payment_scope_required', 'Visit payment links require tenant and organization scope')
+      }
+
+      return dependencies.withLockedVisit(visitId, scope, async (visit) => {
+        if (visit.paymentLinkStatus === 'completed' || visit.paymentReceivedAt) {
+          throw new VisitPaymentLinkError('visit_already_paid', 'A paid visit cannot be unconfirmed')
+        }
+        if (!visit.paymentLinkId) return null
+
+        const link = await dependencies.findLinkById(visit.paymentLinkId, scope)
+        if (link && link.status !== 'inactive') {
+          await dependencies.deactivateLink(link.id, ctx)
+        }
+        await dependencies.setVisitPaymentFields(visit.id, {
+          payment_link_status: 'inactive',
+        }, scope)
+        if (!link) return null
+        return linkResult(link, 'inactive', dependencies.resolveTrustedOrigin)
       })
     },
   }
@@ -383,6 +426,7 @@ function createProductionDependencies(
         const values = (custom[visitId] ?? {}) as Record<string, unknown>
         return work({
           id: visit.id,
+          updatedAt: visit.updatedAt.toISOString(),
           services: services.map((service) => ({
             productId: service.productId,
             title: service.productTitleSnapshot,
@@ -464,6 +508,18 @@ function createProductionDependencies(
       )
       return result
     },
+    async deactivateLink(id, ctx) {
+      await commandBus.execute<Record<string, unknown>, { ok: true; slug: string }>(
+        'checkout.link.update',
+        {
+          input: { id, status: 'inactive' },
+          // The caller's optimistic token belongs to the patient visit, not the
+          // installed checkout record. The visit lock above is the serialization
+          // boundary for this composed action.
+          ctx: { ...ctx, request: undefined },
+        },
+      )
+    },
     setVisitPaymentFields: (visitId, values, scope) => dataEngine.setCustomFields({
       entityId: PATIENT_VISIT_ENTITY_ID,
       recordId: visitId,
@@ -487,8 +543,11 @@ export function createVisitPaymentLinkService(
     createProductionDependencies(em, queryEngine, commandBus, dataEngine, catalogPricingService),
   )
   return {
-    ensureForVisit(visitId, ctx) {
-      return core.ensureForVisit(visitId, requirePatientScope(ctx), ctx)
+    ensureForVisit(visitId, ctx, expectedUpdatedAt) {
+      return core.ensureForVisit(visitId, requirePatientScope(ctx), ctx, expectedUpdatedAt)
+    },
+    deactivateForVisit(visitId, ctx) {
+      return core.deactivateForVisit(visitId, requirePatientScope(ctx), ctx)
     },
   }
 }
