@@ -83,3 +83,9 @@
 - Verification: focused Jest 42/42, TypeScript, scoped ESLint, two fresh `--no-examples` installations, seed read-back, and the real Chromium PBOOK/VPAY journey passed.
 - Installation proof: runtime-required catalog products, exact therapist/resource/duration mappings, nine checkout templates, public-booking identity, and both template/link/visit custom fields are created by default hooks; Stripe credentials remain an explicit external operator secret and were disposable test values only.
 - UI evidence: Chromium rendered the actual seeded service's public checkout page at a real `/pay/<slug>` URL; screenshot stored in `checkpoint-5-artifacts/fresh-install-payment-link.png` for PR publication.
+
+## 2026-10-01T20:53:51Z — final gate passed after review fixes
+
+- Full configured validation passed in order: generate, typecheck, lint (0 errors), design-system (394 files), Jest (56 suites / 493 tests), and production build.
+- A third empty database completed `mercato init --no-examples`; the full native Playwright suite then passed with 104 tests and 4 declared conditional skips across 108 cases.
+- Environment note: the Testcontainers wrapper cannot start without Docker. The isolated PostgreSQL fallback ran the same repository suite; the first fallback attempt exposed and corrected a mismatched runner `DATABASE_URL`, after which all direct-SQL and HTTP checks shared the same database.

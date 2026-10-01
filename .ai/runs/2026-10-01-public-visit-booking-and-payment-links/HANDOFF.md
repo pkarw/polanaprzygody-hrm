@@ -3,7 +3,7 @@
 **Last updated:** 2026-10-01T20:36:32Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
 **PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
-**Current phase/step:** Every implementation Step is done; final gate is next
+**Current phase/step:** Final gate passed; clean automated review is next
 **Last implementation commit:** `dd4b5d4` — `test(booking): prove fresh-install payment journey`
 
 ## What just happened
@@ -13,10 +13,11 @@
 - A second clean `mercato init --no-examples` run created eight service products, nine branded checkout templates, four therapists, exact booking mappings, and the checkout/visit custom-field definitions needed by runtime link creation.
 - Real Chromium passed booking contention and idempotent replay, staff confirmation, branded fixed-price link creation, public pay-page rendering, durable e-mail enqueue/replay, and unpaid-link deactivation.
 - Focused validation is green: 42 Jest tests, TypeScript, ESLint, and the fresh-install Playwright journey.
+- The complete final gate is green: generate, typecheck, lint, design-system, 56 Jest suites / 493 tests, production build, and 104 passing integration/browser cases with 4 declared conditional skips.
 
 ## Next concrete action
 
-- Publish checkpoint 5, run the full configured final gate, then run `om-auto-review-pr 13 --autofix` and `om-auto-qa-pr 13 --self-qa-signoff`.
+- Run `om-auto-review-pr 13 --autofix`, apply/re-gate any findings, then run `om-auto-qa-pr 13 --self-qa-signoff` and merge once GitHub checks are green.
 - When the review, UI QA, and required GitHub checks are green, mark PR #13 ready and merge it into the configured base branch.
 
 ## Blockers / open questions
@@ -25,7 +26,7 @@
 
 ## Environment caveats
 
-- The current dev server is on `127.0.0.1:3214` and uses disposable database `pbook_final_recheck` in PostgreSQL on port 55439.
+- The final-gate production server is on `127.0.0.1:3215` and uses disposable database `pbook_final_gate2` in PostgreSQL on port 55439.
 - Staged Chromium libraries are provided through `LD_LIBRARY_PATH`; keep that setting for the final QA pass.
 - Stop the server and `/tmp/pbook-checkpoint1.qczDQk/postgres` cluster after the PR is merged.
 
