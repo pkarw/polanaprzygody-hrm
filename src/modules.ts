@@ -193,6 +193,8 @@ export const enabledModules: ModuleEntry[] = [
   },
 ]
 
+enabledModules.push({ id: 'public_booking', from: '@app' })
+
 enabledModules.push({
   id: 'polana_bootstrap',
   from: '@app',

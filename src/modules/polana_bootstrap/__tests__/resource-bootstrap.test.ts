@@ -136,6 +136,7 @@ describe('Polana resource bootstrap', () => {
       expect(values.polana_room_address_street).toBe('ul. Białowieska 69B')
       expect(values.polana_room_address_postal_code).toBe('54-234')
       expect(values.polana_room_address_city).toBe('Wrocław')
+      expect(values.polana_resource_key).toBe(fixture.key)
       expect(POLANA_ROOM_ADDRESS.country).toBe('Polska')
       expect(Object.keys(values).every(isPolanaRoomFieldKey)).toBe(true)
     }

@@ -88,6 +88,7 @@ function assertScope(scope: BootstrapScope): void {
 /** Address is identical for every gabinet, so it is merged in from one place. */
 export function buildResourceCustomFieldValues(fixture: PolanaResourceFixture): ResourceCustomFieldValues {
   return {
+    polana_resource_key: fixture.key,
     polana_room_address_street: POLANA_ROOM_ADDRESS.street,
     polana_room_address_postal_code: POLANA_ROOM_ADDRESS.postalCode,
     polana_room_address_city: POLANA_ROOM_ADDRESS.city,

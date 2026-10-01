@@ -17,6 +17,7 @@ import { CommandBus, type CommandRuntimeContext } from '@open-mercato/shared/lib
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import type { CustomFieldDefinition } from '@open-mercato/shared/modules/entities'
 import { E } from '@/.mercato/generated/entities.ids.generated'
+import { PUBLIC_BOOKING_PRODUCT_FIELD_KEYS } from '../public_booking/lib/catalogBookingFields'
 import type { BootstrapScope } from './customer-bootstrap'
 import { POLANA_CATALOG_FIXTURES } from './catalog-fixtures'
 
@@ -37,13 +38,17 @@ export function isPolanaProductFieldKey(key: string): boolean {
   return PRODUCT_FIELDS.some((field) => field.key === key)
 }
 
+export function isPreservedProductFieldKey(key: string): boolean {
+  return isPolanaProductFieldKey(key) || PUBLIC_BOOKING_PRODUCT_FIELD_KEYS.has(key)
+}
+
 async function removeNonPolanaProductFields(em: EntityManager, scope: BootstrapScope): Promise<void> {
   const scopedDefinitions = await em.find(CustomFieldDef, {
     entityId: E.catalog.catalog_product,
     tenantId: scope.tenantId,
     organizationId: scope.organizationId,
   })
-  const unrelatedDefinitions = scopedDefinitions.filter((definition) => !isPolanaProductFieldKey(definition.key))
+  const unrelatedDefinitions = scopedDefinitions.filter((definition) => !isPreservedProductFieldKey(definition.key))
   const unrelatedKeys = [...new Set(unrelatedDefinitions.map((definition) => definition.key))]
   if (unrelatedKeys.length === 0) return
   await em.nativeDelete(CustomFieldValue, {
@@ -255,9 +260,16 @@ export function createCatalogBootstrapDependencies(em: EntityManager, container:
       let config = await em.findOne(CustomFieldEntityConfig, { entityId: E.catalog.catalog_product, ...scope })
       if (!config) config = em.create(CustomFieldEntityConfig, { entityId: E.catalog.catalog_product, ...scope, isActive: true, createdAt: now, updatedAt: now })
       const current = config.configJson && typeof config.configJson === 'object' ? config.configJson as Record<string, unknown> : {}
+      const currentFieldsets = Array.isArray(current.fieldsets) ? current.fieldsets : []
       config.configJson = {
         ...current,
-        fieldsets: [{ code: PRODUCT_FIELDSET, label: 'Szczegóły usług Polany Przygody' }],
+        fieldsets: [
+          ...currentFieldsets.filter((entry) => (
+            !entry || typeof entry !== 'object'
+            || (entry as { code?: unknown }).code !== PRODUCT_FIELDSET
+          )),
+          { code: PRODUCT_FIELDSET, label: 'Szczegóły usług Polany Przygody' },
+        ],
         singleFieldsetPerRecord: false,
       }
       config.isActive = true

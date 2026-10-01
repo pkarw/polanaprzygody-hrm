@@ -1,0 +1,6 @@
+{
+  "public_booking.catalog.fieldset": "Online booking",
+  "public_booking.catalog.duration": "Booking duration (minutes)",
+  "public_booking.catalog.teamMembers": "Booking therapists",
+  "public_booking.catalog.resources": "Booking rooms"
+}

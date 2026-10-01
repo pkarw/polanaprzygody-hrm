@@ -9,6 +9,10 @@ import {
   createPaymentLinkBootstrapDependencies,
   seedPolanaPaymentLinkTemplates,
 } from './payment-link-bootstrap'
+import {
+  createBookingBootstrapDependencies,
+  seedPolanaBookingDefaults,
+} from './booking-bootstrap'
 
 export const setup: ModuleSetupConfig = {
   // The workspace identity is structural, not demo data: it must land even on a
@@ -33,6 +37,10 @@ export const setup: ModuleSetupConfig = {
     await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)
     const dataEngine = ctx.container.resolve<DataEngine>('dataEngine')
     await seedPolanaTherapists(ctx.em, dataEngine, scope)
+    // Booking relations are resolved only after every owning fixture exists.
+    // Exact stable keys make a missing/ambiguous fixture fatal instead of silently
+    // assigning every therapist or room in the organization.
+    await seedPolanaBookingDefaults(createBookingBootstrapDependencies(ctx.container), scope)
   },
 }
 

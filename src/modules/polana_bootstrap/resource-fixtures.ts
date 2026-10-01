@@ -20,6 +20,7 @@ export const POLANA_ROOM_FIELDSET_DEFINITION = {
 } as const
 
 export const POLANA_ROOM_FIELDS: CustomFieldDefinition[] = [
+  { key: 'polana_resource_key', kind: 'text', label: 'Klucz zasobu Polany', formEditable: false, indexed: true, fieldset: POLANA_ROOM_FIELDSET },
   { key: 'polana_room_address_street', kind: 'text', label: 'Ulica i numer', formEditable: true, filterable: true, indexed: true, listVisible: true, fieldset: POLANA_ROOM_FIELDSET, group: { code: 'address' } },
   { key: 'polana_room_address_postal_code', kind: 'text', label: 'Kod pocztowy', formEditable: true, filterable: true, fieldset: POLANA_ROOM_FIELDSET, group: { code: 'address' } },
   { key: 'polana_room_address_city', kind: 'text', label: 'Miasto', formEditable: true, filterable: true, indexed: true, fieldset: POLANA_ROOM_FIELDSET, group: { code: 'address' } },
