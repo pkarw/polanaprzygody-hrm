@@ -19,3 +19,10 @@
 
 - PR: https://github.com/pkarw/polanaprzygody-hrm/pull/13
 - Claim: assigned to `pkarw`; labels are disabled by `.ai/agentic.config.json`, so the guarded `in-progress` label is a no-op.
+
+## 2026-10-01T14:23:10Z — subagents delegated
+
+- `a644915c`: Step 1.1 implementation — fresh-context readiness/finalization of PBOOK and VPAY; editable scope is the two specs plus the Step 1.1 PLAN row.
+- `7cf9a214`: read-only installed-contract investigation for checkout, custom fields, API keys/auth, queues, and email.
+- `37eb1cae`: read-only integration/browser/screenshot environment investigation.
+- Parallelism: three cezar children are in flight in disjoint scopes; no two may edit the same file.
