@@ -1,6 +1,7 @@
 import type { ModuleSetupConfig } from '@open-mercato/shared/modules/setup'
 import { installCustomEntitiesFromModules } from '@open-mercato/core/modules/entities/lib/install-from-ce'
 import { PATIENT_ENTITY_ID } from './ce'
+import { ensureVisitPaymentFields } from './lib/visitPaymentFields'
 
 /**
  * Setup for the `patient` module.
@@ -36,6 +37,10 @@ export const setup: ModuleSetupConfig = {
       tenantIds: [tenantId],
       includeGlobal: false,
     })
+  },
+
+  async seedDefaults({ em, tenantId, organizationId }) {
+    await ensureVisitPaymentFields(em, { tenantId, organizationId })
   },
 }
 

@@ -2,10 +2,12 @@ import { asFunction } from 'awilix'
 import type { AppContainer } from '@open-mercato/shared/lib/di/container'
 import { createPatientReferenceService } from './lib/patientReferenceService'
 import { createPatientAvailabilityService } from './lib/patientAvailabilityService'
+import { createVisitPaymentLinkService } from './lib/visitPaymentLinkService'
 
 /** DI token this module owns. Exported so callers and tests name it once. */
 export const PATIENT_REFERENCE_SERVICE = 'patientReferenceService' as const
 export const PATIENT_AVAILABILITY_SERVICE = 'patientAvailabilityService' as const
+export const VISIT_PAYMENT_LINK_SERVICE = 'visitPaymentLinkService' as const
 
 export function register(container: AppContainer) {
   container.register({
@@ -15,6 +17,7 @@ export function register(container: AppContainer) {
     // job is scoped reference resolution that would be the worst possible lifetime.
     [PATIENT_REFERENCE_SERVICE]: asFunction(createPatientReferenceService).scoped(),
     [PATIENT_AVAILABILITY_SERVICE]: asFunction(createPatientAvailabilityService).scoped(),
+    [VISIT_PAYMENT_LINK_SERVICE]: asFunction(createVisitPaymentLinkService).scoped(),
   })
 }
 
