@@ -5,7 +5,9 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { Where, WhereValue } from '@open-mercato/shared/lib/query/types'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import { getSecurityEmailBaseUrl } from '@open-mercato/shared/lib/url'
 import {
   confirmed_at,
   conflict_override_at,
@@ -47,7 +49,8 @@ import {
 } from '../../di'
 import type { PatientReferenceService } from '../../lib/patientReferenceService'
 import type { ResolvedReference } from '../../lib/patientReferenceService'
-import type { PatientVisitItem, PatientVisitServiceItem } from '../../types'
+import type { PatientVisitItem, PatientVisitPayment, PatientVisitServiceItem } from '../../types'
+import { PATIENT_VISIT_ENTITY_ID, VISIT_PAYMENT_STATUS_VALUES } from '../../lib/visitPaymentFields'
 import {
   createPatientCrudOpenApi,
   createPatientPagedListResponseSchema,
@@ -107,6 +110,38 @@ type VisitRow = {
 }
 
 type VisitItem = PatientVisitItem & { description?: string | null }
+
+function readCustomString(values: Record<string, unknown>, key: string): string | null {
+  for (const candidate of [`cf_${key}`, `cf:${key}`, key]) {
+    const value = values[candidate]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+function paymentProjection(values: Record<string, unknown>): PatientVisitPayment | null {
+  const linkId = readCustomString(values, 'payment_link_id')
+  const slug = readCustomString(values, 'payment_link_slug')
+  const status = readCustomString(values, 'payment_link_status')
+  if (!linkId || !slug || !status || !VISIT_PAYMENT_STATUS_VALUES.includes(status as typeof VISIT_PAYMENT_STATUS_VALUES[number])) {
+    return null
+  }
+  let url: string | null = null
+  let configurationError = false
+  try {
+    url = `${getSecurityEmailBaseUrl(undefined).replace(/\/$/, '')}/pay/${encodeURIComponent(slug)}`
+  } catch {
+    configurationError = true
+  }
+  return {
+    linkId,
+    slug,
+    url,
+    status: status as PatientVisitPayment['status'],
+    receivedAt: readCustomString(values, 'payment_received_at'),
+    configurationError,
+  }
+}
 
 function requiredIsoTimestamp(value: Date | string, field: string): string {
   const timestamp = toIsoTimestamp(value)
@@ -239,6 +274,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         isSettled: Boolean(item.is_settled),
         settledAt: toIsoTimestamp(item.settled_at),
         services: [],
+        payment: null,
         updatedAt: requiredIsoTimestamp(item.updated_at, 'version'),
       }
     },
@@ -256,7 +292,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const visitIds = items.map((item) => item.id)
       const patientIds = Array.from(new Set(items.map((item) => item.patientId)))
 
-      const [patients, services] = await Promise.all([
+      const [patients, services, paymentFields] = await Promise.all([
         findWithDecryption(
           em,
           Patient,
@@ -280,6 +316,13 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
           { orderBy: { visitId: 'asc', position: 'asc' } },
           { tenantId, organizationId },
         ),
+        loadCustomFieldValues({
+          em,
+          entityId: PATIENT_VISIT_ENTITY_ID,
+          recordIds: visitIds,
+          tenantIdByRecord: Object.fromEntries(visitIds.map((id) => [id, tenantId])),
+          organizationIdByRecord: Object.fromEntries(visitIds.map((id) => [id, organizationId])),
+        }),
       ])
 
       const patientNameById = new Map<string, string | null>()
@@ -319,6 +362,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       for (const item of items) {
         item.patientName = patientNameById.get(item.patientId) ?? null
         item.services = servicesByVisit.get(item.id) ?? []
+        item.payment = paymentProjection((paymentFields[item.id] ?? {}) as Record<string, unknown>)
         item.conflictOverrideByUserName = item.conflictOverrideByUserId
           ? overrideUsers.get(item.conflictOverrideByUserId)?.displayName ?? null
           : null

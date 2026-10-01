@@ -140,6 +140,15 @@ export type PatientVisitServiceItem = {
   position: number
 }
 
+export type PatientVisitPayment = {
+  linkId: string
+  slug: string
+  url: string | null
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'inactive'
+  receivedAt: string | null
+  configurationError: boolean
+}
+
 export type PatientVisitItem = {
   id: string
   patientId: string
@@ -165,6 +174,7 @@ export type PatientVisitItem = {
   isSettled: boolean
   settledAt: string | null
   services: PatientVisitServiceItem[]
+  payment: PatientVisitPayment | null
   updatedAt: string
 }
 

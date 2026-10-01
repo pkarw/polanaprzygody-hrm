@@ -41,6 +41,7 @@ import {
   type VisitPaymentLinkService,
 } from '../lib/visitPaymentLinkService'
 import { PATIENT_VISIT_ENTITY_ID } from '../lib/visitPaymentFields'
+import type { VisitPaymentLinkEmailService } from '../lib/visitPaymentEmail'
 import {
   assertExpectedVersion,
   assertPatientAcceptsNewEntries,
@@ -1537,14 +1538,6 @@ export type VisitPaymentActionResult = {
   paymentLinkError: VisitPaymentLinkFailure | null
   paymentLinkEmailQueued?: boolean
   paymentLinkEmailError?: VisitPaymentLinkFailure | null
-}
-
-type VisitPaymentLinkEmailService = {
-  enqueueForVisit(
-    visitId: string,
-    paymentLink: VisitPaymentLink,
-    ctx: CommandRuntimeContext,
-  ): Promise<void>
 }
 
 type VisitLifecycleAuditSnapshot = {

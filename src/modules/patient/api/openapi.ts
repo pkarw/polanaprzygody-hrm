@@ -248,6 +248,15 @@ export const patientVisitServiceItemSchema = z.object({
   position: z.number().int().min(0),
 })
 
+export const patientVisitPaymentSchema = z.object({
+  linkId: z.string().uuid(),
+  slug: z.string(),
+  url: z.string().url().nullable(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled', 'expired', 'inactive']),
+  receivedAt: z.string().nullable(),
+  configurationError: z.boolean(),
+})
+
 export const patientVisitListItemSchema = z.object({
   id: z.string().uuid(),
   patientId: z.string().uuid(),
@@ -270,6 +279,7 @@ export const patientVisitListItemSchema = z.object({
   isSettled: z.boolean(),
   settledAt: z.string().nullable(),
   services: z.array(patientVisitServiceItemSchema),
+  payment: patientVisitPaymentSchema.nullable(),
   updatedAt: z.string(),
   /** Present only for an explicit `?id=` detail lookup. */
   description: z.string().nullable().optional(),

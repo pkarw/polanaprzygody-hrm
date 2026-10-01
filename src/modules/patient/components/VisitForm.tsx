@@ -37,6 +37,7 @@ import {
 import { VisitServicesField, type VisitServiceSeed } from './VisitServicesField'
 import { VisitTeamMemberField } from './VisitTeamMemberField'
 import { VisitLifecycleActions } from './VisitLifecycleActions'
+import { VisitPaymentSection } from './VisitPaymentSection'
 import {
   VisitAvailabilityCheck,
   type VisitAvailabilityGateValue,
@@ -603,6 +604,14 @@ export function VisitDetailForm({
           </div>
           <VisitConflictOverrideAudit visit={record} />
           <VisitLifecycleActions
+            visit={record}
+            access={access}
+            onSaved={async () => {
+              await query.refetch()
+              await onChanged?.()
+            }}
+          />
+          <VisitPaymentSection
             visit={record}
             access={access}
             onSaved={async () => {
