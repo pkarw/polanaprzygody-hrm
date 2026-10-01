@@ -57,6 +57,12 @@ export type PublicBookingAvailabilityResult = {
   degraded?: true
 }
 
+export type ResolvedPublicBookingSlot = {
+  resourceId: string
+  startsAt: Date
+  endsAt: Date
+}
+
 type BookableProduct = {
   id: string
   title: string
@@ -422,4 +428,137 @@ export async function findPublicBookingAvailability(input: {
   } catch {
     return { slots: [], degraded: true }
   }
+}
+
+/**
+ * Revalidates one submitted slot and returns the first configured free resource.
+ * Unlike the discovery endpoint, infrastructure uncertainty is fail-closed because
+ * this result authorizes a write.
+ */
+export async function resolvePublicBookingSlot(input: {
+  em: EntityManager
+  container: AwilixContainer
+  queryEngine: QueryEngine
+  scope: PublicBookingScope
+  productId: string
+  teamMemberId: string
+  startsAt: Date
+  endsAt: Date
+  timeZone: string
+  now?: Date
+}): Promise<ResolvedPublicBookingSlot> {
+  const now = input.now ?? new Date()
+  const maxStart = new Date(now.getTime() + PUBLIC_BOOKING_MAX_DAYS * 24 * 60 * 60_000)
+  if (
+    input.timeZone !== PUBLIC_BOOKING_TIME_ZONE
+    || !Number.isFinite(input.startsAt.getTime())
+    || !Number.isFinite(input.endsAt.getTime())
+    || input.startsAt >= input.endsAt
+    || input.startsAt.getTime() < now.getTime() + PUBLIC_BOOKING_MIN_LEAD_MINUTES * 60_000
+    || input.startsAt > maxStart
+    || input.startsAt.getUTCMinutes() % PUBLIC_BOOKING_SLOT_MINUTES !== 0
+    || input.startsAt.getUTCSeconds() !== 0
+    || input.startsAt.getUTCMilliseconds() !== 0
+  ) {
+    throw new CrudHttpError(422, { error: 'The selected appointment time is outside the booking window' })
+  }
+
+  const [product] = await queryBookableProducts(input.queryEngine, input.scope, input.productId)
+  if (!product || !product.teamMemberIds.includes(input.teamMemberId)) {
+    throw new CrudHttpError(404, { error: 'Bookable service or therapist not found' })
+  }
+  if (input.endsAt.getTime() - input.startsAt.getTime() !== product.durationMinutes * 60_000) {
+    throw new CrudHttpError(422, { error: 'The selected appointment duration is invalid' })
+  }
+
+  const [therapists, resources] = await Promise.all([
+    listPublicBookingTherapists({
+      queryEngine: input.queryEngine,
+      scope: input.scope,
+      productId: input.productId,
+    }),
+    resolveActiveResources(input.queryEngine, input.scope, product.resourceIds),
+  ])
+  const therapist = therapists.find((item) => item.id === input.teamMemberId)
+  if (!therapist || resources.length === 0) {
+    throw new CrudHttpError(404, { error: 'Bookable service or therapist not found' })
+  }
+
+  const availability = input.container.resolve<PatientAvailabilityService>('patientAvailabilityService')
+  let planner: PlannerAvailabilityService
+  try {
+    planner = input.container.resolve<PlannerAvailabilityService>('plannerAvailabilityService')
+  } catch {
+    throw new CrudHttpError(503, { error: 'Public booking availability is temporarily unavailable' })
+  }
+
+  let member: VisitSubjectAvailability | undefined
+  let resourceSubjects: Array<VisitSubjectAvailability | undefined>
+  try {
+    const [memberSubjects, loadedResources] = await Promise.all([
+      availability.getSubjectAvailability({
+        scope: input.scope,
+        range: { start: input.startsAt, end: input.endsAt },
+        teamMember: { id: therapist.id, name: therapist.displayName },
+        plannerAvailabilityService: planner,
+      }),
+      Promise.all(resources.map(async (resource) => (
+        await availability.getSubjectAvailability({
+          scope: input.scope,
+          range: { start: input.startsAt, end: input.endsAt },
+          resource,
+          plannerAvailabilityService: planner,
+        })
+      )[0])),
+    ])
+    member = memberSubjects[0]
+    resourceSubjects = loadedResources
+  } catch {
+    throw new CrudHttpError(503, { error: 'Public booking availability is temporarily unavailable' })
+  }
+  if (!member || member.unknown || resourceSubjects.some((subject) => !subject || subject.unknown)) {
+    throw new CrudHttpError(503, { error: 'Public booking availability is temporarily unavailable' })
+  }
+
+  const visits = await input.em.find(PatientVisit, {
+    tenantId: input.scope.tenantId,
+    organizationId: input.scope.organizationId,
+    deletedAt: null,
+    status: { $ne: 'cancelled' },
+    $and: [
+      { $or: [{ teamMemberId: input.teamMemberId }, { resourceId: { $in: resources.map((item) => item.id) } }] },
+      { startsAt: { $lt: input.endsAt } },
+      { $or: [{ endsAt: { $gt: input.startsAt } }, { endsAt: null, startsAt: { $gte: input.startsAt } }] },
+    ],
+  } as FilterQuery<PatientVisit>, {
+    fields: ['teamMemberId', 'resourceId', 'startsAt', 'endsAt'],
+    limit: 5_001,
+  })
+  if (visits.length > 5_000) {
+    throw new CrudHttpError(503, { error: 'Public booking availability is temporarily unavailable' })
+  }
+  if (!isWindowAvailable(member, input.startsAt, input.endsAt)) {
+    throw new CrudHttpError(409, { error: 'The selected appointment time is no longer available' })
+  }
+  const therapistBusy = visits.some((visit) => (
+    visit.teamMemberId === input.teamMemberId
+    && visit.startsAt < input.endsAt
+    && (!visit.endsAt || visit.endsAt > input.startsAt)
+  ))
+  if (therapistBusy) {
+    throw new CrudHttpError(409, { error: 'The selected appointment time is no longer available' })
+  }
+  const resource = resources.find((candidate, index) => {
+    const subject = resourceSubjects[index]
+    if (!subject || !isWindowAvailable(subject, input.startsAt, input.endsAt)) return false
+    return !visits.some((visit) => (
+      visit.resourceId === candidate.id
+      && visit.startsAt < input.endsAt
+      && (!visit.endsAt || visit.endsAt > input.startsAt)
+    ))
+  })
+  if (!resource) {
+    throw new CrudHttpError(409, { error: 'The selected appointment time is no longer available' })
+  }
+  return { resourceId: resource.id, startsAt: input.startsAt, endsAt: input.endsAt }
 }

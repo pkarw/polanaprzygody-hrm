@@ -1,8 +1,8 @@
 ---
 title: "Bound every pessimistic row-lock wait, or contention becomes a dead request"
-modules: ["patient"]
+modules: ["patient", "public_booking"]
 areas: ["module-data", "debugging"]
-topics: ["optimistic-locking", "pessimistic-locking", "transactions", "timeouts", "idempotency"]
+topics: ["optimistic-locking", "pessimistic-locking", "advisory-locking", "transactions", "timeouts", "idempotency"]
 ---
 
 # Bound every pessimistic row-lock wait, or contention becomes a dead request
@@ -15,4 +15,6 @@ topics: ["optimistic-locking", "pessimistic-locking", "transactions", "timeouts"
 
 **Idempotent retry companion**: Two requests with the same client request ID can both miss the preflight replay check before the aggregate lock serializes them. After the winner commits, the loser may observe the new row as a domain conflict before it reaches the unique index. Recover only an exact committed replay with the same scoped request ID and digest, and only from the expected unique violation or the named conflict outcomes produced by that race; never turn every 409/422 into a replay. Prove the path with concurrent requests and a raw scoped row-count assertion.
 
-**Applies to**: Every command that calls `lockPatient` in `src/modules/patient/` (patients, addresses, contacts, diagnoses, document links, attachment links) and any new module that serializes an aggregate with `LockMode.PESSIMISTIC_WRITE`. Oracle: `src/modules/patient/__tests__/lockWaitBound.test.ts`.
+**Advisory-lock companion**: A public orchestrator that composes independently transactional commands needs a transaction-scoped advisory lock around the whole saga, not an in-process mutex. Lock both the scoped idempotency key and every normalized identity used for match-or-create; same-key locking alone still lets two different keys create duplicate people. Acquire globally sorted keys, set a bounded local `lock_timeout`, re-check durable idempotency after the locks are held, and keep the locking transaction open until the intake marker commits. This serializes the official command calls without asking them to share an unsupported external `EntityManager`.
+
+**Applies to**: Every command that calls `lockPatient` in `src/modules/patient/` (patients, addresses, contacts, diagnoses, document links, attachment links), any new module that serializes an aggregate with `LockMode.PESSIMISTIC_WRITE`, and public match-or-create sagas such as `src/modules/public_booking/lib/publicSubmission.ts`. Oracles: `src/modules/patient/__tests__/lockWaitBound.test.ts` and `src/modules/public_booking/__tests__/publicSubmission.test.ts`.

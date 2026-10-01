@@ -38,6 +38,37 @@ export const publicBookingAvailabilityQuerySchema = z.object({
   to: z.string().datetime({ offset: true }),
 }).strict()
 
+const personName = boundedText(120)
+
+export const publicBookingRequestSchema = z.object({
+  productId: z.string().uuid(),
+  teamMemberId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  timeZone: z.literal('Europe/Warsaw'),
+  requester: z.object({
+    firstName: personName,
+    lastName: personName,
+    email: z.string().trim().toLowerCase().email().max(320).optional(),
+    phone: boundedText(40),
+  }).strict(),
+  patient: z.object({
+    firstName: personName,
+    lastName: personName,
+    address: z.object({
+      street: boundedText(300),
+      postalCode: boundedText(30),
+      city: boundedText(160),
+      country: boundedText(2).transform((value) => value.toUpperCase()),
+    }).strict(),
+  }).strict(),
+  consents: z.object({
+    terms: z.literal(true),
+    privacyPolicy: z.literal(true),
+  }).strict(),
+}).strict()
+
 export type BookingIntakeRecordInput = z.infer<typeof bookingIntakeRecordSchema>
 export type ServiceCredentialInput = z.infer<typeof serviceCredentialInputSchema>
 export type PublicBookingAvailabilityQuery = z.infer<typeof publicBookingAvailabilityQuerySchema>
+export type PublicBookingRequest = z.infer<typeof publicBookingRequestSchema>

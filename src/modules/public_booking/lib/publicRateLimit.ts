@@ -17,6 +17,13 @@ export const publicBookingReadRateLimitConfig = readEndpointRateLimitConfig('PUB
   keyPrefix: 'public-booking-read',
 })
 
+export const publicBookingSubmitRateLimitConfig = readEndpointRateLimitConfig('PUBLIC_BOOKING_SUBMIT', {
+  points: 10,
+  duration: 60,
+  blockDuration: 300,
+  keyPrefix: 'public-booking-submit',
+})
+
 type RateLimiterContainer = {
   resolve(name: string): unknown
   hasRegistration?(name: string): boolean
@@ -47,5 +54,38 @@ export async function enforcePublicBookingReadRateLimit(
   } catch (error) {
     logger.warn('Public booking read limiter failed; allowing read', { err: error })
     return null
+  }
+}
+
+/** Anonymous writes fail closed: a missing or degraded limiter refuses the request. */
+export async function enforcePublicBookingSubmitRateLimit(
+  request: Request,
+  container: RateLimiterContainer,
+): Promise<Response | null> {
+  let limiter: RateLimiterService | null = null
+  try {
+    if (container.hasRegistration?.('rateLimiterService') === false) {
+      return Response.json({ error: 'Public booking is temporarily unavailable' }, { status: 503 })
+    }
+    limiter = (container.resolve('rateLimiterService') as RateLimiterService | undefined) ?? null
+  } catch (error) {
+    logger.warn('Public booking submit limiter is unavailable; refusing write', { err: error })
+    return Response.json({ error: 'Public booking is temporarily unavailable' }, { status: 503 })
+  }
+  if (!limiter) {
+    return Response.json({ error: 'Public booking is temporarily unavailable' }, { status: 503 })
+  }
+  try {
+    const client = getClientIp(request, limiter.trustProxyDepth) ?? RATE_LIMIT_FALLBACK_KEY
+    return await checkRateLimit(
+      limiter,
+      publicBookingSubmitRateLimitConfig,
+      `public-booking-submit:${client}`,
+      'Too many booking attempts. Please try again later.',
+      { failClosed: true, unavailableMessage: 'Public booking is temporarily unavailable' },
+    )
+  } catch (error) {
+    logger.warn('Public booking submit limiter failed; refusing write', { err: error })
+    return Response.json({ error: 'Public booking is temporarily unavailable' }, { status: 503 })
   }
 }

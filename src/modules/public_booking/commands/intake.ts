@@ -3,6 +3,7 @@ import { UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
+import { createLogger } from '@open-mercato/shared/lib/logger'
 import { BookingIntake } from '../data/entities'
 import { bookingIntakeRecordSchema } from '../data/validators'
 import { emitPublicBookingEvent } from '../events'
@@ -14,6 +15,7 @@ import {
 } from '../lib/commandSupport'
 
 const BOOKING_INTAKE_ENTITY_ID = 'public_booking:booking_intake' as const
+const logger = createLogger('public_booking').child({ component: 'booking-intake' })
 
 async function resolveIdempotentIntake(
   em: EntityManager,
@@ -99,13 +101,24 @@ export const recordBookingIntakeCommand: CommandHandler<Record<string, unknown>,
       throw error
     }
 
-    await emitPublicBookingEvent('public_booking.intake.submitted', {
-      id: intake.id,
-      visitId: intake.visitId,
-      tenantId: scope.tenantId,
-      organizationId: scope.organizationId,
-      createdAt: intake.createdAt.toISOString(),
-    })
+    // The durable intake is authoritative. An event transport failure after flush must
+    // not make the caller compensate the already-committed visit and leave a live intake
+    // pointing at tombstoned records; the event can be replayed from persisted state.
+    try {
+      await emitPublicBookingEvent('public_booking.intake.submitted', {
+        id: intake.id,
+        visitId: intake.visitId,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        createdAt: intake.createdAt.toISOString(),
+      })
+    } catch (error) {
+      logger.error('Booking intake event emission failed after commit', {
+        intakeId: intake.id,
+        visitId: intake.visitId,
+        err: error,
+      })
+    }
     return intake
   },
 }

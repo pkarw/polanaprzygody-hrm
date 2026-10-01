@@ -39,3 +39,30 @@ export const publicBookingAvailabilitySchema = z.object({
   })),
   degraded: z.literal(true).optional(),
 })
+
+export const publicBookingRequestBodySchema = z.object({
+  productId: z.string().uuid(),
+  teamMemberId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  timeZone: z.literal('Europe/Warsaw'),
+  requester: z.object({
+    firstName: z.string(),
+    lastName: z.string(),
+    email: z.string().email().optional(),
+    phone: z.string(),
+  }),
+  patient: z.object({
+    firstName: z.string(),
+    lastName: z.string(),
+    address: z.object({
+      street: z.string(),
+      postalCode: z.string(),
+      city: z.string(),
+      country: z.string().length(2),
+    }),
+  }),
+  consents: z.object({ terms: z.literal(true), privacyPolicy: z.literal(true) }),
+})
+
+export const publicBookingRequestSuccessSchema = z.object({ ok: z.literal(true) })

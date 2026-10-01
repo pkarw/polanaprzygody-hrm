@@ -3,6 +3,7 @@ import {
   findPublicBookingAvailability,
   listPublicBookingServices,
   listPublicBookingTherapists,
+  resolvePublicBookingSlot,
 } from '../lib/publicDiscovery'
 
 const scope = {
@@ -195,5 +196,84 @@ describe('public booking discovery', () => {
     })
 
     expect(result).toEqual({ slots: [], degraded: true })
+  })
+
+  it('revalidates an exact slot and selects the first configured free room server-side', async () => {
+    const availability = {
+      getSubjectAvailability: jest.fn(async (input: { teamMember?: { id: string }; resource?: { id: string } }) => (
+        input.teamMember
+          ? [windowSubject('member', input.teamMember.id)]
+          : [windowSubject('resource', input.resource!.id)]
+      )),
+    }
+    const result = await resolvePublicBookingSlot({
+      em: { find: jest.fn(async () => []) } as never,
+      container: {
+        resolve: (name: string) => name === 'patientAvailabilityService' ? availability : {},
+      } as never,
+      queryEngine: queryEngine() as never,
+      scope,
+      productId,
+      teamMemberId: therapistId,
+      startsAt: new Date('2026-10-02T08:00:00.000Z'),
+      endsAt: new Date('2026-10-02T09:00:00.000Z'),
+      timeZone: 'Europe/Warsaw',
+      now: new Date('2026-10-01T08:00:00.000Z'),
+    })
+
+    expect(result).toEqual({
+      resourceId: roomId,
+      startsAt: new Date('2026-10-02T08:00:00.000Z'),
+      endsAt: new Date('2026-10-02T09:00:00.000Z'),
+    })
+  })
+
+  it('maps an exact persisted overlap to a generic slot conflict', async () => {
+    const availability = {
+      getSubjectAvailability: jest.fn(async (input: { teamMember?: { id: string }; resource?: { id: string } }) => (
+        input.teamMember
+          ? [windowSubject('member', input.teamMember.id)]
+          : [windowSubject('resource', input.resource!.id)]
+      )),
+    }
+    await expect(resolvePublicBookingSlot({
+      em: { find: jest.fn(async () => [{
+        teamMemberId: therapistId,
+        resourceId: roomId,
+        startsAt: new Date('2026-10-02T08:00:00.000Z'),
+        endsAt: new Date('2026-10-02T09:00:00.000Z'),
+      }]) } as never,
+      container: {
+        resolve: (name: string) => name === 'patientAvailabilityService' ? availability : {},
+      } as never,
+      queryEngine: queryEngine() as never,
+      scope,
+      productId,
+      teamMemberId: therapistId,
+      startsAt: new Date('2026-10-02T08:00:00.000Z'),
+      endsAt: new Date('2026-10-02T09:00:00.000Z'),
+      timeZone: 'Europe/Warsaw',
+      now: new Date('2026-10-01T08:00:00.000Z'),
+    })).rejects.toMatchObject({ status: 409 })
+  })
+
+  it('refuses an exact booking write when planner support is unavailable', async () => {
+    await expect(resolvePublicBookingSlot({
+      em: { find: jest.fn(async () => []) } as never,
+      container: {
+        resolve: (name: string) => {
+          if (name === 'patientAvailabilityService') return { getSubjectAvailability: jest.fn() }
+          throw new Error('planner unavailable')
+        },
+      } as never,
+      queryEngine: queryEngine() as never,
+      scope,
+      productId,
+      teamMemberId: therapistId,
+      startsAt: new Date('2026-10-02T08:00:00.000Z'),
+      endsAt: new Date('2026-10-02T09:00:00.000Z'),
+      timeZone: 'Europe/Warsaw',
+      now: new Date('2026-10-01T08:00:00.000Z'),
+    })).rejects.toMatchObject({ status: 503 })
   })
 })
