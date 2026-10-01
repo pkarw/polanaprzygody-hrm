@@ -148,7 +148,10 @@ async function loadPatientDecrypted(
     undefined,
     { tenantId: scope.tenantId, organizationId: scope.organizationId },
   )
-  if (!patient) throw new CrudHttpError(404, { error: 'Patient not found' })
+  if (!patient) {
+    const { translate } = await resolveTranslations()
+    throw new CrudHttpError(404, { error: translate('patient.errors.patientNotFound', 'Patient not found') })
+  }
   return patient
 }
 
@@ -178,8 +181,12 @@ async function resolveIdempotentPatient(
   } as FilterQuery<Patient>)
   if (!existing) return null
   if (existing.createRequestPayload !== digest) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'This request id was already used with different content',
+      error: translate(
+        'patient.errors.idempotencyPayloadMismatch',
+        'This request id was already used with different content',
+      ),
       code: 'idempotency_payload_mismatch',
     })
   }
@@ -425,7 +432,8 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     if (!id) throw new Error('[internal] Missing patient id for undo')
     const scope = requirePatientScope(ctx)
     if (snapshot && snapshot.tenantId !== scope.tenantId) {
-      throw new CrudHttpError(403, { error: 'Undo scope does not match tenant' })
+      const { translate } = await resolveTranslations()
+      throw new CrudHttpError(403, { error: translate('patient.errors.patientUndoScopeMismatch', 'Undo scope does not match tenant') })
     }
     const em = (ctx.container.resolve('em') as EntityManager).fork()
     const deletedAt = new Date()
@@ -495,8 +503,12 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     const mergedEmail = parsed.email !== undefined ? parsed.email : current.email ?? null
     const mergedPhone = parsed.phone !== undefined ? parsed.phone : current.phone ?? null
     if (!mergedEmail && !mergedPhone) {
+      const { translate } = await resolveTranslations()
       throw new CrudHttpError(422, {
-        error: 'A patient must keep at least an email address or a phone number',
+        error: translate(
+          'patient.errors.contactChannelRequired',
+          'A patient must keep at least an email address or a phone number',
+        ),
         code: 'contact_channel_required',
       })
     }
@@ -603,7 +615,8 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     if (!before?.id) throw new Error('[internal] Missing previous snapshot for undo')
     const scope = requirePatientScope(ctx)
     if (before.tenantId !== scope.tenantId) {
-      throw new CrudHttpError(403, { error: 'Undo scope does not match tenant' })
+      const { translate } = await resolveTranslations()
+      throw new CrudHttpError(403, { error: translate('patient.errors.patientUndoScopeMismatch', 'Undo scope does not match tenant') })
     }
     const em = (ctx.container.resolve('em') as EntityManager).fork()
     // Undo takes the same lock as a normal write, so it needs its own transaction; unlike the
@@ -623,8 +636,12 @@ const updatePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
         (current.description ?? null) !== after.description ||
         (current.ownerTeamMemberId ?? null) !== after.ownerTeamMemberId
       if (movedOn) {
+        const { translate } = await resolveTranslations()
         throw new CrudHttpError(409, {
-          error: 'This record changed after the action being undone; undo was refused',
+          error: translate(
+            'patient.errors.undoSuperseded',
+            'This record changed after the action being undone; undo was refused',
+          ),
           code: 'undo_superseded',
         })
       }
@@ -703,10 +720,11 @@ const archivePatientCommand: CommandHandler<Record<string, unknown>, Patient> = 
           locked = await lockPatient(phaseEm, parsed.id, scope)
           assertExpectedVersion(parsed.expectedUpdatedAt, locked.updatedAt, PATIENT_ENTITY_ID)
           if (locked.status === target) {
+            const { translate } = await resolveTranslations()
             throw new CrudHttpError(409, {
               error: parsed.archived
-                ? 'This record is already archived'
-                : 'This record is already active',
+                ? translate('patient.errors.patientAlreadyArchived', 'This record is already archived')
+                : translate('patient.errors.patientAlreadyActive', 'This record is already active'),
               code: 'status_unchanged',
             })
           }
@@ -719,8 +737,12 @@ const archivePatientCommand: CommandHandler<Record<string, unknown>, Patient> = 
               deletedAt: null,
             } as FilterQuery<PatientVisit>)
             if (plannedVisits > 0) {
+              const { translate } = await resolveTranslations()
               throw new CrudHttpError(409, {
-                error: 'Planned visits must be completed or cancelled before this patient can be archived',
+                error: translate(
+                  'patient.errors.patientHasPlannedVisits',
+                  'Planned visits must be completed or cancelled before this patient can be archived',
+                ),
                 code: 'patient_has_planned_visits',
                 count: plannedVisits,
               })
@@ -841,8 +863,12 @@ const deletePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
             } as FilterQuery<PatientVisit>),
           ])
           if (diagnoses > 0 || documentLinks > 0 || attachmentLinks > 0 || visits > 0) {
+            const { translate } = await resolveTranslations()
             throw new CrudHttpError(409, {
-              error: 'This record has documentation or visit history and cannot be deleted; archive it instead',
+              error: translate(
+                'patient.errors.patientNotEmpty',
+                'This record has documentation or visit history and cannot be deleted; archive it instead',
+              ),
               code: 'patient_not_empty',
               counts: { diagnoses, documentLinks, attachmentLinks, visits },
             })
@@ -904,7 +930,8 @@ const deletePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
     if (!id) throw new Error('[internal] Missing patient id for undo')
     const scope = requirePatientScope(ctx)
     if (before && before.tenantId !== scope.tenantId) {
-      throw new CrudHttpError(403, { error: 'Undo scope does not match tenant' })
+      const { translate } = await resolveTranslations()
+      throw new CrudHttpError(403, { error: translate('patient.errors.patientUndoScopeMismatch', 'Undo scope does not match tenant') })
     }
     const em = (ctx.container.resolve('em') as EntityManager).fork()
     const restoredAt = new Date()
