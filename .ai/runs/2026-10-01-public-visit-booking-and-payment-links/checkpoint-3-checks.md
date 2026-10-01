@@ -28,7 +28,7 @@ The production server used the isolated checkpoint PostgreSQL cluster. The publi
 - [`checkpoint-3-artifacts/screenshot-home-wide.png`](checkpoint-3-artifacts/screenshot-home-wide.png) — anonymous wide home and public shell.
 - [`checkpoint-3-artifacts/screenshot-pricing-mobile.png`](checkpoint-3-artifacts/screenshot-pricing-mobile.png) — 390px catalogue pricing with promotion and mobile navigation.
 - [`checkpoint-3-artifacts/screenshot-booking-slot-wide.png`](checkpoint-3-artifacts/screenshot-booking-slot-wide.png) — selected therapist, focused available day, chosen slot, and success feedback.
-- [`checkpoint-3-artifacts/browser-session.log`](checkpoint-3-artifacts/browser-session.log) — semantic assertions and browser error transcript.
+- [`checkpoint-3-artifacts/browser-session.txt`](checkpoint-3-artifacts/browser-session.txt) — semantic assertions and browser error transcript.
 
 ## Result
 

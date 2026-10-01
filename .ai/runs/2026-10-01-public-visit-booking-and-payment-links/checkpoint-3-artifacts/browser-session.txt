@@ -1,0 +1,5 @@
+home heading: Centrum Rozwoju Dziecka we Wrocławiu
+pricing cards: 2
+therapists: 2; slots: 3; selected: yes
+console errors: 0
+page errors: 0
