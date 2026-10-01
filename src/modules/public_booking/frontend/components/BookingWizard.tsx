@@ -1,13 +1,18 @@
 'use client'
 
+import * as React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CalendarDays, ChevronRight, Clock3, Phone, RefreshCw, UserRoundSearch } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, CalendarDays, ChevronRight, Clock3, Loader2, Phone, RefreshCw, Send, UserRoundSearch } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Alert, AlertDescription, AlertTitle } from '@open-mercato/ui/primitives/alert'
 import { Avatar } from '@open-mercato/ui/primitives/avatar'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
+import { Input } from '@open-mercato/ui/primitives/input'
+import { Label } from '@open-mercato/ui/primitives/label'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import type {
   PublicBookingAvailabilityResult,
@@ -21,6 +26,26 @@ const FACILITY_TIME_ZONE = 'Europe/Warsaw'
 const SEARCH_DAYS = 60
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+type IntakeValues = {
+  requesterFirstName: string
+  requesterLastName: string
+  requesterEmail: string
+  requesterPhone: string
+  patientFirstName: string
+  patientLastName: string
+  street: string
+  postalCode: string
+  city: string
+  country: string
+  terms: boolean
+  privacyPolicy: boolean
+}
+
+const EMPTY_INTAKE: IntakeValues = {
+  requesterFirstName: '', requesterLastName: '', requesterEmail: '', requesterPhone: '',
+  patientFirstName: '', patientLastName: '', street: '', postalCode: '', city: '', country: 'PL',
+  terms: false, privacyPolicy: false,
+}
 
 function nextDayStart(): Date {
   const next = new Date()
@@ -68,15 +93,24 @@ async function readJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 export function BookingWizard({ productId }: { productId: string }) {
   const t = useT()
+  const router = useRouter()
   const [service, setService] = useState<PublicBookingService | null>(null)
   const [therapists, setTherapists] = useState<PublicBookingTherapist[]>([])
   const [therapistState, setTherapistState] = useState<LoadState>('loading')
   const [selectedTherapist, setSelectedTherapist] = useState<PublicBookingTherapist | null>(null)
+  const [availabilityRequest, setAvailabilityRequest] = useState(0)
   const [availability, setAvailability] = useState<PublicBookingAvailabilityResult>({ slots: [] })
   const [availabilityState, setAvailabilityState] = useState<LoadState>('idle')
   const [selectedDay, setSelectedDay] = useState<string>(() => dayKey(nextDayStart()))
   const [selectedSlot, setSelectedSlot] = useState<PublicBookingSlot | null>(null)
+  const [intake, setIntake] = useState<IntakeValues>(EMPTY_INTAKE)
+  const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'error'>('idle')
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const dayStripRef = useRef<HTMLDivElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  const termsRef = useRef<HTMLButtonElement>(null)
+  const privacyRef = useRef<HTMLButtonElement>(null)
+  const submissionRef = useRef<{ payload: string; key: string } | null>(null)
 
   const days = useMemo(() => {
     const start = nextDayStart()
@@ -149,12 +183,90 @@ export function BookingWizard({ productId }: { productId: string }) {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [productId, selectedTherapist])
+  }, [availabilityRequest, productId, selectedTherapist])
 
   function chooseTherapist(therapist: PublicBookingTherapist): void {
     setSelectedTherapist(therapist)
+    setAvailabilityRequest((current) => current + 1)
     setAvailability({ slots: [] })
     setAvailabilityState('loading')
+  }
+
+  function updateIntake<K extends keyof IntakeValues>(key: K, value: IntakeValues[K]): void {
+    setIntake((current) => ({ ...current, [key]: value }))
+    setSubmitError(null)
+  }
+
+  async function submitBooking(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    if (!service || !selectedTherapist || !selectedSlot || submitState === 'submitting') return
+    if (!formRef.current?.checkValidity()) {
+      formRef.current?.querySelector<HTMLElement>(':invalid')?.focus()
+      formRef.current?.reportValidity()
+      return
+    }
+    if (!intake.terms || !intake.privacyPolicy) {
+      setSubmitError(t('public_booking.booking.errors.consents'))
+      queueMicrotask(() => (intake.terms ? privacyRef.current : termsRef.current)?.focus())
+      return
+    }
+    const body = {
+      productId: service.id,
+      teamMemberId: selectedTherapist.id,
+      startsAt: selectedSlot.startsAt,
+      endsAt: selectedSlot.endsAt,
+      timeZone: FACILITY_TIME_ZONE,
+      requester: {
+        firstName: intake.requesterFirstName,
+        lastName: intake.requesterLastName,
+        ...(intake.requesterEmail.trim() ? { email: intake.requesterEmail } : {}),
+        phone: intake.requesterPhone,
+      },
+      patient: {
+        firstName: intake.patientFirstName,
+        lastName: intake.patientLastName,
+        address: {
+          street: intake.street,
+          postalCode: intake.postalCode,
+          city: intake.city,
+          country: intake.country,
+        },
+      },
+      consents: { terms: true, privacyPolicy: true },
+    }
+    const payload = JSON.stringify(body)
+    if (submissionRef.current?.payload !== payload) {
+      submissionRef.current = { payload, key: crypto.randomUUID() }
+    }
+    setSubmitState('submitting')
+    setSubmitError(null)
+    try {
+      const response = await fetch('/api/public/booking/requests', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'idempotency-key': submissionRef.current.key,
+        },
+        body: payload,
+      })
+      if (response.ok) {
+        router.push('/umow-sie/dziekujemy')
+        return
+      }
+      if (response.status === 409) {
+        setSelectedSlot(null)
+        setSubmitError(t('public_booking.booking.errors.409'))
+        chooseTherapist(selectedTherapist)
+        queueMicrotask(() => document.getElementById('availability-title')?.focus())
+      } else {
+        setSubmitError(t(`public_booking.booking.errors.${response.status}`))
+      }
+      setSubmitState('error')
+    } catch {
+      setSubmitError(t('public_booking.booking.errors.network'))
+      setSubmitState('error')
+    }
   }
 
   return (
@@ -165,7 +277,7 @@ export function BookingWizard({ productId }: { productId: string }) {
         </Button>
         <ol className="mt-6 grid gap-2 border-b pb-5 sm:grid-cols-3" aria-label={t('public_booking.booking.progress')}>
           {[1, 2, 3].map((step) => {
-            const current = selectedTherapist ? 2 : 1
+            const current = selectedSlot ? 3 : selectedTherapist ? 2 : 1
             return (
               <li
                 key={step}
@@ -240,7 +352,7 @@ export function BookingWizard({ productId }: { productId: string }) {
 
           {selectedTherapist ? (
             <section className="mt-10 border-t pt-8" aria-labelledby="availability-title">
-              <h2 id="availability-title" className="text-xl font-semibold">{t('public_booking.booking.chooseTime')}</h2>
+              <h2 id="availability-title" tabIndex={-1} className="text-xl font-semibold outline-none">{t('public_booking.booking.chooseTime')}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{t('public_booking.booking.chooseTimeDescription')}</p>
               {availabilityState === 'loading' ? (
                 <LoadingMessage label={t('public_booking.booking.loadingAvailability')} className="mt-5 min-h-20 justify-center" />
@@ -325,11 +437,64 @@ export function BookingWizard({ productId }: { productId: string }) {
                   </div>
                 </div>
               ) : null}
-              {selectedSlot ? (
-                <Alert status="success" className="mt-6">
-                  <AlertTitle>{t('public_booking.booking.slotSelected')}</AlertTitle>
-                  <AlertDescription>{t('public_booking.booking.slotSelectedDescription', { time: timeLabel(selectedSlot.startsAt) })}</AlertDescription>
+              {submitError && !selectedSlot ? (
+                <Alert status="error" className="mt-6" aria-live="assertive">
+                  <AlertTitle>{t('public_booking.booking.form.submitError')}</AlertTitle>
+                  <AlertDescription>{submitError}</AlertDescription>
                 </Alert>
+              ) : null}
+              {selectedSlot ? (
+                <>
+                  <Alert status="success" className="mt-6">
+                    <AlertTitle>{t('public_booking.booking.slotSelected')}</AlertTitle>
+                    <AlertDescription>{t('public_booking.booking.slotSelectedDescription', { time: timeLabel(selectedSlot.startsAt) })}</AlertDescription>
+                  </Alert>
+                  <form ref={formRef} noValidate className="mt-8 space-y-8 rounded-2xl border bg-card p-5 sm:p-7" onSubmit={(event) => { void submitBooking(event) }}>
+                    <div>
+                      <h2 className="text-xl font-semibold">{t('public_booking.booking.form.title')}</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">{t('public_booking.booking.form.description')}</p>
+                    </div>
+                    <fieldset className="space-y-4">
+                      <legend className="text-base font-semibold">{t('public_booking.booking.form.requester')}</legend>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <BookingField id="requester-first-name" label={t('public_booking.booking.form.firstName')} value={intake.requesterFirstName} onChange={(value) => updateIntake('requesterFirstName', value)} autoComplete="given-name" />
+                        <BookingField id="requester-last-name" label={t('public_booking.booking.form.lastName')} value={intake.requesterLastName} onChange={(value) => updateIntake('requesterLastName', value)} autoComplete="family-name" />
+                        <BookingField id="requester-email" label={t('public_booking.booking.form.email')} value={intake.requesterEmail} onChange={(value) => updateIntake('requesterEmail', value)} type="email" required={false} autoComplete="email" />
+                        <BookingField id="requester-phone" label={t('public_booking.booking.form.phone')} value={intake.requesterPhone} onChange={(value) => updateIntake('requesterPhone', value)} type="tel" autoComplete="tel" />
+                      </div>
+                    </fieldset>
+                    <fieldset className="space-y-4">
+                      <legend className="text-base font-semibold">{t('public_booking.booking.form.patient')}</legend>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <BookingField id="patient-first-name" label={t('public_booking.booking.form.firstName')} value={intake.patientFirstName} onChange={(value) => updateIntake('patientFirstName', value)} autoComplete="off" />
+                        <BookingField id="patient-last-name" label={t('public_booking.booking.form.lastName')} value={intake.patientLastName} onChange={(value) => updateIntake('patientLastName', value)} autoComplete="off" />
+                        <div className="sm:col-span-2"><BookingField id="patient-street" label={t('public_booking.booking.form.street')} value={intake.street} onChange={(value) => updateIntake('street', value)} autoComplete="street-address" /></div>
+                        <BookingField id="patient-postal-code" label={t('public_booking.booking.form.postalCode')} value={intake.postalCode} onChange={(value) => updateIntake('postalCode', value)} autoComplete="postal-code" />
+                        <BookingField id="patient-city" label={t('public_booking.booking.form.city')} value={intake.city} onChange={(value) => updateIntake('city', value)} autoComplete="address-level2" />
+                        <BookingField id="patient-country" label={t('public_booking.booking.form.country')} value={intake.country} onChange={(value) => updateIntake('country', value.toUpperCase())} minLength={2} maxLength={2} autoComplete="country" />
+                      </div>
+                    </fieldset>
+                    <fieldset className="space-y-4">
+                      <legend className="text-base font-semibold">{t('public_booking.booking.form.consents')}</legend>
+                      <ConsentField ref={termsRef} id="booking-terms" checked={intake.terms} onCheckedChange={(checked) => updateIntake('terms', checked)}>
+                        {t('public_booking.booking.form.acceptTerms')}{' '}<a className="pp-focus rounded-sm font-medium underline" href="https://polanaprzygody.pl/regulamin-swiadczenia-uslug" target="_blank" rel="noreferrer">{t('public_booking.site.terms')}</a>
+                      </ConsentField>
+                      <ConsentField ref={privacyRef} id="booking-privacy" checked={intake.privacyPolicy} onCheckedChange={(checked) => updateIntake('privacyPolicy', checked)}>
+                        {t('public_booking.booking.form.acceptPrivacy')}{' '}<a className="pp-focus rounded-sm font-medium underline" href="https://polanaprzygody.pl/polityka-prywatnosci" target="_blank" rel="noreferrer">{t('public_booking.site.privacy')}</a>
+                      </ConsentField>
+                    </fieldset>
+                    {submitError ? (
+                      <Alert status="error" aria-live="assertive">
+                        <AlertTitle>{t('public_booking.booking.form.submitError')}</AlertTitle>
+                        <AlertDescription>{submitError}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <Button type="submit" size="lg" className="pp-focus w-full sm:w-auto" disabled={submitState === 'submitting'}>
+                      {submitState === 'submitting' ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+                      {submitState === 'submitting' ? t('public_booking.booking.form.submitting') : t('public_booking.booking.form.submit')}
+                    </Button>
+                  </form>
+                </>
               ) : null}
             </section>
           ) : null}
@@ -338,3 +503,32 @@ export function BookingWizard({ productId }: { productId: string }) {
     </PublicLayout>
   )
 }
+
+function BookingField({ id, label, value, onChange, required = true, ...props }: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  required?: boolean
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'id' | 'value' | 'onChange' | 'required' | 'size'>) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}{required ? <span aria-hidden="true"> *</span> : null}</Label>
+      <Input id={id} value={value} required={required} onChange={(event) => onChange(event.target.value)} {...props} />
+    </div>
+  )
+}
+
+const ConsentField = React.forwardRef<HTMLButtonElement, {
+  id: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  children: React.ReactNode
+}>(function ConsentField({ id, checked, onCheckedChange, children }, ref) {
+  return (
+    <div className="flex items-start gap-3">
+      <Checkbox ref={ref} id={id} checked={checked} aria-required="true" onCheckedChange={(value) => onCheckedChange(value === true)} />
+      <Label htmlFor={id} className="cursor-pointer text-sm font-normal leading-6">{children}<span aria-hidden="true"> *</span></Label>
+    </div>
+  )
+})
