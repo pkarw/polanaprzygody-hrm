@@ -17,11 +17,15 @@ import type {
 } from '../../patient/lib/patientAvailabilityService'
 import type { VisitSubjectAvailability } from '../../patient/lib/visitConflicts'
 import type { PublicBookingScope } from './commandSupport'
+import {
+  publicBookingDateWindow,
+  PUBLIC_BOOKING_MAX_DAYS,
+  PUBLIC_BOOKING_TIME_ZONE,
+} from './publicBookingDateWindow'
 
-export const PUBLIC_BOOKING_TIME_ZONE = 'Europe/Warsaw'
+export { PUBLIC_BOOKING_MAX_DAYS, PUBLIC_BOOKING_TIME_ZONE } from './publicBookingDateWindow'
 export const PUBLIC_BOOKING_SLOT_MINUTES = 15
 export const PUBLIC_BOOKING_MIN_LEAD_MINUTES = 120
-export const PUBLIC_BOOKING_MAX_DAYS = 60
 
 export function publicBookingZonedInstant(value: Date): string {
   return formatInTimeZone(value, PUBLIC_BOOKING_TIME_ZONE, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
@@ -325,7 +329,7 @@ export async function findPublicBookingAvailability(input: {
   now?: Date
 }): Promise<PublicBookingAvailabilityResult> {
   const now = input.now ?? new Date()
-  const maxTo = new Date(now.getTime() + PUBLIC_BOOKING_MAX_DAYS * 24 * 60 * 60_000)
+  const maxTo = publicBookingDateWindow(now).to
   if (
     !Number.isFinite(input.from.getTime())
     || !Number.isFinite(input.to.getTime())
@@ -456,14 +460,14 @@ export async function resolvePublicBookingSlot(input: {
   now?: Date
 }): Promise<ResolvedPublicBookingSlot> {
   const now = input.now ?? new Date()
-  const maxStart = new Date(now.getTime() + PUBLIC_BOOKING_MAX_DAYS * 24 * 60 * 60_000)
+  const maxStart = publicBookingDateWindow(now).to
   if (
     input.timeZone !== PUBLIC_BOOKING_TIME_ZONE
     || !Number.isFinite(input.startsAt.getTime())
     || !Number.isFinite(input.endsAt.getTime())
     || input.startsAt >= input.endsAt
     || input.startsAt.getTime() < now.getTime() + PUBLIC_BOOKING_MIN_LEAD_MINUTES * 60_000
-    || input.startsAt > maxStart
+    || input.startsAt >= maxStart
     || input.startsAt.getUTCMinutes() % PUBLIC_BOOKING_SLOT_MINUTES !== 0
     || input.startsAt.getUTCSeconds() !== 0
     || input.startsAt.getUTCMilliseconds() !== 0

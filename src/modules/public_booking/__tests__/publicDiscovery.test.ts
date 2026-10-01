@@ -5,6 +5,7 @@ import {
   listPublicBookingTherapists,
   resolvePublicBookingSlot,
 } from '../lib/publicDiscovery'
+import { publicBookingDateWindow } from '../lib/publicBookingDateWindow'
 
 const scope = {
   tenantId: '11111111-1111-4111-8111-111111111111',
@@ -76,6 +77,45 @@ function windowSubject(subjectType: 'member' | 'resource', subjectId: string) {
 }
 
 describe('public booking discovery', () => {
+  it.each([
+    ['ordinary Warsaw day', '2026-02-10T12:00:00.000Z'],
+    ['Warsaw spring DST boundary', '2026-03-28T12:00:00.000Z'],
+    ['Warsaw autumn DST boundary', '2026-10-24T12:00:00.000Z'],
+  ])('accepts the exact UI-generated 60-day calendar window on an %s', async (_case, nowIso) => {
+    const now = new Date(nowIso)
+    const range = publicBookingDateWindow(now)
+    const container = {
+      resolve: (name: string) => {
+        if (name === 'patientAvailabilityService') return { getSubjectAvailability: jest.fn() }
+        throw new Error('planner unavailable')
+      },
+    }
+
+    await expect(findPublicBookingAvailability({
+      em: { find: jest.fn() } as never,
+      container: container as never,
+      queryEngine: queryEngine() as never,
+      scope,
+      productId,
+      teamMemberId: therapistId,
+      from: range.from,
+      to: range.to,
+      now,
+    })).resolves.toEqual({ slots: [], degraded: true })
+
+    await expect(findPublicBookingAvailability({
+      em: { find: jest.fn() } as never,
+      container: container as never,
+      queryEngine: queryEngine() as never,
+      scope,
+      productId,
+      teamMemberId: therapistId,
+      from: range.from,
+      to: new Date(range.to.getTime() + 1),
+      now,
+    })).rejects.toMatchObject({ status: 422 })
+  })
+
   it('lists only complete services with promotion and regular-price evidence', async () => {
     const promotion = {
       product: productId,

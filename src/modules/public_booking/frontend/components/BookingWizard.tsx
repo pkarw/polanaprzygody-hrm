@@ -5,9 +5,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CalendarDays, ChevronRight, Clock3, Loader2, Phone, RefreshCw, Send, UserRoundSearch } from 'lucide-react'
-import { addDays } from 'date-fns/addDays'
-import { startOfDay } from 'date-fns/startOfDay'
-import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Alert, AlertDescription, AlertTitle } from '@open-mercato/ui/primitives/alert'
 import { Avatar } from '@open-mercato/ui/primitives/avatar'
@@ -23,10 +20,13 @@ import type {
   PublicBookingSlot,
   PublicBookingTherapist,
 } from '../../lib/publicDiscovery'
+import {
+  publicBookingDateWindow,
+  PUBLIC_BOOKING_TIME_ZONE as FACILITY_TIME_ZONE,
+} from '../../lib/publicBookingDateWindow'
 import { PublicLayout } from './PublicLayout'
 
-const FACILITY_TIME_ZONE = 'Europe/Warsaw'
-const SEARCH_DAYS = 60
+export { publicBookingDateWindow } from '../../lib/publicBookingDateWindow'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 type IntakeValues = {
@@ -48,17 +48,6 @@ const EMPTY_INTAKE: IntakeValues = {
   requesterFirstName: '', requesterLastName: '', requesterEmail: '', requesterPhone: '',
   patientFirstName: '', patientLastName: '', street: '', postalCode: '', city: '', country: 'PL',
   terms: false, privacyPolicy: false,
-}
-
-export function publicBookingDateWindow(now: Date = new Date()): { from: Date; to: Date; days: Date[] } {
-  const localTomorrow = addDays(startOfDay(toZonedTime(now, FACILITY_TIME_ZONE)), 1)
-  return {
-    from: fromZonedTime(localTomorrow, FACILITY_TIME_ZONE),
-    to: fromZonedTime(addDays(localTomorrow, SEARCH_DAYS), FACILITY_TIME_ZONE),
-    days: Array.from({ length: SEARCH_DAYS }, (_, index) => (
-      fromZonedTime(addDays(localTomorrow, index), FACILITY_TIME_ZONE)
-    )),
-  }
 }
 
 function dayKey(value: Date | string): string {

@@ -36,6 +36,7 @@
 | 6 | 6.4-review-fix | Harden durable email recovery and traceability | dispatch:capable | done | f888688 |
 | 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | dd4b5d4 |
 | 6 | 6.6-review-fix | Preserve gateway errors and declared payment-completion events | inline | done | 1045d5e |
+| 6 | 6.7-review-fix | Align the public UI and server Warsaw booking window | inline | done | this commit |
 
 ## Goal
 
