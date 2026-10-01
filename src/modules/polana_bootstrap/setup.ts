@@ -15,28 +15,24 @@ import {
 } from './booking-bootstrap'
 
 export const setup: ModuleSetupConfig = {
-  // The workspace identity is structural, not demo data: it must land even on a
-  // `--no-examples` install.
+  // These records are the operational baseline for public booking and visit
+  // payment, not demo data. Keep the dependency order identical on regular and
+  // `--no-examples` installs.
   seedDefaults: async (ctx) => {
-    await seedPolanaOrganization(ctx.em, ctx.container, {
-      tenantId: ctx.tenantId,
-      organizationId: ctx.organizationId,
-    })
-  },
-
-  seedExamples: async (ctx) => {
     const scope = {
       tenantId: ctx.tenantId,
       organizationId: ctx.organizationId,
     }
+    await seedPolanaOrganization(ctx.em, ctx.container, scope)
     await seedPolanaCustomers(createCustomerBootstrapDependencies(ctx.em, ctx.container), scope)
     await seedPolanaCatalog(createCatalogBootstrapDependencies(ctx.em, ctx.container), scope)
     await seedPolanaPaymentLinkTemplates(createPaymentLinkBootstrapDependencies(ctx.em, ctx.container), scope)
-    // Runs after the core `resources` seed, so its example set is already in the
-    // database and can be replaced with the real gabinets in one pass.
-    await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)
+    const resources = await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)
+    if (!resources.availabilityRuleSetId) {
+      throw new Error('Polana operational bootstrap requires a resolved availability rule set.')
+    }
     const dataEngine = ctx.container.resolve<DataEngine>('dataEngine')
-    await seedPolanaTherapists(ctx.em, dataEngine, scope)
+    await seedPolanaTherapists(ctx.em, dataEngine, scope, resources.availabilityRuleSetId)
     // Booking relations are resolved only after every owning fixture exists.
     // Exact stable keys make a missing/ambiguous fixture fatal instead of silently
     // assigning every therapist or room in the organization.

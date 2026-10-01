@@ -30,7 +30,7 @@
 | 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | done | 37809c4 |
 | 5 | 5.3 | Add browser journeys and capture final UI evidence | inline | done | 3e1f21e |
 | 6 | 6.1 | Bound public intake, scope credential retirement, and fix Warsaw date windows | dispatch:capable | done | this commit |
-| 6 | 6.2 | Make operational Polana fixtures mandatory installation defaults | dispatch:capable | todo | — |
+| 6 | 6.2 | Make operational Polana fixtures mandatory installation defaults | dispatch:capable | done | this commit |
 | 6 | 6.3 | Serialize payment completion and harden payment-link retries | inline | done | this commit |
 | 6 | 6.4 | Make booking and payment email delivery durable and observable | dispatch:capable | todo | — |
 | 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | todo | — |
