@@ -40,6 +40,7 @@ export default async function onPatientVisitConfirmed(
   if (['sent', 'failed', 'ambiguous'].includes(intake.confirmationEmailDeliveryStatus ?? '')) return
   if (!intake.confirmationEmailDeliveryStatus) {
     intake.confirmationEmailDeliveryStatus = 'pending'
+    intake.confirmationEmailClaimJobId = null
     intake.confirmationEmailFailureCode = null
     intake.confirmationEmailFailedAt = null
     intake.updatedAt = new Date()

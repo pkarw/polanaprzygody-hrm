@@ -25,6 +25,14 @@ function isVersionConflict(error: unknown): error is { status: 409; code: 'versi
   return candidate.status === 409 && candidate.code === 'version_conflict'
 }
 
+function isExplicitTerminalHttpConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as Record<string, unknown>
+  return candidate.status === 409
+    && typeof candidate.code === 'string'
+    && candidate.code.length > 0
+}
+
 function paymentBadgeVariant(status: PatientVisitPayment['status']) {
   if (status === 'completed') return 'success' as const
   if (status === 'pending' || status === 'processing') return 'info' as const
@@ -80,6 +88,12 @@ export function VisitPaymentSection({
       if (kind === 'email') emailOperationKeyRef.current = null
       await onSaved()
     } catch (caught) {
+      // An unknown transport failure may have reached the server, so keep the key
+      // for safe replay. A structured terminal 409 proves this operation cannot be
+      // replayed; rotate the key so the next click is an intentional resend.
+      if (kind === 'email' && isExplicitTerminalHttpConflict(caught)) {
+        emailOperationKeyRef.current = null
+      }
       if (isVersionConflict(caught)) {
         showRecordConflict({
           title: t('patient.visits.payment.conflictTitle'),
