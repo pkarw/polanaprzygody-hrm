@@ -43,6 +43,18 @@ export const setup: ModuleSetupConfig = {
     // assigning every therapist or room in the organization.
     await seedPolanaBookingDefaults(createBookingBootstrapDependencies(ctx.container), scope)
   },
+  // checkout adds its generic demo templates from seedExamples after all
+  // seedDefaults hooks have completed. Reconcile just the payment-template
+  // slice once more in example-enabled installs so the generic templates are
+  // inactivated while --no-examples installs still receive the operational
+  // Polana templates from seedDefaults above.
+  seedExamples: async (ctx) => {
+    const scope = {
+      tenantId: ctx.tenantId,
+      organizationId: ctx.organizationId,
+    }
+    await seedPolanaPaymentLinkTemplates(createPaymentLinkBootstrapDependencies(ctx.em, ctx.container), scope)
+  },
 }
 
 export default setup

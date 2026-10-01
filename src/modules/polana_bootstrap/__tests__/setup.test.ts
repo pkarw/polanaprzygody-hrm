@@ -124,7 +124,7 @@ describe('Polana operational setup', () => {
       scope,
       'availability-rule-set-1',
     )
-    expect(setup.seedExamples).toBeUndefined()
+    expect(setup.seedExamples).toBeDefined()
   })
 
   it('reruns the same default hook without depending on example seeding', async () => {
@@ -141,7 +141,22 @@ describe('Polana operational setup', () => {
     expect(mockResources).toHaveBeenCalledTimes(2)
     expect(mockTherapists).toHaveBeenCalledTimes(2)
     expect(mockBooking).toHaveBeenCalledTimes(2)
-    expect(setup.seedExamples).toBeUndefined()
+  })
+
+  it('reconciles only payment templates after installed example seeding', async () => {
+    const { context } = setupContext()
+
+    await expect(setup.seedExamples?.(context as never)).resolves.toBeUndefined()
+
+    expect(mockPaymentTemplates).toHaveBeenCalledTimes(1)
+    expect(mockPaymentTemplates).toHaveBeenCalledWith(expect.anything(), scope)
+    expect(mockOrganization).not.toHaveBeenCalled()
+    expect(mockCustomers).not.toHaveBeenCalled()
+    expect(mockCustomerIdentities).not.toHaveBeenCalled()
+    expect(mockCatalog).not.toHaveBeenCalled()
+    expect(mockResources).not.toHaveBeenCalled()
+    expect(mockTherapists).not.toHaveBeenCalled()
+    expect(mockBooking).not.toHaveBeenCalled()
   })
 
   it('fails closed before therapist or booking writes when schedule resolution is absent', async () => {
