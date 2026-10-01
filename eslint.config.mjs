@@ -11,6 +11,9 @@ const ignores = [
   'dist/**',
   'out/**',
   'build/**',
+  'coverage/**',
+  'test-results/**',
+  'playwright-report/**',
   'next-env.d.ts',
 ]
 
