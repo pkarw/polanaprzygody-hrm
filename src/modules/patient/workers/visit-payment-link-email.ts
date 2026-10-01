@@ -1,18 +1,30 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { JobContext, QueuedJob, WorkerMeta } from '@open-mercato/queue'
-import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
+import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
+import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { sendEmail } from '@open-mercato/shared/lib/email/send'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
-import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { getSecurityEmailBaseUrl } from '@open-mercato/shared/lib/url'
-import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
-import { Patient, PatientContactLink, PatientVisit } from '../data/entities'
+import {
+  Patient,
+  PatientContactLink,
+  PatientVisit,
+  PatientVisitPaymentEmailDelivery,
+  type PatientVisitPaymentEmailDeliveryStatus,
+} from '../data/entities'
 import VisitPaymentLinkEmail from '../emails/VisitPaymentLinkEmail'
 import {
   VISIT_PAYMENT_EMAIL_QUEUE,
   type VisitPaymentEmailJob,
 } from '../lib/visitPaymentEmailQueue'
+import {
+  processVisitPaymentEmailDelivery,
+  type VisitPaymentEmailDelivery,
+  type VisitPaymentEmailLoadResult,
+} from '../lib/visitPaymentEmailDelivery'
 import { PATIENT_VISIT_ENTITY_ID } from '../lib/visitPaymentFields'
 
 export const metadata: WorkerMeta = {
@@ -21,10 +33,7 @@ export const metadata: WorkerMeta = {
   concurrency: 5,
 }
 
-type Delivery = {
-  recipient: string
-  paymentUrl: string
-}
+const logger = createLogger('patient.visit_payment_email.worker')
 
 function readString(values: Record<string, unknown>, ...keys: string[]): string | null {
   for (const key of keys) {
@@ -73,74 +82,124 @@ export async function loadVisitPaymentEmailDelivery(
   payload: VisitPaymentEmailJob,
   em: EntityManager,
   queryEngine: QueryEngine,
-): Promise<Delivery | null> {
-  if (!payload.visitId || !payload.paymentLinkId || !payload.tenantId || !payload.organizationId) return null
+): Promise<VisitPaymentEmailLoadResult> {
+  if (!payload.deliveryId || !payload.tenantId || !payload.organizationId) {
+    return { ok: false, code: 'invalid_delivery_scope' }
+  }
   const scope = { tenantId: payload.tenantId, organizationId: payload.organizationId }
+  const operation = await em.findOne(PatientVisitPaymentEmailDelivery, {
+    id: payload.deliveryId,
+    ...scope,
+  } as FilterQuery<PatientVisitPaymentEmailDelivery>)
+  if (!operation) return { ok: false, code: 'delivery_missing' }
   const visit = await em.findOne(PatientVisit, {
-    id: payload.visitId,
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
+    id: operation.visitId,
+    ...scope,
     deletedAt: null,
   } as FilterQuery<PatientVisit>)
-  if (!visit) return null
+  if (!visit) return { ok: false, code: 'visit_missing' }
 
   const custom = await loadCustomFieldValues({
     em,
     entityId: PATIENT_VISIT_ENTITY_ID,
-    recordIds: [payload.visitId],
-    tenantIdByRecord: { [payload.visitId]: scope.tenantId },
-    organizationIdByRecord: { [payload.visitId]: scope.organizationId },
+    recordIds: [operation.visitId],
+    tenantIdByRecord: { [operation.visitId]: scope.tenantId },
+    organizationIdByRecord: { [operation.visitId]: scope.organizationId },
   })
-  const values = (custom[payload.visitId] ?? {}) as Record<string, unknown>
+  const values = (custom[operation.visitId] ?? {}) as Record<string, unknown>
   const linkId = readString(values, 'cf_payment_link_id', 'cf:payment_link_id', 'payment_link_id')
   const slug = readString(values, 'cf_payment_link_slug', 'cf:payment_link_slug', 'payment_link_slug')
   const status = readString(values, 'cf_payment_link_status', 'cf:payment_link_status', 'payment_link_status')
   const receivedAt = readString(values, 'cf_payment_received_at', 'cf:payment_received_at', 'payment_received_at')
-  if (linkId !== payload.paymentLinkId || !slug || receivedAt || status === 'completed') return null
-  if (!['pending', 'processing'].includes(status ?? '')) return null
+  if (linkId !== operation.paymentLinkId || !slug) {
+    return { ok: false, code: 'payment_link_missing' }
+  }
+  if (receivedAt || status === 'completed') return { ok: false, code: 'payment_link_completed' }
+  if (!['pending', 'processing'].includes(status ?? '')) {
+    return { ok: false, code: 'payment_link_inactive' }
+  }
 
   const linkRows = await queryEngine.query<Record<string, unknown>>('checkout:checkout_link', {
     fields: ['id', 'slug', 'status'],
-    filters: { id: { $eq: payload.paymentLinkId } },
+    filters: { id: { $eq: operation.paymentLinkId } },
     page: { page: 1, pageSize: 1 },
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
+    ...scope,
   })
   const link = linkRows.items[0]
-  if (!link || !['active', 'draft'].includes(String(link.status ?? '')) || String(link.slug ?? '') !== slug) return null
+  if (!link || !['active', 'draft'].includes(String(link.status ?? '')) || String(link.slug ?? '') !== slug) {
+    return { ok: false, code: 'checkout_link_inactive' }
+  }
 
   const patient = await findOneWithDecryption(em, Patient, {
     id: visit.patientId,
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
+    ...scope,
     deletedAt: null,
   } as FilterQuery<Patient>, undefined, scope)
-  if (!patient) return null
+  if (!patient) return { ok: false, code: 'patient_missing' }
   const recipient = await resolveContactEmail(em, queryEngine, String(patient.id), scope)
     ?? (typeof patient.email === 'string' && patient.email.trim() ? patient.email.trim() : null)
-  if (!recipient) return null
+  if (!recipient) return { ok: false, code: 'recipient_missing' }
 
   return {
-    recipient,
-    paymentUrl: `${getSecurityEmailBaseUrl(undefined).replace(/\/$/, '')}/pay/${encodeURIComponent(slug)}`,
+    ok: true,
+    delivery: {
+      recipient,
+      paymentUrl: `${getSecurityEmailBaseUrl(undefined).replace(/\/$/, '')}/pay/${encodeURIComponent(slug)}`,
+    },
   }
 }
 
-export default async function handleVisitPaymentEmailJob(
-  job: QueuedJob<VisitPaymentEmailJob>,
-  _ctx: JobContext,
-): Promise<void> {
-  const container = await createRequestContainer()
-  const em = (container.resolve('em') as EntityManager).fork()
-  const queryEngine = container.resolve('queryEngine') as QueryEngine
-  const delivery = await loadVisitPaymentEmailDelivery(job.payload, em, queryEngine)
-  if (!delivery) return
+async function transitionVisitPaymentEmailDelivery(
+  rootEm: EntityManager,
+  payload: VisitPaymentEmailJob,
+  from: PatientVisitPaymentEmailDeliveryStatus,
+  to: PatientVisitPaymentEmailDeliveryStatus,
+  code?: string,
+): Promise<boolean> {
+  const em = rootEm.fork()
+  await em.begin()
+  try {
+    const now = new Date()
+    const changed = await em.nativeUpdate(PatientVisitPaymentEmailDelivery, {
+      id: payload.deliveryId,
+      tenantId: payload.tenantId,
+      organizationId: payload.organizationId,
+      status: from,
+    } as FilterQuery<PatientVisitPaymentEmailDelivery>, {
+      status: to,
+      claimedAt: to === 'sending' ? now : undefined,
+      sentAt: to === 'sent' ? now : undefined,
+      failedAt: to === 'failed' || to === 'ambiguous' ? now : undefined,
+      failureCode: code ?? null,
+      updatedAt: now,
+    })
+    await em.commit()
+    return changed === 1
+  } catch (error) {
+    await em.rollback()
+    throw error
+  }
+}
+
+async function readDeliveryStatus(
+  em: EntityManager,
+  payload: VisitPaymentEmailJob,
+): Promise<PatientVisitPaymentEmailDeliveryStatus | null> {
+  const delivery = await em.findOne(PatientVisitPaymentEmailDelivery, {
+    id: payload.deliveryId,
+    tenantId: payload.tenantId,
+    organizationId: payload.organizationId,
+  } as FilterQuery<PatientVisitPaymentEmailDelivery>, { fields: ['status'] })
+  return delivery?.status ?? null
+}
+
+async function sendVisitPaymentEmail(delivery: VisitPaymentEmailDelivery, payload: VisitPaymentEmailJob): Promise<void> {
   const { t } = await resolveTranslations()
   await sendEmail({
     to: delivery.recipient,
     subject: t('patient.visits.payment.email.subject', 'Link do płatności za wizytę'),
-    tenantId: job.payload.tenantId,
-    organizationId: job.payload.organizationId,
+    tenantId: payload.tenantId,
+    organizationId: payload.organizationId,
     react: VisitPaymentLinkEmail({
       paymentUrl: delivery.paymentUrl,
       copy: {
@@ -153,5 +212,34 @@ export default async function handleVisitPaymentEmailJob(
         footer: t('patient.visits.payment.email.footer', 'Polana Przygody'),
       },
     }),
+  })
+}
+
+export default async function handleVisitPaymentEmailJob(
+  job: QueuedJob<VisitPaymentEmailJob>,
+  _ctx: JobContext,
+): Promise<void> {
+  const container = await createRequestContainer()
+  const rootEm = container.resolve('em') as EntityManager
+  const queryEngine = container.resolve('queryEngine') as QueryEngine
+  const payload = job.payload
+  await processVisitPaymentEmailDelivery({
+    readStatus: () => readDeliveryStatus(rootEm.fork(), payload),
+    loadDelivery: () => loadVisitPaymentEmailDelivery(payload, rootEm.fork(), queryEngine),
+    claimSending: () => transitionVisitPaymentEmailDelivery(rootEm, payload, 'pending', 'sending'),
+    markSent: () => transitionVisitPaymentEmailDelivery(rootEm, payload, 'sending', 'sent'),
+    markFailed: (code) => transitionVisitPaymentEmailDelivery(rootEm, payload, 'pending', 'failed', code),
+    markAmbiguous: (code) => transitionVisitPaymentEmailDelivery(rootEm, payload, 'sending', 'ambiguous', code),
+    send: (delivery) => sendVisitPaymentEmail(delivery, payload),
+    logTerminal: (status, code, errorName) => {
+      logger.error('Visit-payment-email delivery reached a terminal state', {
+        deliveryId: payload.deliveryId,
+        tenantId: payload.tenantId,
+        organizationId: payload.organizationId,
+        status,
+        code,
+        ...(errorName ? { errorName } : {}),
+      })
+    },
   })
 }

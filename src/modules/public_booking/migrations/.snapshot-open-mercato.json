@@ -25,6 +25,74 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "confirmation_email_claimed_at": {
+          "name": "confirmation_email_claimed_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "confirmation_email_delivery_status": {
+          "name": "confirmation_email_delivery_status",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "confirmation_email_failed_at": {
+          "name": "confirmation_email_failed_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "confirmation_email_failure_code": {
+          "name": "confirmation_email_failure_code",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "confirmation_email_sent_at": {
           "name": "confirmation_email_sent_at",
           "type": "timestamptz(6)",
@@ -358,6 +426,11 @@
         }
       ],
       "checks": [
+        {
+          "name": "public_booking_intakes_confirmation_email_status_chk",
+          "expression": "\"confirmation_email_delivery_status\" is null or \"confirmation_email_delivery_status\" in ('pending', 'sending', 'sent', 'failed', 'ambiguous')",
+          "definition": "check (\"confirmation_email_delivery_status\" is null or \"confirmation_email_delivery_status\" in ('pending', 'sending', 'sent', 'failed', 'ambiguous'))"
+        },
         {
           "name": "public_booking_intakes_request_hash_chk",
           "expression": "\"request_payload_hash\" ~ '^[0-9a-f]{64}$'",

@@ -42,6 +42,8 @@
   "patient.errors.calendarTooManyItems": "Kalendarz zawiera zbyt wiele wizyt; zawęź zakres lub dodaj filtr",
   "patient.errors.contactChannelRequired": "Pacjent musi mieć podany co najmniej adres e-mail lub numer telefonu",
   "patient.errors.idempotencyPayloadMismatch": "Ten identyfikator żądania został już użyty z inną treścią",
+  "patient.errors.paymentEmailOperationMismatch": "Ten klucz operacji e-mail został już użyty dla innej wysyłki",
+  "patient.errors.paymentEmailOperationTerminal": "Ta operacja e-mail osiągnęła stan końcowy. Rozpocznij nową operację ponownej wysyłki.",
   "patient.errors.invalidInput": "Dane żądania są nieprawidłowe.",
   "patient.errors.patientAlreadyActive": "Ten rekord jest już aktywny",
   "patient.errors.patientAlreadyArchived": "Ten rekord jest już zarchiwizowany",

@@ -46,6 +46,7 @@ export function VisitPaymentSection({
   const [error, setError] = React.useState<string | null>(null)
   const [announcement, setAnnouncement] = React.useState('')
   const errorRef = React.useRef<HTMLDivElement | null>(null)
+  const emailOperationKeyRef = React.useRef<string | null>(null)
   const canManage = access.status === 'ready' && access.canManage
   const payment = visit.payment
   const canRegenerate = payment && ['inactive', 'expired', 'failed'].includes(payment.status)
@@ -55,12 +56,19 @@ export function VisitPaymentSection({
     if (activeAction) return
     setActiveAction(kind)
     setError(null)
+    const emailOperationKey = kind === 'email'
+      ? emailOperationKeyRef.current ?? crypto.randomUUID()
+      : null
+    if (emailOperationKey) emailOperationKeyRef.current = emailOperationKey
     try {
       const result = await readApiResultOrThrow<PaymentActionResult>(
         `/api/patient/visits/${encodeURIComponent(visit.id)}/payment-link${kind === 'email' ? '/email' : ''}`,
         {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(emailOperationKey ? { 'idempotency-key': emailOperationKey } : {}),
+          },
           body: JSON.stringify({ expectedUpdatedAt: visit.updatedAt }),
         },
       )
@@ -69,6 +77,7 @@ export function VisitPaymentSection({
       setAnnouncement(kind === 'email'
         ? t('patient.visits.payment.emailQueued')
         : t('patient.visits.payment.linkReady'))
+      if (kind === 'email') emailOperationKeyRef.current = null
       await onSaved()
     } catch (caught) {
       if (isVersionConflict(caught)) {

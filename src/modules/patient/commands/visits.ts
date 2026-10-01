@@ -1979,7 +1979,12 @@ function createVisitLifecycleCommand(
 
       if (definition.operation === 'confirm' && input.sendPaymentLinkEmail && paymentLink) {
         try {
-          await paymentEmailService(ctx).enqueueForVisit(input.id, paymentLink, ctx)
+          await paymentEmailService(ctx).enqueueForVisit(
+            input.id,
+            paymentLink,
+            `confirm:${input.id}:${input.expectedUpdatedAt}:${paymentLink.id}`,
+            ctx,
+          )
           paymentLinkEmailQueued = true
         } catch (error) {
           paymentLinkEmailError = paymentFailure(error)
@@ -2122,7 +2127,12 @@ const sendVisitPaymentLinkEmailCommand: CommandHandler<Record<string, unknown>, 
     await requireVisitFeatures(ctx, scope, ['patient.visits.manage'])
     try {
       const paymentLink = await paymentService(ctx).ensureForVisit(input.id, ctx, input.expectedUpdatedAt)
-      await paymentEmailService(ctx).enqueueForVisit(input.id, paymentLink, ctx)
+      await paymentEmailService(ctx).enqueueForVisit(
+        input.id,
+        paymentLink,
+        input.emailOperationKey ?? randomUUID(),
+        ctx,
+      )
       return {
         visit: await paymentActionVisit(ctx, input.id),
         paymentLink,

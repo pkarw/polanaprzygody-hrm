@@ -26,8 +26,25 @@ export default async function onPatientVisitConfirmed(
     visitId: payload.id,
     ...scope,
     deletedAt: null,
-  } as FilterQuery<BookingIntake>, { fields: ['id', 'confirmationEmailSentAt'] })
+  } as FilterQuery<BookingIntake>)
   // Staff-created visits have no intake and keep their existing behavior.
-  if (!intake || intake.confirmationEmailSentAt) return
-  await dispatchBookingConfirmationEmailJob({ visitId: payload.id, ...scope })
+  if (!intake) return
+  if (intake.confirmationEmailSentAt) {
+    if (intake.confirmationEmailDeliveryStatus !== 'sent') {
+      intake.confirmationEmailDeliveryStatus = 'sent'
+      intake.updatedAt = new Date()
+      await em.flush()
+    }
+    return
+  }
+  if (['sent', 'failed', 'ambiguous'].includes(intake.confirmationEmailDeliveryStatus ?? '')) return
+  if (!intake.confirmationEmailDeliveryStatus) {
+    intake.confirmationEmailDeliveryStatus = 'pending'
+    intake.confirmationEmailFailureCode = null
+    intake.confirmationEmailFailedAt = null
+    intake.updatedAt = new Date()
+    // Persist the recovery marker before touching the external queue.
+    await em.flush()
+  }
+  await dispatchBookingConfirmationEmailJob({ deliveryId: intake.id, ...scope })
 }

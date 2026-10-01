@@ -86,6 +86,7 @@ describe('VisitPaymentSection', () => {
     const [path, init] = apiCall.mock.calls[0] as unknown as [string, RequestInit]
     expect(path.endsWith('/payment-link/email')).toBe(true)
     expect(JSON.parse(String(init.body))).toEqual({ expectedUpdatedAt: visit.updatedAt })
+    expect((init.headers as Record<string, string>)['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 
