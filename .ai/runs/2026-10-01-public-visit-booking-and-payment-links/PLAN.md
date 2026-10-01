@@ -27,8 +27,8 @@
 | 4 | 4.3 | Deliver booking confirmation emails after visit confirmation | inline | done | 188ed21 |
 | 4 | 4.4 | Show online-booking provenance on visit details | inline | done | d9893bf |
 | 5 | 5.1 | Cover PBOOK API, scope, race, and retry integration paths | inline | done | bfe8a67 |
-| 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | done | this commit |
-| 5 | 5.3 | Add browser journeys and capture final UI evidence | inline | todo | — |
+| 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | done | 37809c4 |
+| 5 | 5.3 | Add browser journeys and capture final UI evidence | inline | done | this commit |
 
 ## Goal
 
