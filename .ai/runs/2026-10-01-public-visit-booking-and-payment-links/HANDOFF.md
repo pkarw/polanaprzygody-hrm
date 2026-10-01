@@ -1,31 +1,33 @@
 # Handoff — 2026-10-01-public-visit-booking-and-payment-links
 
-**Last updated:** 2026-10-01T18:00:00Z
+**Last updated:** 2026-10-01T18:28:00Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
 **PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
-**Current phase/step:** Phase 5 Step 5.1
-**Last implementation commit:** `d9893bf` — `feat(patient): show online booking provenance`
+**Current phase/step:** Implementation complete; automated review is next
+**Last implementation commit:** `3e1f21e` — `test(booking): add browser journeys`
 
 ## What just happened
 
-- Phase 4 is complete: hardened public submission, complete anonymous intake, post-confirmation email delivery, and the staff-only online-booking provenance panel are implemented.
-- Checkpoint 4 passed 54 focused tests, generation, typecheck, lint, design-system checks, and production build.
-- Real Chromium exercised the production server at 1440px. The filled booking form, PII-free thank-you page, and authenticated backend visit/provenance/payment surface rendered correctly with zero browser errors.
-- Three screenshots and a clean browser transcript are committed in `checkpoint-4-artifacts/` and published to PR #13.
+- Every planned Step 1.1–5.3 is complete and pushed.
+- The full configured gate passed: generation, typecheck, lint, design-system compliance, unit tests, and production build.
+- The repository-native full integration suite passed on a production server backed by a newly initialized disposable PostgreSQL database: 103 passed, 4 conditionally skipped.
+- Fresh initialization applied the app migration chain and seeded the Polana catalog, booking duration/therapist/resource values, scoped public-booking identity and encryption maps, checkout templates, roles, and standard test users.
+- Real Chromium passed the public booking and authenticated visit/payment keyboard journeys; final screenshots are committed under `final-gate-artifacts/`.
 
 ## Next concrete action
 
-- Implement Step 5.1: repository-native PBOOK integration coverage for public reads, scope isolation, concurrency/idempotency, limiter failure, credentials, and confirmation email behavior.
+- Run `om-auto-review-pr 13 --autofix`, apply and re-gate any review fixes, then run `om-auto-qa-pr 13 --self-qa-signoff`.
+- When the review, UI QA, and required GitHub checks are green, mark PR #13 ready and merge it into the configured base branch.
 
 ## Blockers / open questions
 
-- No implementation blocker. Docker/Testcontainers are unavailable on this host, so the repository's full ephemeral integration runner may need the existing PostgreSQL fallback; the final gate will attempt the native command and record any infrastructure-only limitation exactly.
+- No product blocker. Docker is unavailable, so the native Testcontainers wrapper cannot provision its own environment; the entire 107-case suite was nevertheless run against an equivalent fresh disposable PostgreSQL database and production build.
 
 ## Environment caveats
 
-- Docker is unavailable. The proven QA path uses PostgreSQL 17 on port 15432 plus staged Chromium libraries.
-- Do not apply the generated public-booking migration merely to run tests. Use repository-native initialization only when the integration runner provisions a fresh database.
-- The checkpoint PostgreSQL cluster may still be running at `/tmp/pbook-checkpoint1.qczDQk/postgres`; stop it during final cleanup.
+- The final-gate production server is on `127.0.0.1:3212` and uses the disposable `mercato_final_gate_20261001` database in the run-owned PostgreSQL cluster.
+- Staged Chromium libraries are provided through `LD_LIBRARY_PATH`; keep that setting for the final QA pass.
+- Stop the server and `/tmp/pbook-checkpoint1.qczDQk/postgres` cluster after the PR is merged.
 
 ## Worktree
 

@@ -66,3 +66,12 @@
 - Verification: generation, 54 focused public-booking/patient tests, typecheck, lint, design-system check, and production build all passed.
 - UI evidence: real Chromium rendered the filled booking intake, PII-free thank-you route, and authenticated visit provenance/payment surface at 1440px with zero browser errors.
 - Test-data decision: deterministic HTTP fixtures drive the screenshots because applying the new migration only for visual data is prohibited; the authenticated shell uses an isolated test tenant created under the current test encryption key.
+
+## 2026-10-01T18:28:00Z — final implementation gate passed
+
+- Steps: every Tasks row 1.1–5.3 is done; last implementation commit is `3e1f21e`.
+- Verification: the full configured validation chain passed, including generation, typecheck, lint, design-system checks, unit tests, and production build.
+- Integration: the complete repository-native suite passed with 103 tests passing and 4 conditionally skipped against a freshly initialized disposable PostgreSQL database and production server.
+- Installation proof: initialization applied current migrations and seeded the Polana service mappings, checkout templates, public-booking identity, encryption maps, roles, users, and module defaults required for immediate operation.
+- UI evidence: real Chromium passed the anonymous mobile success journey and authenticated wide visit payment/provenance keyboard journey; final screenshots are committed for PR publication.
+- Environment decision: the native Testcontainers wrapper cannot start because this host has no Docker CLI. No tests were omitted: the same full suite ran against the run-owned PostgreSQL fallback.
