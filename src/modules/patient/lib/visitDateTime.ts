@@ -98,24 +98,23 @@ export type VisitScheduleFormValue = {
   startsAtLocal: string
   endsAtLocal?: string | null
   timeZone: string
-  startOffset?: string | null
-  endOffset?: string | null
 }
 
+/**
+ * On the autumn DST fold a local time matches two instants; the operator has no way to pick
+ * one (no UTC-offset field), so this takes the chronologically earlier one.
+ */
 export function buildVisitSchedule(
   value: VisitScheduleFormValue,
-  labels: { gap: string; fold: string; offset: string; endAfterStart: string },
+  labels: { gap: string; endAfterStart: string },
 ): { startsAt: string; endsAt: string | null } {
-  const resolve = (local: string, offset?: string | null) => {
+  const resolve = (local: string) => {
     const choices = visitInstantChoices(local, value.timeZone)
     if (choices.length === 0) throw new Error(labels.gap)
-    if (choices.length > 1 && !offset) throw new Error(labels.fold)
-    const selected = resolveVisitInstant(local, value.timeZone, offset)
-    if (!selected) throw new Error(labels.offset)
-    return selected.instant
+    return choices[0].instant
   }
-  const startsAt = resolve(value.startsAtLocal, value.startOffset)
-  const endsAt = value.endsAtLocal ? resolve(value.endsAtLocal, value.endOffset) : null
+  const startsAt = resolve(value.startsAtLocal)
+  const endsAt = value.endsAtLocal ? resolve(value.endsAtLocal) : null
   if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
     throw new Error(labels.endAfterStart)
   }

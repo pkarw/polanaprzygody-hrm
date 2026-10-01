@@ -55,12 +55,24 @@ describe('visit local date-time conversion', () => {
       timeZone: 'Europe/Warsaw',
     }, {
       gap: 'gap',
-      fold: 'fold',
-      offset: 'offset',
       endAfterStart: 'end',
     })).toEqual({
       startsAt: '2026-10-05T10:00:00+02:00',
       endsAt: '2026-10-05T11:00:00+02:00',
+    })
+  })
+
+  it('resolves an autumn fold to its earlier instant without an explicit offset', () => {
+    expect(buildVisitSchedule({
+      startsAtLocal: '2026-10-25T02:30',
+      endsAtLocal: null,
+      timeZone: 'Europe/Warsaw',
+    }, {
+      gap: 'gap',
+      endAfterStart: 'end',
+    })).toEqual({
+      startsAt: '2026-10-25T02:30:00+02:00',
+      endsAt: null,
     })
   })
 
@@ -71,8 +83,6 @@ describe('visit local date-time conversion', () => {
       timeZone: 'UTC',
     }, {
       gap: 'gap',
-      fold: 'fold',
-      offset: 'offset',
       endAfterStart: 'end',
     })).toThrow('end')
   })

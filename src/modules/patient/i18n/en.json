@@ -387,13 +387,10 @@
   "patient.visits.error.notFound": "This visit is not available.",
   "patient.visits.fields.description": "Organisational notes",
   "patient.visits.fields.descriptionHint": "Do not record clinical findings here; use the patient's clinical documentation.",
-  "patient.visits.fields.endOffset": "End UTC offset",
   "patient.visits.fields.endsAt": "Ends",
-  "patient.visits.fields.offsetHint": "Required only when daylight-saving time makes this local time occur twice.",
   "patient.visits.fields.patient": "Patient",
   "patient.visits.fields.resource": "Room / resource",
   "patient.visits.fields.resourceHint": "Optional. Historical visits keep the resource name even if it later becomes unavailable.",
-  "patient.visits.fields.startOffset": "Start UTC offset",
   "patient.visits.fields.startsAt": "Starts",
   "patient.visits.fields.teamMember": "Team member",
   "patient.visits.fields.timeZone": "Time zone",
@@ -481,8 +478,6 @@
   "patient.visits.status.no_show": "No-show",
   "patient.visits.status.planned": "Planned",
   "patient.visits.title": "Visits",
-  "patient.visits.validation.dstFold": "This local time occurs twice. Select its UTC offset.",
   "patient.visits.validation.dstGap": "This local time does not exist because of the daylight-saving transition.",
-  "patient.visits.validation.endAfterStart": "The end time must be later than the start time.",
-  "patient.visits.validation.offset": "The selected UTC offset does not match this local time and time zone."
+  "patient.visits.validation.endAfterStart": "The end time must be later than the start time."
 }

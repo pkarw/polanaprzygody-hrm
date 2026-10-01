@@ -107,12 +107,8 @@ export function VisitAvailabilityCheck({
         startsAtLocal,
         endsAtLocal: stringValue(values, 'endsAtLocal') || null,
         timeZone,
-        startOffset: stringValue(values, 'startOffset') || null,
-        endOffset: stringValue(values, 'endOffset') || null,
       }, {
         gap: t('patient.visits.validation.dstGap'),
-        fold: t('patient.visits.validation.dstFold'),
-        offset: t('patient.visits.validation.offset'),
         endAfterStart: t('patient.visits.validation.endAfterStart'),
       })
       const query = new URLSearchParams({ teamMemberId, startsAt: schedule.startsAt })

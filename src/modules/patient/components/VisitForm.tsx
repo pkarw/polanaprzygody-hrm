@@ -45,7 +45,6 @@ import { usePatientVisitAccess } from './usePatientVisitAccess'
 import {
   defaultVisitTimeZone,
   buildVisitSchedule,
-  instantOffsetInTimeZone,
   toVisitLocalDateTime,
 } from '../lib/visitDateTime'
 import {
@@ -90,8 +89,6 @@ type VisitFormValues = {
   startsAtLocal: string
   endsAtLocal: string | null
   timeZone: string
-  startOffset: string | null
-  endOffset: string | null
   description: string | null
   serviceProductIds: string[]
   availabilityGate: VisitAvailabilityGateValue | null
@@ -132,14 +129,6 @@ function timeZoneOptions(query?: string): Promise<CrudFieldOption[]> {
     .slice(0, 100)
     .map((zone) => ({ value: zone, label: zone })))
 }
-
-const offsetOptions: CrudFieldOption[] = Array.from({ length: 113 }, (_, index) => index * 15 - 14 * 60)
-  .map((minutes) => {
-    const sign = minutes >= 0 ? '+' : '-'
-    const absolute = Math.abs(minutes)
-    const value = `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`
-    return { value, label: `UTC${value}` }
-  })
 
 function accessibleDateTimeField(input: {
   id: 'startsAtLocal' | 'endsAtLocal'
@@ -286,14 +275,6 @@ function useVisitFields(
       description: t('patient.visits.fields.timeZoneHint'),
     },
     {
-      id: 'startOffset',
-      label: t('patient.visits.fields.startOffset'),
-      type: 'combobox',
-      options: offsetOptions,
-      allowCustomValues: false,
-      description: t('patient.visits.fields.offsetHint'),
-    },
-    {
       id: 'availabilityGate',
       label: '',
       type: 'custom',
@@ -311,22 +292,15 @@ function useVisitFields(
       ),
     },
     {
-      id: 'endOffset',
-      label: t('patient.visits.fields.endOffset'),
-      type: 'combobox',
-      options: offsetOptions,
-      allowCustomValues: false,
-      description: t('patient.visits.fields.offsetHint'),
-    },
-    {
       id: 'serviceProductIds',
       label: '',
       type: 'custom',
       rendersOwnError: true,
       component: ({ value, setValue, error, disabled }) => (
+        // No visible label here: the `services` group title already reads "Usługi"
+        // directly above this field, so a FormField label would repeat it.
         <FormField
           id="patient-visit-serviceProductIds"
-          label={t('patient.visits.services.label')}
           error={error}
           disabled={disabled}
         >
@@ -350,7 +324,7 @@ function useVisitGroups(): CrudFormGroup[] {
   const t = useT()
   return React.useMemo(() => [
     { id: 'patient', title: t('patient.visits.groups.patient'), column: 1, fields: ['patientId', 'teamMemberId', 'resourceId'] },
-    { id: 'schedule', title: t('patient.visits.groups.schedule'), column: 2, fields: ['startsAtLocal', 'endsAtLocal', 'timeZone', 'startOffset', 'endOffset', 'availabilityGate'] },
+    { id: 'schedule', title: t('patient.visits.groups.schedule'), column: 2, fields: ['startsAtLocal', 'endsAtLocal', 'timeZone', 'availabilityGate'] },
     { id: 'services', title: t('patient.visits.groups.services'), column: 1, fields: ['serviceProductIds'] },
     { id: 'description', title: t('patient.visits.groups.description'), column: 2, fields: ['description'] },
   ], [t])
@@ -359,8 +333,6 @@ function useVisitGroups(): CrudFormGroup[] {
 function buildSchedule(values: VisitFormValues, t: ReturnType<typeof useT>) {
   return buildVisitSchedule(values, {
     gap: t('patient.visits.validation.dstGap'),
-    fold: t('patient.visits.validation.dstFold'),
-    offset: t('patient.visits.validation.offset'),
     endAfterStart: t('patient.visits.validation.endAfterStart'),
   })
 }
@@ -392,8 +364,6 @@ export function VisitCreateForm({
     startsAtLocal: startsAt ? toVisitLocalDateTime(startsAt, timeZone) : '',
     endsAtLocal: endsAt ? toVisitLocalDateTime(endsAt, timeZone) : null,
     timeZone,
-    startOffset: startsAt ? instantOffsetInTimeZone(startsAt, timeZone) : null,
-    endOffset: endsAt ? instantOffsetInTimeZone(endsAt, timeZone) : null,
     description: null,
     serviceProductIds: [],
     availabilityGate: { allowSubmit: true },
@@ -446,8 +416,6 @@ function toEditValues(record: PatientVisitItem): VisitFormValues {
     startsAtLocal: toVisitLocalDateTime(record.startsAt, record.timeZone),
     endsAtLocal: record.endsAt ? toVisitLocalDateTime(record.endsAt, record.timeZone) : null,
     timeZone: record.timeZone,
-    startOffset: instantOffsetInTimeZone(record.startsAt, record.timeZone),
-    endOffset: record.endsAt ? instantOffsetInTimeZone(record.endsAt, record.timeZone) : null,
     description: record.description ?? null,
     serviceProductIds: record.services.map((service) => service.productId),
     availabilityGate: { allowSubmit: true },

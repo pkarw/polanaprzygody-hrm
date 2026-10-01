@@ -387,13 +387,10 @@
   "patient.visits.error.notFound": "Ta wizyta jest niedostępna.",
   "patient.visits.fields.description": "Notatka organizacyjna",
   "patient.visits.fields.descriptionHint": "Nie zapisuj tu ustaleń klinicznych; użyj dokumentacji klinicznej pacjenta.",
-  "patient.visits.fields.endOffset": "Offset UTC końca",
   "patient.visits.fields.endsAt": "Koniec",
-  "patient.visits.fields.offsetHint": "Wymagany tylko wtedy, gdy zmiana czasu sprawia, że ta lokalna godzina występuje dwa razy.",
   "patient.visits.fields.patient": "Pacjent",
   "patient.visits.fields.resource": "Gabinet / zasób",
   "patient.visits.fields.resourceHint": "Opcjonalny. Historyczna wizyta zachowa nazwę zasobu, nawet gdy stanie się on niedostępny.",
-  "patient.visits.fields.startOffset": "Offset UTC początku",
   "patient.visits.fields.startsAt": "Początek",
   "patient.visits.fields.teamMember": "Członek zespołu",
   "patient.visits.fields.timeZone": "Strefa czasowa",
@@ -481,8 +478,6 @@
   "patient.visits.status.no_show": "Nieobecność",
   "patient.visits.status.planned": "Zaplanowana",
   "patient.visits.title": "Wizyty",
-  "patient.visits.validation.dstFold": "Ta lokalna godzina występuje dwa razy. Wybierz jej offset UTC.",
   "patient.visits.validation.dstGap": "Ta lokalna godzina nie istnieje z powodu zmiany czasu.",
-  "patient.visits.validation.endAfterStart": "Koniec wizyty musi być późniejszy niż jej początek.",
-  "patient.visits.validation.offset": "Wybrany offset UTC nie pasuje do tej lokalnej godziny i strefy czasowej."
+  "patient.visits.validation.endAfterStart": "Koniec wizyty musi być późniejszy niż jej początek."
 }
