@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Makiety UI — linki płatności za wizytę (spec VPAY)</title>
+<style>
+  :root{
+    --primary:#2A5C47; --primary-fg:#EFF1C5; --primary-hover:#1E4435;
+    --bg:#ffffff; --fg:#252525; --muted:#f7f7f7; --muted-fg:#767676;
+    --border:#e6e6e6; --sidebar:#fbfbfb; --ring:#2A5C47;
+    --radius:10px;
+    --ok-bg:#e9f6ef; --ok-fg:#1c5c3e; --ok-bd:#bfe3d0;
+    --warn-bg:#fffaeb; --warn-fg:#624c18; --warn-bd:#f6b51e;
+    --info-bg:#ebf8ff; --info-fg:#124b68; --info-bd:#47c2ff;
+    --gray-bg:#f2f2f2; --gray-fg:#5a5a5a; --gray-bd:#dedede;
+    --red-bg:#fdecec; --red-fg:#8c2018; --red-bd:#f3b7b2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#eceef0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fg)}
+  .frame{background:#fff;margin:28px auto;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+  .caption{background:#111827;color:#fff;padding:10px 18px;display:flex;gap:14px;align-items:baseline;font-size:12.5px}
+  .caption b{font-size:14px;letter-spacing:.2px}
+  .caption .rt{font-family:ui-monospace,Menlo,monospace;color:#b9f2c8}
+  .caption .sp{margin-left:auto;color:#9aa4b2}
+  .app{display:grid;grid-template-columns:232px 1fr;min-height:0}
+  .sb{background:var(--sidebar);border-right:1px solid var(--border);padding:14px 10px}
+  .logo{display:flex;align-items:center;gap:9px;padding:6px 8px 16px;font-weight:650;font-size:14px}
+  .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#B4F372,#EEFB63 45%,#BC9AFF)}
+  .sbgroup{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted-fg);padding:12px 9px 5px}
+  .sbi{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:13px;color:#4a4a4a}
+  .sbi .ic{width:15px;text-align:center;opacity:.65;font-size:12px}
+  .sbi.active{background:var(--primary);color:var(--primary-fg);font-weight:600}
+  .sbi.active .ic{opacity:1}
+  .top{display:flex;align-items:center;gap:12px;padding:11px 22px;border-bottom:1px solid var(--border)}
+  .crumbs{font-size:12.5px;color:var(--muted-fg)}
+  .crumbs b{color:var(--fg);font-weight:600}
+  .topsearch{margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12.5px;color:var(--muted-fg);width:250px;background:var(--muted)}
+  .org{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12.5px}
+  .av{width:28px;height:28px;border-radius:50%;background:#dcd6ff;color:#351a75;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:650}
+  .main{display:flex;flex-direction:column;min-width:0}
+  .body{padding:20px 22px 26px;flex:1}
+  .ph{display:flex;align-items:flex-start;gap:14px;margin-bottom:16px}
+  .ph h1{margin:0;font-size:21px;font-weight:660;letter-spacing:-.2px}
+  .ph .sub{margin:4px 0 0;font-size:12.5px;color:var(--muted-fg)}
+  .ph .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:var(--radius);padding:7px 12px;font-size:12.5px;font-weight:550;color:#3a3a3a;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+  .btn.p{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+  .btn.d{border-color:var(--red-bd);color:var(--red-fg)}
+  .btn.sm{padding:4px 9px;font-size:11.5px;border-radius:8px}
+  .btn.off{opacity:.45}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:2px 0 18px}
+  .tab{padding:9px 13px;font-size:13px;color:var(--muted-fg);border-bottom:2px solid transparent;display:flex;gap:6px;align-items:center}
+  .tab.active{color:var(--fg);font-weight:620;border-bottom-color:var(--primary)}
+  .card{border:1px solid var(--border);border-radius:12px;background:#fff;overflow:hidden}
+  .card+.card{margin-top:14px}
+  .card .hd{padding:12px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .card .hd h3{margin:0;font-size:13.5px;font-weight:640}
+  .card .hd .r{margin-left:auto;display:flex;gap:8px}
+  .card .ct{padding:15px}
+  .hint{font-size:11.5px;color:var(--muted-fg);margin-top:5px}
+  .b{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:600;border:1px solid transparent}
+  .b.ok{background:var(--ok-bg);color:var(--ok-fg);border-color:var(--ok-bd)}
+  .b.gray{background:var(--gray-bg);color:var(--gray-fg);border-color:var(--gray-bd)}
+  .b.warn{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-bd)}
+  .b.info{background:var(--info-bg);color:var(--info-fg);border-color:var(--info-bd)}
+  .b.red{background:var(--red-bg);color:var(--red-fg);border-color:var(--red-bd)}
+  .bs{display:flex;gap:5px;flex-wrap:wrap}
+  .banner{display:flex;gap:11px;padding:11px 14px;border-radius:11px;font-size:12.5px;border:1px solid;margin-bottom:14px;line-height:1.45}
+  .banner .i{font-weight:700}
+  .banner.info{background:var(--info-bg);border-color:var(--info-bd);color:var(--info-fg)}
+  .banner.warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-fg)}
+  .banner.red{background:var(--red-bg);border-color:var(--red-bd);color:var(--red-fg)}
+  .banner.ok{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok-fg)}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #f4f4f4;font-size:12.5px}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--muted-fg)}
+  .kv .v{font-weight:550;text-align:right}
+  .actbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .cb{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0}
+  .cb .bx{width:15px;height:15px;border-radius:4px;border:1.5px solid #c9c9c9;background:#fff}
+  .cb .bx.on{background:var(--primary);border-color:var(--primary);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#4a4a4a;background:var(--muted);border-radius:6px;padding:2px 7px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .mini-h{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted-fg);font-weight:650;margin-bottom:8px}
+  /* publiczna strona płatności — branding Polany, theming-driven z CheckoutLinkTemplate */
+  .paypage{min-height:860px;background:radial-gradient(1100px 420px at 50% -60px, #3c7a61 0%, var(--primary) 46%, #16332a 100%);display:flex;align-items:flex-start;justify-content:center;padding:54px 24px;font-family:ui-sans-serif,system-ui,sans-serif}
+  .paycard{width:560px;background:#fff;border-radius:20px;box-shadow:0 30px 60px rgba(0,0,0,.28);overflow:hidden}
+  .payhero{padding:34px 36px 26px;color:#fff;background:linear-gradient(135deg, var(--primary), var(--primary-hover))}
+  .paylogo{display:flex;align-items:center;gap:11px;margin-bottom:18px}
+  .paylogo .mark{width:40px;height:40px;border-radius:12px;background:var(--primary-fg);color:var(--primary-hover);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
+  .paylogo .nm{font-weight:700;font-size:15px;letter-spacing:.2px}
+  .payhero h1{margin:0 0 6px;font-size:21px;font-weight:700}
+  .payhero p{margin:0;font-size:13px;opacity:.9}
+  .paybody{padding:28px 36px 32px}
+  .payline{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0f0f0;font-size:13.5px}
+  .payline:last-of-type{border-bottom:0}
+  .payline .nm{font-weight:600}
+  .payline .sub{color:var(--muted-fg);font-size:11.5px;margin-top:2px}
+  .paytotal{display:flex;justify-content:space-between;align-items:baseline;margin:16px 0 22px;padding-top:14px;border-top:2px solid #eee}
+  .paytotal .k{font-size:13px;color:var(--muted-fg)}
+  .paytotal .v{font-size:24px;font-weight:750;color:var(--primary-hover)}
+  .paybtn{width:100%;background:var(--primary);color:var(--primary-fg);border:0;border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;text-align:center}
+  .payfoot{margin-top:18px;font-size:11px;color:var(--muted-fg);text-align:center;line-height:1.6}
+  .paysuccess{text-align:center;padding:50px 36px}
+  .paysuccess .ic{width:56px;height:56px;border-radius:50%;background:var(--ok-bg);color:var(--ok-fg);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 16px}
+  .threecol{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:start}
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+const SCREENS = [];
+function S(o){SCREENS.push(o)}
+
+const NAV = (active) => `
+<aside class="sb">
+  <div class="logo"><span class="dot"></span> Polana Przygody</div>
+  <div class="sbgroup">Opieka</div>
+  <div class="sbi"><span class="ic">♡</span> Pacjenci</div>
+  <div class="sbi ${active==='visits'?'active':''}"><span class="ic">◷</span> Wizyty</div>
+  <div class="sbgroup">Płatności</div>
+  <div class="sbi ${active==='pay'?'active':''}"><span class="ic">$</span> Linki płatności</div>
+  <div class="sbi"><span class="ic">▦</span> Szablony linków</div>
+</aside>`;
+
+const TOP = (crumbs) => `
+<div class="top">
+  <div class="crumbs">${crumbs}</div>
+  <div class="topsearch"><span>◎</span> Szukaj…</div>
+  <div class="org">Polana Przygody • Wrocław <span class="cv">▾</span></div>
+  <div class="av">AN</div>
+</div>`;
+
+const VIS_TABS = (active) => `
+<div class="tabs">
+  ${[['sum','Przegląd'],['main','Pacjent i termin'],['svc','Usługi'],['st','Status i potwierdzenie'],['pay','Płatność']]
+    .map(([k,l])=>`<div class="tab ${active===k?'active':''}">${l}</div>`).join('')}
+</div>`;
+
+/* ───────── 01 — Panel Płatność: stan tuż po potwierdzeniu, jedna usługa ───────── */
+S({id:'vpay01',w:1440,file:'vpay-ui-01-link-utworzony-jedna-usluga.png',label:'Panel wizyty — zakładka Płatność, link utworzony przy potwierdzeniu',
+route:'/backend/patient/visits/[id] · zakładka Płatność',spec:'VPAY-A2/A3 · ensurePaymentLinkForVisit, odpowiedź POST .../confirmation',
+html:`${NAV('visits')}
+<div class="main">
+  ${TOP('Opieka / Wizyty / <b>Zofia Kaczmarek — 2026-10-02 09:30</b> / Płatność')}
+  <div class="body">
+    <div class="ph"><div><h1>Wizyta — Zofia Kaczmarek</h1><p class="sub">2026-10-02, 09:30–10:30 · Diagnoza integracji sensorycznej · 750 PLN</p>
+      <div class="bs" style="margin-top:7px"><span class="b info">Zaplanowana</span> <span class="b ok">Potwierdzona</span> <span class="b warn">Oczekuje na płatność</span></div>
+    </div></div>
+    ${VIS_TABS('pay')}
+    <div class="banner ok" style="margin-bottom:14px"><span class="i">✓</span><div><b>Wizyta potwierdzona.</b> Link płatności został utworzony automatycznie z szablonu usługi „Diagnoza integracji sensorycznej”.</div></div>
+    <div class="split">
+      <div>
+        <div class="card"><div class="hd"><h3>Link płatności</h3><span class="b warn">pending</span></div><div class="ct">
+          <div class="kv"><span class="k">Szablon</span><span class="v">Diagnoza integracji sensorycznej — 750 PLN</span></div>
+          <div class="kv"><span class="k">Adres</span><span class="v mono">polanaprzygody.pl/pay/pp-7f3a9k</span></div>
+          <div class="kv"><span class="k">Utworzono</span><span class="v">2026-10-02 08:14 · Katarzyna Mazur</span></div>
+          <div class="actbar" style="margin-top:13px">
+            <button class="btn p">⧉ Kopiuj link</button>
+            <button class="btn">✉ Wyślij mailem do opiekuna</button>
+            <button class="btn off" title="Dostępne po dezaktywacji bieżącego linku">↻ Wygeneruj ponownie</button>
+          </div>
+          <div class="hint" style="margin-top:9px">Checkbox „Wyślij link mailem” przy potwierdzeniu wizyty nie był zaznaczony — operator może wysłać ręcznie w dowolnym momencie.</div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Formularz potwierdzenia (jak wygląda w momencie akcji)</h3></div><div class="ct">
+          <div class="kv"><span class="k">Potwierdź wizytę</span><span class="v"><button class="btn sm p">Potwierdź</button></span></div>
+          <div class="cb" style="margin-top:8px"><span class="bx on">✓</span> Wyślij link do płatności mailem do opiekuna</div>
+          <div class="hint">Pole opcjonalne, odznaczone domyślnie — operator decyduje przy każdym potwierdzeniu z osobna.</div>
+        </div></div>
+      </div>
+      <div>
+        <div class="card"><div class="hd"><h3>Co widzi pacjent</h3></div><div class="ct">
+          <div class="hint" style="line-height:1.7">Pod linkiem otwiera się markowa strona płatności Polany Przygody (branding z szablonu — patrz makiety 03/04), bez logowania. Po opłaceniu ta karta automatycznie pokaże znacznik „opłacono” — patrz makieta 02.</div>
+        </div></div>
+        <div class="card"><div class="hd"><h3>Dziennik płatności</h3></div><div class="ct">
+          <div class="kv"><span class="k">2026-10-02 08:14</span><span class="v">Link utworzony (pending)</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────── 02 — Panel Płatność: opłacona, próba cofnięcia potwierdzenia ───────── */
+S({id:'vpay02',w:1440,file:'vpay-ui-02-oplacona-blokada-cofniecia.png',label:'Panel wizyty — wizyta opłacona, próba cofnięcia potwierdzenia zablokowana',
+route:'/backend/patient/visits/[id] · zakładka Płatność',spec:'VPAY-D3 · 409 visit_already_paid · checkout.transaction.completed',
+html:`${NAV('visits')}
+<div class="main">
+  ${TOP('Opieka / Wizyty / <b>Zofia Kaczmarek — 2026-10-02 09:30</b> / Płatność')}
+  <div class="body">
+    <div class="ph"><div><h1>Wizyta — Zofia Kaczmarek</h1><p class="sub">2026-10-02, 09:30–10:30 · Diagnoza integracji sensorycznej · 750 PLN</p>
+      <div class="bs" style="margin-top:7px"><span class="b info">Zaplanowana</span> <span class="b ok">Potwierdzona</span> <span class="b ok">Opłacona</span></div>
+    </div>
+    <div class="acts"><button class="btn off" title="Zablokowane — patrz baner poniżej">Cofnij potwierdzenie</button></div></div>
+    ${VIS_TABS('pay')}
+    <div class="banner red"><span class="i">⛔</span><div><b>Nie można cofnąć potwierdzenia opłaconej wizyty.</b> Kod: <span class="mono">visit_already_paid</span>. Jeśli płatność wymaga zwrotu, obsłuż to poza tym ekranem przed cofnięciem potwierdzenia.</div></div>
+    <div class="split">
+      <div>
+        <div class="card"><div class="hd"><h3>Link płatności</h3><span class="b ok">completed</span></div><div class="ct">
+          <div class="kv"><span class="k">Kwota</span><span class="v">750,00 PLN</span></div>
+          <div class="kv"><span class="k">Opłacono</span><span class="v">2026-10-02 09:02</span></div>
+          <div class="kv"><span class="k">Transakcja</span><span class="v mono">txn_8f21…c0</span></div>
+          <div class="kv"><span class="k">Dostawca</span><span class="v">Stripe</span></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="card"><div class="hd"><h3>Dziennik płatności</h3></div><div class="ct">
+          <div class="kv"><span class="k">2026-10-02 08:14</span><span class="v">Link utworzony (pending)</span></div>
+          <div class="kv"><span class="k">2026-10-02 08:20</span><span class="v">Link wysłany mailem do opiekuna</span></div>
+          <div class="kv"><span class="k">2026-10-02 09:02</span><span class="v">Płatność odebrana (checkout.transaction.completed)</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────── 03 — Publiczna strona /pay/[slug], jedna usługa (fixed) ───────── */
+S({id:'vpay03',w:700,bare:true,file:'vpay-ui-03-pay-page-jedna-usluga.png',label:'Publiczna strona /pay/[slug] — jedna usługa, branding Polany',
+route:'polanaprzygody.pl/pay/pp-7f3a9k · bez logowania',spec:'VPAY-A1 · CheckoutLinkTemplate.primaryColor/secondaryColor/logoUrl',
+html:`<div class="paypage">
+  <div class="paycard">
+    <div class="payhero">
+      <div class="paylogo"><span class="mark">PP</span><span class="nm">Polana Przygody</span></div>
+      <h1>Diagnoza integracji sensorycznej</h1>
+      <p>Płatność za wizytę 2026-10-02, 09:30 — terapeuta Anna Nowicka</p>
+    </div>
+    <div class="paybody">
+      <div class="payline"><div><div class="nm">Diagnoza integracji sensorycznej</div><div class="sub">Pojedyncza sesja, 60 min</div></div><div class="nm">750,00 PLN</div></div>
+      <div class="paytotal"><span class="k">Do zapłaty</span><span class="v">750,00 PLN</span></div>
+      <div class="paybtn">Zapłać bezpiecznie</div>
+      <div class="payfoot">Płatność obsługiwana przez Stripe. Dane karty nie są przechowywane przez Polanę Przygody.<br>Link jednorazowy, powiązany z tą konkretną wizytą.</div>
+    </div>
+  </div>
+</div>`});
+
+/* ───────── 04 — Publiczna strona /pay/[slug], wiele usług + sukces ───────── */
+S({id:'vpay04',w:1500,bare:true,file:'vpay-ui-04-pay-page-wiele-uslug-i-sukces.png',label:'Publiczna strona /pay/[slug] — wizyta wieloskładnikowa (price_list) i stan po opłaceniu',
+route:'polanaprzygody.pl/pay/pp-9c21bd · bez logowania',spec:'VPAY-A2 · szablon współdzielony „wizyta wieloskładnikowa”, pricingMode price_list',
+html:`<div class="paypage" style="gap:40px">
+  <div style="display:flex;gap:40px">
+  <div class="paycard">
+    <div class="payhero">
+      <div class="paylogo"><span class="mark">PP</span><span class="nm">Polana Przygody</span></div>
+      <h1>Wizyta łączona</h1>
+      <p>Płatność za wizytę 2026-10-03, 11:00 — terapeuta Michał Górski</p>
+    </div>
+    <div class="paybody">
+      <div class="payline"><div><div class="nm">Terapia logopedyczna</div><div class="sub">30 min</div></div><div class="nm">200,00 PLN</div></div>
+      <div class="payline"><div><div class="nm">Konsultacja kontrolna</div><div class="sub">20 min</div></div><div class="nm">120,00 PLN</div></div>
+      <div class="paytotal"><span class="k">Do zapłaty</span><span class="v">320,00 PLN</span></div>
+      <div class="paybtn">Zapłać bezpiecznie</div>
+      <div class="payfoot">Pozycje odpowiadają usługom przypisanym do tej wizyty w momencie utworzenia linku (snapshot cen).</div>
+    </div>
+  </div>
+  <div class="paycard">
+    <div class="paysuccess">
+      <div class="ic">✓</div>
+      <h1 style="font-size:19px;margin:0 0 8px">Płatność zakończona</h1>
+      <p style="color:var(--muted-fg);font-size:13px;line-height:1.6">Dziękujemy! Twoja płatność za wizytę w Polanie Przygody została przyjęta. Potwierdzenie otrzymasz również e-mailem.</p>
+      <div class="hint" style="margin-top:18px">checkout.transaction.completed → patient:payment-link-completed → payment_received_at ustawione na wizycie</div>
+    </div>
+  </div>
+  </div>
+</div>`});
+
+/* ───────── 05 — Stany brzegowe panelu Płatność ───────── */
+S({id:'vpay05',w:1440,bare:true,file:'vpay-ui-05-stany-brzegowe.png',label:'Panel Płatność — stany wymagane na każdej powierzchni',
+route:'/backend/patient/visits/[id] · zakładka Płatność',spec:'VPAY-E · Edge Cases & Failure Scenarios',
+html:`<div style="padding:24px 26px">
+  <div class="ph" style="margin-bottom:16px"><h1>Stany panelu „Płatność”</h1></div>
+  <div class="threecol">
+    <div>
+      <div class="mini-h">Brak usług na wizycie</div>
+      <div class="card"><div class="ct">
+        <div class="banner warn" style="margin:0"><span class="i">!</span><div><b>Nie można utworzyć linku.</b><br>Wizyta nie ma przypisanej żadnej usługi z cennika.</div></div>
+        <button class="btn off" style="margin-top:11px" title="Dodaj usługę w zakładce Usługi">Wygeneruj link</button>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">Gateway niekonfigurowany</div>
+      <div class="card"><div class="ct">
+        <div class="banner red" style="margin:0"><span class="i">⛔</span><div><b>Nie udało się utworzyć linku płatności.</b><br>Kod: <span class="mono">gateway_not_configured</span>. Wizyta pozostaje potwierdzona.</div></div>
+        <button class="btn p" style="margin-top:11px">Spróbuj ponownie</button>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">Link nieaktywny (po unconfirm)</div>
+      <div class="card"><div class="ct">
+        <div class="kv"><span class="k">Status</span><span class="v"><span class="b gray">inactive</span></span></div>
+        <div class="hint">Potwierdzenie zostało cofnięte przed opłaceniem — strona płatności pokazuje „link niedostępny”.</div>
+        <button class="btn p" style="margin-top:11px">Wygeneruj nowy po ponownym potwierdzeniu</button>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">Wysyłka maila nieudana</div>
+      <div class="card"><div class="ct">
+        <div class="banner warn" style="margin:0"><span class="i">!</span><div>Link utworzony, ale e-mail nie został dostarczony. Potwierdzenie wizyty nie zostało cofnięte.</div></div>
+        <button class="btn" style="margin-top:11px">Wyślij ponownie</button>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">Płatność nieudana po stronie pacjenta</div>
+      <div class="card"><div class="ct">
+        <div class="kv"><span class="k">Status</span><span class="v"><span class="b red">failed</span></span></div>
+        <div class="hint">Ten sam link pozostaje aktywny — pacjent może spróbować ponownie pod tym samym adresem.</div>
+      </div></div>
+    </div>
+    <div>
+      <div class="mini-h">Wizyta anulowana po opłaceniu</div>
+      <div class="card"><div class="ct">
+        <div class="bs"><span class="b gray">Anulowana</span><span class="b ok">Opłacona</span></div>
+        <div class="hint" style="margin-top:8px">Fakt wpłaty jest zapisywany niezależnie od statusu wizyty. Zwrot obsługiwany ręcznie poza tym ekranem (poza zakresem specyfikacji).</div>
+      </div></div>
+    </div>
+  </div>
+</div>`});
+
+/* render */
+const out = document.getElementById('out');
+out.innerHTML = SCREENS.map(s=>`
+<div class="frame" id="${s.id}" style="width:${s.w}px">
+  <div class="caption"><b>${s.label}</b><span class="rt">${s.route}</span><span class="sp">${s.spec}</span></div>
+  <div class="app" style="${(!s.bare)?'':'grid-template-columns:1fr'}">${s.html}</div>
+</div>`).join('');
+window.__SCREENS = SCREENS.map(s=>({id:s.id,label:s.label,file:s.file}));
+</script>
+</body>
+</html>
