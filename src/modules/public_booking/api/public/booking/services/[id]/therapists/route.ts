@@ -4,7 +4,7 @@ import { publicBookingErrorSchema, publicBookingTag, publicBookingTherapistSchem
 import { listPublicBookingTherapists } from '../../../../../../lib/publicDiscovery'
 import { buildPublicBookingReadContext, publicBookingErrorResponse } from '../../../../../../lib/routeSupport'
 
-export const metadata = { GET: { requireAuth: false } }
+export const metadata = { path: '/public/booking/services/[id]/therapists', GET: { requireAuth: false } }
 
 type HandlerContext = { params?: Record<string, string> }
 

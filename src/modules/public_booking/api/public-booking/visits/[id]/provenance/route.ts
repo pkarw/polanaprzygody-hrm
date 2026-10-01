@@ -10,6 +10,7 @@ import { bookingConsentProofSchema } from '../../../../../data/validators'
 import { publicBookingProvenanceSchema, publicBookingTag } from '../../../../openapi'
 
 export const metadata = {
+  path: '/public-booking/visits/[id]/provenance',
   GET: { requireAuth: true, requireFeatures: ['patient.visits.view'] },
 }
 

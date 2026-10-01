@@ -18,7 +18,7 @@ import {
   validatePublicBookingOrigin,
 } from '../../../../lib/publicSubmission'
 
-export const metadata = { POST: { requireAuth: false } }
+export const metadata = { path: '/public/booking/requests', POST: { requireAuth: false } }
 
 export async function POST(request: Request): Promise<Response> {
   try {

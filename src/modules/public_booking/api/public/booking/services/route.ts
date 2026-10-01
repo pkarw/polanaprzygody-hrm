@@ -4,7 +4,7 @@ import { publicBookingErrorSchema, publicBookingServiceSchema, publicBookingTag 
 import { listPublicBookingServices } from '../../../../lib/publicDiscovery'
 import { buildPublicBookingReadContext, publicBookingErrorResponse } from '../../../../lib/routeSupport'
 
-export const metadata = { GET: { requireAuth: false } }
+export const metadata = { path: '/public/booking/services', GET: { requireAuth: false } }
 
 export async function GET(request: Request): Promise<Response> {
   try {

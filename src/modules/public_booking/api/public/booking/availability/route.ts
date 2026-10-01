@@ -5,7 +5,7 @@ import { findPublicBookingAvailability } from '../../../../lib/publicDiscovery'
 import { buildPublicBookingReadContext, publicBookingErrorResponse } from '../../../../lib/routeSupport'
 import { publicBookingAvailabilitySchema, publicBookingErrorSchema, publicBookingTag } from '../../../openapi'
 
-export const metadata = { GET: { requireAuth: false } }
+export const metadata = { path: '/public/booking/availability', GET: { requireAuth: false } }
 
 export async function GET(request: Request): Promise<Response> {
   try {
