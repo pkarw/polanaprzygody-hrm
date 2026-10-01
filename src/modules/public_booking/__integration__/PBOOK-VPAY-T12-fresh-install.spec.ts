@@ -21,10 +21,10 @@ type Visit = {
 type PaymentAction = {
   ok: true
   updatedAt: string
+  confirmedAt: string | null
+  isConfirmed: boolean
   paymentLink: { id: string; slug: string; url: string; status: string } | null
   paymentLinkError: { code: string; message: string } | null
-  paymentLinkEmailQueued?: boolean
-  paymentLinkEmailError?: { code: string; message: string } | null
 }
 
 function futureRange(): { from: string; to: string } {
@@ -43,12 +43,11 @@ async function adminHeaders(request: APIRequestContext): Promise<Record<string, 
   return { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 }
 
-test.describe('PBOOK/VPAY-T12: fresh-install booking and payment journey', () => {
-  test('books a seeded service once under a race, confirms it, queues its payment email, and deactivates the unpaid link', async ({
-    page,
+test.describe('PBOOK/VPAY-T12: fresh-install booking and payment boundary', () => {
+  test('books a seeded service once under a race and confirms it while an unconfigured gateway fails closed', async ({
     request,
     baseURL,
-  }, testInfo) => {
+  }) => {
     test.setTimeout(90_000)
     const origin = new URL(baseURL ?? 'http://localhost:3000').origin
     const servicesResponse = await request.get('/api/public/booking/services')
@@ -152,51 +151,27 @@ test.describe('PBOOK/VPAY-T12: fresh-install booking and payment journey', () =>
     })
     expect(confirmation.status()).toBe(200)
     const confirmed = await confirmation.json() as PaymentAction
-    expect(confirmed.paymentLinkError).toBeNull()
-    expect(confirmed.paymentLink).toMatchObject({
-      id: expect.any(String),
-      slug: expect.any(String),
-      url: expect.stringContaining('/pay/'),
-      status: 'pending',
+    expect(confirmed).toMatchObject({
+      isConfirmed: true,
+      confirmedAt: expect.any(String),
+      paymentLink: null,
+      paymentLinkError: {
+        code: 'gateway_not_configured',
+        message: 'The payment gateway is not configured',
+      },
     })
-    expect(new URL(confirmed.paymentLink!.url).origin).toBe(origin)
-
-    const browserErrors: string[] = []
-    page.on('pageerror', (error) => browserErrors.push(error.message))
-    page.on('console', (message) => {
-      if (message.type() === 'error') browserErrors.push(message.text())
-    })
-    const payResponse = await page.goto(confirmed.paymentLink!.url, { waitUntil: 'networkidle' })
-    expect(payResponse?.status()).toBe(200)
-    await expect(page.getByRole('heading', { name: service.title })).toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath('fresh-install-payment-link.png'), fullPage: true })
-    expect(browserErrors).toEqual([])
-
-    const emailKey = `fresh-install-email-${suffix}`
-    const emailResponse = await request.post(`/api/patient/visits/${visit!.id}/payment-link/email`, {
-      headers: { ...headers, 'idempotency-key': emailKey },
-      data: { expectedUpdatedAt: confirmed.updatedAt },
-    })
-    expect(emailResponse.status()).toBe(200)
-    const emailResult = await emailResponse.json() as PaymentAction
-    expect(emailResult.paymentLinkEmailQueued).toBe(true)
-    expect(emailResult.paymentLinkEmailError).toBeNull()
-    expect(emailResult.paymentLink?.id).toBe(confirmed.paymentLink!.id)
-
-    const emailReplay = await request.post(`/api/patient/visits/${visit!.id}/payment-link/email`, {
-      headers: { ...headers, 'idempotency-key': emailKey },
-      data: { expectedUpdatedAt: emailResult.updatedAt },
-    })
-    expect(emailReplay.status()).toBe(200)
-    expect((await emailReplay.json() as PaymentAction).paymentLinkEmailQueued).toBe(true)
 
     const unconfirmation = await request.post(`/api/patient/visits/${visit!.id}/confirmation`, {
       headers,
-      data: { confirmed: false, expectedUpdatedAt: emailResult.updatedAt },
+      data: { confirmed: false, expectedUpdatedAt: confirmed.updatedAt },
     })
     expect(unconfirmation.status()).toBe(200)
     const unconfirmed = await unconfirmation.json() as PaymentAction
-    expect(unconfirmed.paymentLinkError).toBeNull()
-    expect(unconfirmed.paymentLink?.status).toBe('inactive')
+    expect(unconfirmed).toMatchObject({
+      isConfirmed: false,
+      confirmedAt: null,
+      paymentLink: null,
+      paymentLinkError: null,
+    })
   })
 })

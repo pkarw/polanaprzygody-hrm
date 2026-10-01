@@ -40,6 +40,7 @@
 | 6 | 6.8-review-fix | Index scoped customer identities for public booking | inline | done | this commit |
 | 6 | 6.9-review-fix | Backfill customer identities after fresh-install operational fixtures | inline | done | this commit |
 | 6 | 6.10-review-fix | Reconcile checkout examples after operational template seeding | inline | done | this commit |
+| 6 | 6.11-review-fix | Align fresh-install integration with fail-closed gateway contract | inline | done | this commit |
 
 ## Goal
 
