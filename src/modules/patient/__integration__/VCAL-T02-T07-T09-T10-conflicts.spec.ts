@@ -438,6 +438,96 @@ test.describe('VCAL-T09–T10: degraded schedules and serialized writes', () => 
     }
   })
 
+  /**
+   * VCAL-T10, the case the advisory slot lock uniquely protects.
+   *
+   * The race above uses ONE patient, so `lockPatient` serializes the two writes on the patient
+   * row and the slot lock is never the thing under test — that race passed even while
+   * `acquireVisitSubjectLocks` issued `pg_advisory_xact_lock` on a pooled connection outside
+   * its transaction, where it is released before the call returns.
+   *
+   * Two DIFFERENT patients take two different patient row locks, so nothing serializes these
+   * writes except the advisory lock on the therapist slot. Without it both transactions run at
+   * READ COMMITTED, neither sees the other's uncommitted visit, both find no overlap, and the
+   * therapist ends up double-booked with no warning and no acknowledgement.
+   */
+  test('serializes two different patients racing the same therapist slot', async ({ request }) => {
+    const actor = await login(request)
+    let firstPatient: CreatedPatient | null = null
+    let secondPatient: CreatedPatient | null = null
+    let teamMemberId: string | null = null
+    const visitIds: string[] = []
+    try {
+      firstPatient = await createPatient(request, actor)
+      secondPatient = await createPatient(request, actor)
+      teamMemberId = await createStaffTeamMemberFixture(request, actor.token, {
+        displayName: unique('VCAL slot-lock clinician'),
+      })
+
+      const slot = {
+        teamMemberId,
+        startsAt: '2099-06-10T09:00:00+02:00',
+        endsAt: '2099-06-10T09:45:00+02:00',
+        timeZone: 'Europe/Warsaw',
+      }
+      const book = (patientId: string) => callApi<ConflictBody & { id?: string }>(
+        request,
+        'POST',
+        '/api/patient/visits',
+        actor,
+        { ...slot, patientId, clientRequestId: newRequestId() },
+      )
+
+      const race = await Promise.all([book(firstPatient.id), book(secondPatient.id)])
+      for (const result of race) {
+        if (typeof result.body.id === 'string') visitIds.push(result.body.id)
+      }
+
+      // Exactly one write may land, and the other must be told why with an acknowledgeable
+      // conflict rather than silently accepted.
+      expect(
+        race.filter((result) => result.status >= 200 && result.status < 300),
+        JSON.stringify(race.map((result) => ({ status: result.status, body: result.body }))),
+      ).toHaveLength(1)
+      const loser = race.find((result) => result.status === 422)
+      expect(loser?.body).toMatchObject({ error: 'visit_conflict_unacknowledged' })
+      expect(loser?.body.conflicts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'member_double_booked' }),
+      ]))
+
+      // The database must agree: one visit overlapping that slot, not two.
+      const databaseUrl = process.env.DATABASE_URL
+      expect(databaseUrl, 'DATABASE_URL is required for the slot-lock row proof').toBeTruthy()
+      const scope = actorScope(actor)
+      const db = new Client({ connectionString: databaseUrl })
+      await db.connect()
+      try {
+        const rows = await db.query(
+          `select id
+             from patient_visits
+            where tenant_id = $1 and organization_id = $2
+              and team_member_id = $3 and deleted_at is null
+              and starts_at < $5 and ends_at > $4`,
+          [
+            scope.tenantId,
+            scope.organizationId,
+            teamMemberId,
+            new Date(slot.startsAt).toISOString(),
+            new Date(slot.endsAt).toISOString(),
+          ],
+        ) as { rows: Array<{ id: string }> }
+        expect(rows.rows).toHaveLength(1)
+      } finally {
+        await db.end()
+      }
+    } finally {
+      for (const visitId of visitIds.reverse()) await cleanupVisit(request, actor, visitId)
+      await cleanupPatient(request, actor, firstPatient?.id ?? null)
+      await cleanupPatient(request, actor, secondPatient?.id ?? null)
+      await deleteStaffEntityIfExists(request, actor.token, '/api/staff/team-members', teamMemberId)
+    }
+  })
+
   test('fails closed without authentication', async ({ request }) => {
     const response = await callApi(
       request,

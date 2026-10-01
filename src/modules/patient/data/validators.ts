@@ -400,11 +400,33 @@ export const patientAttachmentLinkDeleteSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
 })
 
-/** Timestamp accepted by VIS: an ISO instant with an explicit UTC designator or offset. */
+/**
+ * Timestamp accepted by VIS: an ISO instant with an explicit UTC designator or offset.
+ *
+ * The leading `\d{4}-\d{2}-\d{2}` anchor rejects the ISO extended-year form
+ * (`+275760-09-13T00:00:00Z`). Without it a caller could hand a span of ~1e8 days to the
+ * planner rrule expander, which loops to `range.end` with no occurrence cap. The write path
+ * already required a four-digit wall clock via `patientVisitInstantMatchesTimeZone`, so this
+ * rejects nothing the write path previously accepted.
+ */
 export const patientVisitInstantSchema = z
   .string()
-  .regex(/T.*(?:Z|[+-]\d{2}:\d{2})$/, 'Expected an ISO-8601 timestamp with an explicit offset')
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/,
+    'Expected an ISO-8601 timestamp with an explicit offset',
+  )
   .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid timestamp')
+
+/**
+ * Longest span a single visit (or a single availability probe for one) may cover.
+ *
+ * Availability evaluation expands every planner rule across the requested span, so an
+ * unbounded span is a denial-of-service vector rather than a merely odd request: one
+ * `COUNT`-less daily rule over a year-9999 span expands to 2,912,443 windows, which blocks
+ * the event loop for ~1.5s and allocates ~745MB per rule. 31 days is far longer than any
+ * real visit while keeping the expansion bounded.
+ */
+export const PATIENT_VISIT_MAX_SPAN_MS = 31 * 24 * 60 * 60 * 1_000
 
 /** IANA zone validation uses the runtime's installed ICU database. */
 export const patientVisitTimeZoneSchema = z.string().trim().min(1).refine((value) => {
@@ -471,11 +493,22 @@ export const patientVisitAvailabilityCheckQuerySchema = z.object({
   resourceId: z.string().uuid().optional(),
   excludeVisitId: z.string().uuid().optional(),
 }).strict().superRefine((value, ctx) => {
-  if (value.endsAt && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+  if (!value.endsAt) return
+  const startsAt = Date.parse(value.startsAt)
+  const endsAt = Date.parse(value.endsAt)
+  if (endsAt <= startsAt) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['endsAt'],
       message: 'The visit end must be later than its start',
+    })
+    return
+  }
+  if (endsAt - startsAt > PATIENT_VISIT_MAX_SPAN_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endsAt'],
+      message: 'The checked visit span cannot exceed 31 days',
     })
   }
 })

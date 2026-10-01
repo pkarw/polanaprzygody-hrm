@@ -40,7 +40,14 @@ export type PatientAvailabilityQuery = {
   scope: PatientReferenceScope
   range: { start: Date; end: Date }
   teamMember?: { id: string; name: string; exposeReason?: boolean }
-  resource?: { id: string; name: string; exposeReason?: boolean }
+  /**
+   * `isActive` is the caller's already-resolved activity flag. It is consulted only when this
+   * service's own resource read degrades: without it a transient read failure erases a *known*
+   * inactive room, because `availabilityConflicts` needs `isActive === false` to raise the
+   * blocking `resource_inactive` and `undefined` falls through to the non-blocking
+   * `availability_unknown`, which would let a decommissioned room be booked.
+   */
+  resource?: { id: string; name: string; exposeReason?: boolean; isActive?: boolean }
   plannerAvailabilityService?: PlannerAvailabilityService | null
 }
 
@@ -288,6 +295,12 @@ export function createPatientAvailabilityService(
           logger.warn('Availability reference read degraded', { failureClass: 'resource_state_read' })
         }
       }
+      // A degraded read must not upgrade a known-inactive room to "unknown": the caller already
+      // resolved the flag, and losing it turns the blocking `resource_inactive` into an
+      // informational `availability_unknown` that neither blocks nor needs an acknowledgement.
+      const resourceIsActive = resourceStateUnknown
+        ? query.resource?.isActive
+        : resourceState?.isActive ?? false
       if (!plannerEnabled() || !query.plannerAvailabilityService) {
         return [
           ...(query.teamMember ? [mergeSubject(
@@ -296,7 +309,7 @@ export function createPatientAvailabilityService(
           )] : []),
           ...(query.resource ? [mergeSubject(
             'resource', query.resource.id, query.resource.name, [], [], query,
-            resourceStateUnknown ? undefined : resourceState?.isActive ?? false,
+            resourceIsActive,
             query.resource.exposeReason,
           )] : []),
         ]
@@ -327,7 +340,7 @@ export function createPatientAvailabilityService(
           ...(query.resource ? [resourceStateUnknown
             ? mergeSubject(
                 'resource', query.resource.id, query.resource.name, [], [],
-                { ...query, plannerAvailabilityService: null }, undefined,
+                { ...query, plannerAvailabilityService: null }, resourceIsActive,
                 query.resource.exposeReason,
               )
             : mergeSubject(
@@ -351,7 +364,7 @@ export function createPatientAvailabilityService(
           ...(query.resource ? [mergeSubject(
             'resource', query.resource.id, query.resource.name, [], [],
             { ...query, plannerAvailabilityService: null },
-            resourceStateUnknown ? undefined : resourceState?.isActive ?? false,
+            resourceIsActive,
             query.resource.exposeReason,
           )] : []),
         ]

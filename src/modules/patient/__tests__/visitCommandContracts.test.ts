@@ -102,6 +102,48 @@ describe('visit command invariants', () => {
     expect(visitsSource).toContain("code: 'visit_time_zone_mismatch'")
   })
 
+  it('bounds the written visit span so availability expansion stays bounded on both writes', () => {
+    // create and update both reach the single chokepoint that enforces the ceiling.
+    expect(visitsSource).toContain('PATIENT_VISIT_MAX_SPAN_MS')
+    expect(visitsSource).toContain("code: 'visit_span_too_long'")
+    expect(visitsSource.match(/assertSchedule\(/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+  })
+
+  /**
+   * `makeCrudRoute` guards only the HTTP caller. A command-bus caller — an AI tool, a CLI
+   * task, an import job, a subscriber — reaches `execute` directly, so each write command has
+   * to assert the feature itself rather than inherit it from its route.
+   */
+  it('asserts visits.manage inside every write command, not only on the route', () => {
+    const guards = visitsSource.match(/requireReferenceFeature\(ctx, scope, 'patient\.visits\.manage'\)/g) ?? []
+    // create, update, delete, the undo handler, and the override path.
+    expect(guards.length).toBeGreaterThanOrEqual(5)
+    for (const schema of [
+      'patientVisitCreateSchema',
+      'patientVisitUpdateSchema',
+      'patientVisitDeleteSchema',
+    ]) {
+      // Anchor on `execute`, not on the first `parse` — `update` and `delete` also parse in
+      // `prepare`, which legitimately has no guard because it only reads.
+      const at = visitsSource.indexOf(
+        `async execute(rawInput, ctx) {\n    const parsed = ${schema}.parse(rawInput)`,
+      )
+      expect(at).toBeGreaterThan(-1)
+      const window = visitsSource.slice(at, at + 500)
+      expect(window).toContain("requireReferenceFeature(ctx, scope, 'patient.visits.manage')")
+    }
+  })
+
+  /**
+   * A transient resource read must not turn a known-inactive room into a bookable one: the
+   * blocking `resource_inactive` needs `isActive === false`, and `undefined` degrades to the
+   * non-blocking `availability_unknown`.
+   */
+  it('carries the resolved resource activity flag into conflict evaluation', () => {
+    expect(visitsSource).toContain('resourceIsActive: resolved.resource?.isAvailable')
+    expect(visitsSource).toContain('resourceIsActive: resource === undefined ? undefined : resource?.isAvailable')
+  })
+
   it('serializes create/archive and blocks patient deletion whenever visit history exists', () => {
     expect(visitsSource).toContain('assertPatientAcceptsNewEntries(patient)')
     expect(patientsSource).toContain("status: 'planned'")

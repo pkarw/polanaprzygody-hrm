@@ -10,6 +10,7 @@ import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { Patient, PatientVisit, PatientVisitService, type PatientVisitStatus } from '../data/entities'
 import {
+  PATIENT_VISIT_MAX_SPAN_MS,
   patientVisitCreateSchema,
   patientVisitConfirmationActionSchema,
   patientVisitDeleteSchema,
@@ -280,10 +281,19 @@ async function serializeVisit(
 }
 
 function assertSchedule(startsAt: Date, endsAt: Date | null): void {
-  if (endsAt && endsAt.getTime() <= startsAt.getTime()) {
+  if (!endsAt) return
+  if (endsAt.getTime() <= startsAt.getTime()) {
     throw new CrudHttpError(422, {
       error: 'The visit end must be later than its start',
       code: 'visit_end_not_after_start',
+    })
+  }
+  // Availability evaluation expands every planner rule across this span, so an unbounded
+  // span blocks the event loop instead of merely storing an odd row.
+  if (endsAt.getTime() - startsAt.getTime() > PATIENT_VISIT_MAX_SPAN_MS) {
+    throw new CrudHttpError(422, {
+      error: 'The visit cannot span more than 31 days',
+      code: 'visit_span_too_long',
     })
   }
 }
@@ -405,7 +415,14 @@ export async function acquireVisitSubjectLocks(
     .sort()
   try {
     for (const key of keys) {
-      await em.getConnection().execute(
+      // `em.execute` and NOT `em.getConnection().execute`: the latter leaves `ctx` undefined,
+      // so `AbstractSqlConnection.execute` falls back to `(ctx ?? this.#client)` — the pool.
+      // A `pg_advisory_xact_lock` taken on a pooled connection lives in its own implicit
+      // single-statement transaction and is released before the call returns, which is no
+      // mutual exclusion at all. `SqlEntityManager.execute` forwards
+      // `getTransactionContext()`, so the lock is held until the enclosing transaction ends
+      // and the transaction-local `lock_timeout` from `applyLockWaitBound` applies to it.
+      await em.execute(
         'select pg_advisory_xact_lock(hashtextextended(?::text, 0))',
         [key],
       )
@@ -427,6 +444,12 @@ async function evaluateCommandConflicts(input: {
   scope: PatientScope
   draft: VisitConflictDraft
   excludeVisitId?: string
+  /**
+   * The activity flag the caller already resolved for `draft.resourceId`. Passed so a degraded
+   * resource read inside the availability service cannot downgrade a known-inactive room from
+   * the blocking `resource_inactive` to a non-blocking `availability_unknown`.
+   */
+  resourceIsActive?: boolean
 }): Promise<VisitConflict[]> {
   const service = availabilityService(input.ctx)
   const [subjects, overlappingVisits] = await Promise.all([
@@ -438,7 +461,11 @@ async function evaluateCommandConflicts(input: {
       },
       teamMember: { id: input.draft.teamMemberId, name: input.draft.teamMemberName },
       ...(input.draft.resourceId ? {
-        resource: { id: input.draft.resourceId, name: input.draft.resourceName ?? '' },
+        resource: {
+          id: input.draft.resourceId,
+          name: input.draft.resourceName ?? '',
+          isActive: input.resourceIsActive,
+        },
       } : {}),
       plannerAvailabilityService: optionalPlannerAvailabilityService(input.ctx),
     }),
@@ -698,6 +725,9 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   async execute(rawInput, ctx) {
     const parsed = patientVisitCreateSchema.parse(rawInput)
     const scope = requirePatientScope(ctx)
+    // Every command reaches its own guard: `makeCrudRoute` only covers the HTTP caller,
+    // and a command bus caller (AI tool, CLI, import job, subscriber) bypasses that.
+    await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
     assertUniqueServiceProductIds(parsed.serviceProductIds)
@@ -779,6 +809,7 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
                 startsAt,
                 endsAt,
               },
+              resourceIsActive: resolved.resource?.isAvailable,
             })
             conflictDecision.current = await assertConflictDecision(ctx, scope, conflicts, parsed.conflictOverride)
             now = nextUpdatedAt(patient.updatedAt)
@@ -958,6 +989,9 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   async execute(rawInput, ctx) {
     const parsed = patientVisitUpdateSchema.parse(rawInput)
     const scope = requirePatientScope(ctx)
+    // Every command reaches its own guard: `makeCrudRoute` only covers the HTTP caller,
+    // and a command bus caller (AI tool, CLI, import job, subscriber) bypasses that.
+    await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     if (parsed.serviceProductIds !== undefined) {
       assertUniqueServiceProductIds(parsed.serviceProductIds)
@@ -1069,6 +1103,9 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
               startsAt,
               endsAt,
             },
+            // `undefined` when the payload left the resource untouched: nothing was re-resolved
+            // on this write, so the service's own read stays authoritative.
+            resourceIsActive: resource === undefined ? undefined : resource?.isAvailable,
           })
           conflictDecision.current = await assertConflictDecision(ctx, scope, conflicts, parsed.conflictOverride)
           updatedAt = nextUpdatedAt(visit.updatedAt)
@@ -1279,6 +1316,9 @@ const deleteVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   async execute(rawInput, ctx) {
     const parsed = patientVisitDeleteSchema.parse(rawInput)
     const scope = requirePatientScope(ctx)
+    // Every command reaches its own guard: `makeCrudRoute` only covers the HTTP caller,
+    // and a command bus caller (AI tool, CLI, import job, subscriber) bypasses that.
+    await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     const rootEm = ctx.container.resolve('em') as EntityManager
     const current = await loadVisitDecrypted(rootEm.fork(), parsed.id, scope)

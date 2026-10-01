@@ -117,6 +117,9 @@ export async function GET(request: Request) {
             id: parsed.resourceId,
             name: resource?.displayName ?? '',
             exposeReason: exposeResourceReason,
+            // Already resolved here, so a degraded resource read inside the service cannot
+            // downgrade a known-inactive room to a non-blocking `availability_unknown`.
+            isActive: resource?.isAvailable,
           },
         } : {}),
         plannerAvailabilityService: planner,

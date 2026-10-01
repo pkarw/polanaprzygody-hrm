@@ -148,6 +148,44 @@ describe('patientAvailabilityService', () => {
     expect(result?.isActive).toBeUndefined()
   })
 
+  /**
+   * Degrading to "unknown" is correct only when the activity flag is genuinely unknown. The
+   * write path has already resolved it through `resolveResources`, and dropping that answer
+   * would turn the blocking `resource_inactive` into an informational `availability_unknown`
+   * that neither blocks the write nor requires an acknowledgement — booking a decommissioned
+   * room with no warning and no audit trail.
+   */
+  it('keeps a caller-resolved inactive resource blocking when its own read degrades', async () => {
+    const query = jest.fn(async (entityId: string, _options: unknown) => {
+      if (entityId === 'resources:resources_resource') throw new Error('resource availability read failed')
+      return queryResult([])
+    })
+    const service = createPatientAvailabilityService({ find: jest.fn() } as never, { query } as never)
+    const [result] = await service.getSubjectAvailability({
+      scope,
+      range,
+      resource: { id: resourceId, name: 'Gabinet 2', isActive: false },
+      plannerAvailabilityService: { getMergedAvailabilityWindows: () => [] },
+    })
+    expect(result).toMatchObject({ subjectType: 'resource', isActive: false })
+  })
+
+  it('still reports unknown when neither the caller nor its own read knows the activity flag', async () => {
+    const query = jest.fn(async (entityId: string, _options: unknown) => {
+      if (entityId === 'resources:resources_resource') throw new Error('resource availability read failed')
+      return queryResult([])
+    })
+    const service = createPatientAvailabilityService({ find: jest.fn() } as never, { query } as never)
+    const [result] = await service.getSubjectAvailability({
+      scope,
+      range,
+      resource: { id: resourceId, name: 'Gabinet 2', isActive: undefined },
+      plannerAvailabilityService: { getMergedAvailabilityWindows: () => [] },
+    })
+    expect(result?.isActive).toBeUndefined()
+    expect(result).toMatchObject({ unknown: true })
+  })
+
   it('logs only sanitized failure classes for degraded availability reads', async () => {
     const records: LoggerExtensionRecord[] = []
     const releaseLogger = registerLoggerExtension({ emit: (record) => records.push(record) })
