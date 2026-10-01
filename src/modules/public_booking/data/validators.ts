@@ -31,5 +31,13 @@ export const serviceCredentialInputSchema = z.object({
   apiKeySecret: boundedText(512),
 }).strict()
 
+export const publicBookingAvailabilityQuerySchema = z.object({
+  productId: z.string().uuid(),
+  teamMemberId: z.string().uuid(),
+  from: z.string().datetime({ offset: true }),
+  to: z.string().datetime({ offset: true }),
+}).strict()
+
 export type BookingIntakeRecordInput = z.infer<typeof bookingIntakeRecordSchema>
 export type ServiceCredentialInput = z.infer<typeof serviceCredentialInputSchema>
+export type PublicBookingAvailabilityQuery = z.infer<typeof publicBookingAvailabilityQuerySchema>
