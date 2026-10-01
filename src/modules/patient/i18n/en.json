@@ -559,5 +559,17 @@
   "patient.visits.payment.errors.gateway_not_configured": "The payment gateway has not been configured yet.",
   "patient.visits.payment.errors.payment_link_inactive": "Generate a new link before sending it.",
   "patient.visits.payment.errors.payment_link_completed": "A paid link cannot be sent again.",
-  "patient.visits.payment.errors.visit_already_paid": "A paid visit cannot be unconfirmed."
+  "patient.visits.payment.errors.visit_already_paid": "A paid visit cannot be unconfirmed.",
+  "patient.visits.onlineBooking.loading": "Checking the booking source…",
+  "patient.visits.onlineBooking.errorTitle": "The booking source could not be loaded",
+  "patient.visits.onlineBooking.errorDescription": "Visit details remain available, but online-booking provenance was not loaded.",
+  "patient.visits.onlineBooking.title": "Booked online",
+  "patient.visits.onlineBooking.badge": "Public booking",
+  "patient.visits.onlineBooking.submittedAt": "Request submitted",
+  "patient.visits.onlineBooking.email": "Confirmation email",
+  "patient.visits.onlineBooking.emailSent": "Sent {{at}}",
+  "patient.visits.onlineBooking.emailPending": "Waiting for visit confirmation",
+  "patient.visits.onlineBooking.consents": "Consents at submission",
+  "patient.visits.onlineBooking.termsAccepted": "Terms accepted",
+  "patient.visits.onlineBooking.privacyAccepted": "Privacy policy accepted"
 }

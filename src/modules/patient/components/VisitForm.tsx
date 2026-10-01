@@ -38,6 +38,7 @@ import { VisitServicesField, type VisitServiceSeed } from './VisitServicesField'
 import { VisitTeamMemberField } from './VisitTeamMemberField'
 import { VisitLifecycleActions } from './VisitLifecycleActions'
 import { VisitPaymentSection } from './VisitPaymentSection'
+import { OnlineBookingProvenance } from './OnlineBookingProvenance'
 import {
   VisitAvailabilityCheck,
   type VisitAvailabilityGateValue,
@@ -603,6 +604,7 @@ export function VisitDetailForm({
             ) : null}
           </div>
           <VisitConflictOverrideAudit visit={record} />
+          <OnlineBookingProvenance visitId={record.id} access={access} />
           <VisitLifecycleActions
             visit={record}
             access={access}

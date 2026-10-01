@@ -66,3 +66,12 @@ export const publicBookingRequestBodySchema = z.object({
 })
 
 export const publicBookingRequestSuccessSchema = z.object({ ok: z.literal(true) })
+
+export const publicBookingProvenanceSchema = z.object({
+  onlineBooking: z.object({
+    submittedAt: z.string().datetime({ offset: true }),
+    termsAcceptedAt: z.string().datetime({ offset: true }),
+    privacyPolicyAcceptedAt: z.string().datetime({ offset: true }),
+    confirmationEmailSentAt: z.string().datetime({ offset: true }).nullable(),
+  }).nullable(),
+})

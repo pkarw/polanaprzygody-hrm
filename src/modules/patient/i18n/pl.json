@@ -559,5 +559,17 @@
   "patient.visits.payment.errors.gateway_not_configured": "Bramka płatnicza nie jest jeszcze skonfigurowana.",
   "patient.visits.payment.errors.payment_link_inactive": "Nieaktywny link trzeba najpierw wygenerować ponownie.",
   "patient.visits.payment.errors.payment_link_completed": "Opłaconego linku nie można wysłać ponownie.",
-  "patient.visits.payment.errors.visit_already_paid": "Nie można cofnąć potwierdzenia opłaconej wizyty."
+  "patient.visits.payment.errors.visit_already_paid": "Nie można cofnąć potwierdzenia opłaconej wizyty.",
+  "patient.visits.onlineBooking.loading": "Sprawdzamy źródło rezerwacji…",
+  "patient.visits.onlineBooking.errorTitle": "Nie udało się odczytać źródła rezerwacji",
+  "patient.visits.onlineBooking.errorDescription": "Dane wizyty są dostępne, ale informacja o rezerwacji online nie została wczytana.",
+  "patient.visits.onlineBooking.title": "Zarezerwowano online",
+  "patient.visits.onlineBooking.badge": "Rezerwacja publiczna",
+  "patient.visits.onlineBooking.submittedAt": "Zgłoszenie wysłano",
+  "patient.visits.onlineBooking.email": "E-mail potwierdzający",
+  "patient.visits.onlineBooking.emailSent": "Wysłano {{at}}",
+  "patient.visits.onlineBooking.emailPending": "Oczekuje na potwierdzenie wizyty",
+  "patient.visits.onlineBooking.consents": "Zgody przy zgłoszeniu",
+  "patient.visits.onlineBooking.termsAccepted": "Regulamin zaakceptowany",
+  "patient.visits.onlineBooking.privacyAccepted": "Polityka prywatności zaakceptowana"
 }

@@ -170,6 +170,16 @@ describe('patient visit UI contracts', () => {
     expect(payment).not.toMatch(/(?:bg|text)-(?:red|green|yellow|blue)-/)
   })
 
+  it('renders read-only online-booking provenance behind visit view access', () => {
+    const form = read('components', 'VisitForm.tsx')
+    const provenance = read('components', 'OnlineBookingProvenance.tsx')
+    expect(form).toContain('<OnlineBookingProvenance')
+    expect(provenance).toContain("access.status !== 'ready' || !access.canView")
+    expect(provenance).toContain('data-online-booking-provenance')
+    expect(provenance).toContain('role="status" aria-live="polite"')
+    expect(provenance).not.toMatch(/(?:bg|text)-(?:red|green|yellow|blue)-/)
+  })
+
   it('uses a strict patient sort allowlist and guards the visit projection', () => {
     const route = read('api', 'patients', 'route.ts')
     expect(route).toContain("'nextVisit',")
