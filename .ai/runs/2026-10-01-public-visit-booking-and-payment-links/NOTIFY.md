@@ -40,3 +40,10 @@
 - Verification: generate, typecheck, 364 patient tests, design-system check, production build, fresh isolated install, and Playwright browser path all passed.
 - UI evidence: responsive/light and wide/dark payment states posted to PR #13 on the dedicated evidence branch.
 - Environment decision: Docker-free QA uses isolated PostgreSQL 17 plus staged Chromium libraries; the existing Webpack dev fallback issue did not block the green production runtime.
+
+## 2026-10-01T16:28:08Z — checkpoint 2 passed
+
+- Steps: 2.1–2.3 (`497db67..4f770fd`).
+- Verification: generate, 52 focused public-booking/bootstrap tests, typecheck, lint, production build, reviewed two-table migration/snapshot, and isolated fresh-install seed read-back all passed.
+- Decision: materialize encryption maps before secret storage; provision the exact six-feature principal through installed public seams; commit API key and encrypted credential atomically with race recovery.
+- UI evidence skipped: this phase changed only persistence/setup contracts; Phase 3 owns the first rendered public surface and screenshots.
