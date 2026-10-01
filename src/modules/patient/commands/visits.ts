@@ -9,6 +9,7 @@ import { conflict, CrudHttpError, forbidden, isCrudHttpError } from '@open-merca
 import type { CrudEmitContext, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { Patient, PatientVisit, PatientVisitService, type PatientVisitStatus } from '../data/entities'
 import {
   PATIENT_VISIT_MAX_SPAN_MS,
@@ -1736,6 +1737,7 @@ async function assertVisitCanBeUnconfirmed(
   em: EntityManager,
   visitId: string,
   scope: PatientScope,
+  ctx: CommandRuntimeContext,
 ): Promise<void> {
   const custom = await loadCustomFieldValues({
     em,
@@ -1752,6 +1754,30 @@ async function assertVisitCanBeUnconfirmed(
     ?? values['cf:payment_received_at']
     ?? values.payment_received_at
   if (paymentStatus === 'completed' || (typeof paymentReceivedAt === 'string' && paymentReceivedAt.trim())) {
+    throw codedConflict('A paid visit cannot be unconfirmed', 'visit_already_paid')
+  }
+  const paymentLinkId = values.cf_payment_link_id
+    ?? values['cf:payment_link_id']
+    ?? values.payment_link_id
+  if (typeof paymentLinkId !== 'string' || !paymentLinkId.trim()) return
+
+  let queryEngine: QueryEngine
+  try {
+    queryEngine = ctx.container.resolve('queryEngine') as QueryEngine
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'Payment status could not be verified; try again in a moment',
+      code: 'payment_status_unavailable',
+    })
+  }
+  const completed = await queryEngine.query<Record<string, unknown>>('checkout:checkout_transaction', {
+    fields: ['id', 'linkId', 'status'],
+    filters: { linkId: { $eq: paymentLinkId.trim() }, status: { $eq: 'completed' } },
+    page: { page: 1, pageSize: 1 },
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+  })
+  if (completed.total > 0) {
     throw codedConflict('A paid visit cannot be unconfirmed', 'visit_already_paid')
   }
 }
@@ -1800,7 +1826,7 @@ async function executeVisitLifecycleAction(
         visit = await lockVisit(phaseEm, input.id, scope)
         assertExpectedVersion(input.expectedUpdatedAt, visit.updatedAt, VISIT_ENTITY_ID)
         if (operation === 'unconfirm') {
-          await assertVisitCanBeUnconfirmed(phaseEm, input.id, scope)
+          await assertVisitCanBeUnconfirmed(phaseEm, input.id, scope, ctx)
         }
         updatedAt = nextUpdatedAt(patient.updatedAt > visit.updatedAt ? patient.updatedAt : visit.updatedAt)
       },
@@ -1888,6 +1914,33 @@ async function executeVisitLifecycleAction(
   return await loadVisitDecrypted(em, input.id, scope)
 }
 
+async function executeVisitLifecycleActionWithConfirmationReplay(
+  input: VisitLifecycleInput,
+  ctx: CommandRuntimeContext,
+  operation: VisitLifecycleOperation,
+): Promise<PatientVisit> {
+  try {
+    return await executeVisitLifecycleAction(input, ctx, operation)
+  } catch (error) {
+    if (operation !== 'confirm' || !isCrudHttpError(error) || error.status !== 409) throw error
+    const scope = requirePatientScope(ctx)
+    const latest = await loadVisitDecrypted(
+      (ctx.container.resolve('em') as EntityManager).fork(),
+      input.id,
+      scope,
+    )
+    const requestedVersion = Date.parse(input.expectedUpdatedAt)
+    if (
+      latest.confirmedAt
+      && Number.isFinite(requestedVersion)
+      && requestedVersion < latest.updatedAt.getTime()
+    ) {
+      return latest
+    }
+    throw error
+  }
+}
+
 function createVisitLifecycleCommand(
   definition: VisitLifecycleCommandDefinition,
 ): CommandHandler<Record<string, unknown>, PatientVisit | VisitPaymentActionResult> {
@@ -1907,7 +1960,7 @@ function createVisitLifecycleCommand(
     },
     async execute(rawInput, ctx) {
       const input = definition.parse(rawInput)
-      const visit = await executeVisitLifecycleAction(input, ctx, definition.operation)
+      const visit = await executeVisitLifecycleActionWithConfirmationReplay(input, ctx, definition.operation)
       if (definition.operation !== 'confirm' && definition.operation !== 'unconfirm') return visit
 
       let paymentLink: VisitPaymentLink | null = null

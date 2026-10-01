@@ -220,6 +220,40 @@ describe('patient visit lifecycle command behavior', () => {
     expect(emitPatientEvent).not.toHaveBeenCalled()
   })
 
+  it('blocks unconfirm when checkout is completed before the custom-field projection arrives', async () => {
+    const query = jest.fn(async (_entityId: string, _options: unknown) => ({
+      items: [{ id: 'transaction-1' }], page: 1, pageSize: 1, total: 1,
+    }))
+    const harness = createHarness({
+      confirmedAt: new Date('2026-09-30T09:05:00.000Z'),
+      confirmedByUserId: ids.actor,
+    }, null, { queryEngine: { query } })
+    jest.mocked(loadCustomFieldValues).mockResolvedValue({
+      [ids.visit]: {
+        cf_payment_link_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        cf_payment_link_status: 'pending',
+      },
+    })
+
+    await expect(execute('patient.visits.unconfirm', {
+      id: ids.visit,
+      expectedUpdatedAt: harness.visit.updatedAt.toISOString(),
+    }, harness.context)).rejects.toMatchObject({
+      status: 409,
+      body: { code: 'visit_already_paid' },
+    })
+    expect(query).toHaveBeenCalledWith('checkout:checkout_transaction', expect.objectContaining({
+      filters: {
+        linkId: { $eq: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        status: { $eq: 'completed' },
+      },
+      tenantId: ids.tenant,
+      organizationId: ids.organization,
+    }))
+    expect(harness.visit.confirmedAt).not.toBeNull()
+    expect(harness.commit).not.toHaveBeenCalled()
+  })
+
   it('returns one post-commit payment link and isolates checkout failure from confirmation', async () => {
     const paymentLink = {
       id: 'payment-link-1',
@@ -269,6 +303,37 @@ describe('patient visit lifecycle command behavior', () => {
     })
     expect(failedResult.paymentLinkError.message).not.toContain('credential')
     expect(failed.commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('replays a lost confirmation response without a second lifecycle mutation or event', async () => {
+    const paymentLink = {
+      id: 'payment-link-replay',
+      slug: 'visit-payment-replay',
+      url: 'https://payments.example.test/pay/visit-payment-replay',
+      status: 'pending' as const,
+    }
+    const ensureForVisit = jest.fn(async () => paymentLink)
+    const harness = createHarness({}, null, {
+      visitPaymentLinkService: { ensureForVisit, deactivateForVisit: jest.fn() },
+    })
+    const originalVersion = harness.visit.updatedAt.toISOString()
+
+    await execute('patient.visits.confirm', {
+      id: ids.visit,
+      expectedUpdatedAt: originalVersion,
+    }, harness.context)
+    const committedVersion = harness.visit.updatedAt.toISOString()
+
+    const replay = await execute('patient.visits.confirm', {
+      id: ids.visit,
+      expectedUpdatedAt: originalVersion,
+    }, harness.context) as { visit: PatientVisit; paymentLink: typeof paymentLink }
+
+    expect(replay.visit.updatedAt.toISOString()).toBe(committedVersion)
+    expect(replay.paymentLink).toEqual(paymentLink)
+    expect(harness.commit).toHaveBeenCalledTimes(1)
+    expect(emitPatientEvent).toHaveBeenCalledTimes(1)
+    expect(ensureForVisit).toHaveBeenCalledTimes(2)
   })
 
   it('closes and reopens while preserving settlement and clearing confirmation', async () => {

@@ -21,6 +21,7 @@ import {
 } from './visitPaymentFields'
 
 const CHECKOUT_TEMPLATE_ENTITY_ID = 'checkout:checkout_link_template' as const
+const CHECKOUT_TRANSACTION_ENTITY_ID = 'checkout:checkout_transaction' as const
 const CATALOG_PRICE_ENTITY_ID = 'catalog:catalog_product_price' as const
 const MULTI_SERVICE_FIXTURE_KEY = 'visit:multi'
 const ACTIVE_LINK_STATUSES = new Set(['active', 'draft'])
@@ -73,6 +74,7 @@ export type VisitPaymentLinkDependencies = {
   ): Promise<T>
   findLinkById(id: string, scope: PatientScope): Promise<LinkRecord | null>
   findActiveLinksForVisit(visitId: string, scope: PatientScope): Promise<LinkRecord[]>
+  hasCompletedPayment(linkId: string, scope: PatientScope): Promise<boolean>
   findTemplateForProduct(productId: string, scope: PatientScope): Promise<TemplateRecord[]>
   findMultiServiceTemplate(scope: PatientScope): Promise<TemplateRecord[]>
   resolveServicePrices(services: VisitServiceSnapshot[], scope: PatientScope): Promise<ResolvedServicePrice[]>
@@ -303,6 +305,9 @@ export function createVisitPaymentLinkServiceCore(
           throw new VisitPaymentLinkError('visit_already_paid', 'A paid visit cannot be unconfirmed')
         }
         if (!visit.paymentLinkId) return null
+        if (await dependencies.hasCompletedPayment(visit.paymentLinkId, scope)) {
+          throw new VisitPaymentLinkError('visit_already_paid', 'A paid visit cannot be unconfirmed')
+        }
 
         const link = await dependencies.findLinkById(visit.paymentLinkId, scope)
         if (link && link.status !== 'inactive') {
@@ -360,7 +365,7 @@ function priceRowForResolver(row: Record<string, unknown>): Record<string, unkno
   }
 }
 
-function createProductionDependencies(
+export function createProductionDependencies(
   em: EntityManager,
   queryEngine: QueryEngine,
   commandBus: CommandBus,
@@ -373,15 +378,14 @@ function createProductionDependencies(
     filters: Record<string, unknown>,
     scope: PatientScope,
     pageSize = 2,
-  ): Promise<Record<string, unknown>[]> => {
-    const result = await queryEngine.query<Record<string, unknown>>(entityId, {
+  ) => {
+    return await queryEngine.query<Record<string, unknown>>(entityId, {
       fields,
       filters,
       page: { page: 1, pageSize },
       tenantId: scope.tenantId,
       organizationId: scope.organizationId,
     })
-    return result.items
   }
 
   return {
@@ -439,11 +443,11 @@ function createProductionDependencies(
       })
     },
     async findLinkById(id, scope) {
-      const rows = await scopedQuery(CHECKOUT_LINK_ENTITY_ID, ['id', 'slug', 'status'], { id: { $eq: id } }, scope, 1)
-      return rows.length === 1 ? normalizeLinkRecord(rows[0]!) : null
+      const result = await scopedQuery(CHECKOUT_LINK_ENTITY_ID, ['id', 'slug', 'status'], { id: { $eq: id } }, scope, 1)
+      return result.items.length === 1 ? normalizeLinkRecord(result.items[0]!) : null
     },
     async findActiveLinksForVisit(visitId, scope) {
-      const rows = await scopedQuery(
+      const result = await scopedQuery(
         CHECKOUT_LINK_ENTITY_ID,
         ['id', 'slug', 'status'],
         {
@@ -453,32 +457,45 @@ function createProductionDependencies(
         scope,
         2,
       )
-      return rows.flatMap((row) => normalizeLinkRecord(row) ?? [])
+      return result.items.flatMap((row) => normalizeLinkRecord(row) ?? [])
+    },
+    async hasCompletedPayment(linkId, scope) {
+      const result = await scopedQuery(
+        CHECKOUT_TRANSACTION_ENTITY_ID,
+        ['id', 'linkId', 'status'],
+        { linkId: { $eq: linkId }, status: { $eq: 'completed' } },
+        scope,
+        1,
+      )
+      return result.total > 0
     },
     async findTemplateForProduct(productId, scope) {
-      const rows = await scopedQuery(
+      const result = await scopedQuery(
         CHECKOUT_TEMPLATE_ENTITY_ID,
         ['id', 'name'],
         { 'cf:catalog_product_id': { $eq: productId }, status: { $eq: 'active' } },
         scope,
         2,
       )
-      return rows.flatMap((row) => normalizeTemplateRecord(row) ?? [])
+      return result.items.flatMap((row) => normalizeTemplateRecord(row) ?? [])
     },
     async findMultiServiceTemplate(scope) {
-      const rows = await scopedQuery(
+      const result = await scopedQuery(
         CHECKOUT_TEMPLATE_ENTITY_ID,
         ['id', 'name'],
-        { 'cf:polana_payment_fixture_key': { $eq: MULTI_SERVICE_FIXTURE_KEY } },
+        {
+          'cf:polana_payment_fixture_key': { $eq: MULTI_SERVICE_FIXTURE_KEY },
+          status: { $eq: 'active' },
+        },
         scope,
         2,
       )
-      return rows.flatMap((row) => normalizeTemplateRecord(row) ?? [])
+      return result.items.flatMap((row) => normalizeTemplateRecord(row) ?? [])
     },
     async resolveServicePrices(services, scope) {
       const resolved: ResolvedServicePrice[] = []
       for (const service of services) {
-        const rows = await scopedQuery(
+        const result = await scopedQuery(
           CATALOG_PRICE_ENTITY_ID,
           [
             'id', 'product', 'variant', 'offer', 'price_kind', 'currency_code', 'kind',
@@ -489,8 +506,14 @@ function createProductionDependencies(
           scope,
           100,
         )
+        if (result.total > result.items.length) {
+          throw new VisitPaymentLinkError(
+            'payment_price_query_truncated',
+            'The scoped price set is too large to resolve safely',
+          )
+        }
         const best = await catalogPricingService.resolvePrice(
-          rows.map(priceRowForResolver),
+          result.items.map(priceRowForResolver),
           { quantity: 1, date: new Date(), currencyCode: 'PLN' },
         )
         const amount = best?.unitPriceGross ?? best?.unit_price_gross ?? best?.unitPriceNet ?? best?.unit_price_net

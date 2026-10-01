@@ -12,11 +12,12 @@ export type PaymentCompletionDependencies = {
     linkId: string,
     scope: { tenantId: string; organizationId: string },
   ): Promise<Array<Record<string, unknown>>>
-  setVisitPaymentCompleted(
+  completeVisitForLink(
     visitId: string,
+    linkId: string,
     receivedAt: string,
     scope: { tenantId: string; organizationId: string },
-  ): Promise<void>
+  ): Promise<'ignored' | 'unchanged' | 'updated'>
 }
 
 function readString(values: Record<string, unknown>, ...keys: string[]): string | null {
@@ -43,12 +44,8 @@ export async function applyPaymentCompletion(
   const visit = matches[0]!
   const visitId = readString(visit, 'id')
   if (!visitId) throw new Error('A payment-linked visit has no identifier')
-  const status = readString(visit, 'cf_payment_link_status', 'cf:payment_link_status')
-  const receivedAt = readString(visit, 'cf_payment_received_at', 'cf:payment_received_at')
-  if (status === 'completed' && receivedAt) return 'unchanged'
   const occurredAt = payload.occurredAt && !Number.isNaN(Date.parse(payload.occurredAt))
     ? new Date(payload.occurredAt).toISOString()
     : new Date().toISOString()
-  await dependencies.setVisitPaymentCompleted(visitId, receivedAt ?? occurredAt, scope)
-  return 'updated'
+  return await dependencies.completeVisitForLink(visitId, payload.linkId, occurredAt, scope)
 }

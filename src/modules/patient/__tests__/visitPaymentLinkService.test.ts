@@ -1,8 +1,12 @@
 import { describe, expect, it, jest } from '@jest/globals'
-import type { CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
+import type { EntityManager } from '@mikro-orm/postgresql'
 import { createLinkSchema } from '@open-mercato/checkout/modules/checkout/data/validators'
 import { parseCheckoutInput } from '@open-mercato/checkout/modules/checkout/lib/utils'
+import type { CommandBus, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
+import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import {
+  createProductionDependencies,
   createVisitPaymentLinkServiceCore,
   VisitPaymentLinkError,
   type VisitPaymentLinkDependencies,
@@ -21,6 +25,7 @@ type HarnessOptions = {
   paymentLinkSlug?: string | null
   paymentLinkStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'inactive' | null
   paymentReceivedAt?: string | null
+  checkoutCompleted?: boolean
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -65,6 +70,7 @@ function createHarness(options: HarnessOptions = {}) {
       && link.scope.tenantId === targetScope.tenantId
       && link.scope.organizationId === targetScope.organizationId
     ),
+    hasCompletedPayment: async () => options.checkoutCompleted === true,
     findTemplateForProduct: async () => [{
       id: '00000000-0000-4000-8000-000000000011',
       name: 'Service template',
@@ -113,6 +119,49 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 describe('visit payment-link service', () => {
+  it('uses only active multi-service templates and fails closed on a truncated scoped price set', async () => {
+    const query = jest.fn(async (entityId: string, _options: unknown) => {
+      if (entityId === 'checkout:checkout_link_template') {
+        return {
+          items: [{ id: 'template-active', name: 'Active template' }],
+          page: 1,
+          pageSize: 2,
+          total: 1,
+        }
+      }
+      return {
+        items: [{ id: 'price-1', product: 'product-1', unit_price_gross: '100.00', currency_code: 'PLN' }],
+        page: 1,
+        pageSize: 100,
+        total: 101,
+      }
+    })
+    const production = createProductionDependencies(
+      {} as EntityManager,
+      { query } as unknown as QueryEngine,
+      {} as CommandBus,
+      {} as DataEngine,
+      { resolvePrice: jest.fn(async () => null) },
+    )
+
+    await expect(production.findMultiServiceTemplate(scope)).resolves.toEqual([
+      { id: 'template-active', name: 'Active template' },
+    ])
+    expect(query).toHaveBeenNthCalledWith(1, 'checkout:checkout_link_template', expect.objectContaining({
+      filters: {
+        'cf:polana_payment_fixture_key': { $eq: 'visit:multi' },
+        status: { $eq: 'active' },
+      },
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    }))
+
+    await expect(production.resolveServicePrices(
+      [{ productId: 'product-1', title: 'Terapia' }],
+      scope,
+    )).rejects.toMatchObject({ code: 'payment_price_query_truncated' })
+  })
+
   it('creates a validator-complete fixed link for one service without price_list fields', async () => {
     const harness = createHarness({ prices: [
       { productId: 'product-1', title: 'Terapia', amount: '199.90', currencyCode: 'PLN' },
@@ -287,6 +336,25 @@ describe('visit payment-link service', () => {
     await expect(paid.service.deactivateForVisit('visit-1', scope, ctx)).rejects.toMatchObject({
       code: 'visit_already_paid',
     })
+
+    const projectedLate = createHarness({
+      paymentLinkId: 'link-paid-authoritative',
+      paymentLinkSlug: 'paid-authoritative',
+      paymentLinkStatus: 'pending',
+      checkoutCompleted: true,
+    })
+    projectedLate.links.push({
+      id: 'link-paid-authoritative',
+      slug: 'paid-authoritative',
+      status: 'active',
+      visitId: 'visit-1',
+      scope,
+    })
+    await expect(projectedLate.service.deactivateForVisit('visit-1', scope, ctx)).rejects.toMatchObject({
+      code: 'visit_already_paid',
+    })
+    expect(projectedLate.links[0]?.status).toBe('active')
+    expect(projectedLate.visit.paymentLinkStatus).toBe('pending')
   })
 
   it('checks the expected visit version while holding the visit lock', async () => {

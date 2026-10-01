@@ -15,11 +15,11 @@ const payload: CheckoutTransactionCompletedPayload = {
 }
 
 function dependencies(rows: Array<Record<string, unknown>>): PaymentCompletionDependencies & {
-  setVisitPaymentCompleted: jest.Mock
+  completeVisitForLink: jest.MockedFunction<PaymentCompletionDependencies['completeVisitForLink']>
 } {
   return {
     findVisitsByPaymentLink: jest.fn(async () => rows),
-    setVisitPaymentCompleted: jest.fn(async () => undefined),
+    completeVisitForLink: jest.fn(async (): Promise<'ignored' | 'unchanged' | 'updated'> => 'updated'),
   }
 }
 
@@ -27,11 +27,11 @@ describe('visit payment completion subscriber', () => {
   it('ignores unmatched links and refuses ambiguous scoped references without mutation', async () => {
     const none = dependencies([])
     await expect(applyPaymentCompletion(payload, none)).resolves.toBe('ignored')
-    expect(none.setVisitPaymentCompleted).not.toHaveBeenCalled()
+    expect(none.completeVisitForLink).not.toHaveBeenCalled()
 
     const duplicate = dependencies([{ id: 'visit-a' }, { id: 'visit-b' }])
     await expect(applyPaymentCompletion(payload, duplicate)).rejects.toThrow('Multiple scoped patient visits')
-    expect(duplicate.setVisitPaymentCompleted).not.toHaveBeenCalled()
+    expect(duplicate.completeVisitForLink).not.toHaveBeenCalled()
   })
 
   it('writes the event timestamp once and keeps completed absorbing on redelivery', async () => {
@@ -41,18 +41,29 @@ describe('visit payment completion subscriber', () => {
       'cf:payment_received_at': null,
     }])
     await expect(applyPaymentCompletion(payload, first)).resolves.toBe('updated')
-    expect(first.setVisitPaymentCompleted).toHaveBeenCalledWith(
+    expect(first.completeVisitForLink).toHaveBeenCalledWith(
       '55555555-5555-4555-8555-555555555555',
-      payload.occurredAt,
+      payload.linkId,
+      payload.occurredAt!,
       { tenantId: payload.tenantId, organizationId: payload.organizationId },
     )
 
-    const replay = dependencies([{
-      id: '55555555-5555-4555-8555-555555555555',
-      cf_payment_link_status: 'completed',
-      cf_payment_received_at: payload.occurredAt,
-    }])
+    const replay = dependencies([{ id: '55555555-5555-4555-8555-555555555555' }])
+    replay.completeVisitForLink.mockResolvedValue('unchanged')
     await expect(applyPaymentCompletion(payload, replay)).resolves.toBe('unchanged')
-    expect(replay.setVisitPaymentCompleted).not.toHaveBeenCalled()
+    expect(replay.completeVisitForLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a changed link pointer ignored under the serialized write seam', async () => {
+    const changed = dependencies([{ id: '55555555-5555-4555-8555-555555555555' }])
+    changed.completeVisitForLink.mockResolvedValue('ignored')
+
+    await expect(applyPaymentCompletion(payload, changed)).resolves.toBe('ignored')
+    expect(changed.completeVisitForLink).toHaveBeenCalledWith(
+      '55555555-5555-4555-8555-555555555555',
+      payload.linkId,
+      payload.occurredAt!,
+      { tenantId: payload.tenantId, organizationId: payload.organizationId },
+    )
   })
 })
