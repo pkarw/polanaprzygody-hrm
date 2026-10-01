@@ -1,7 +1,7 @@
 # Checkpoint 3 — Phase 3 public discovery and availability
 
-**Steps:** 3.1–3.3  
-**Implementation commits:** `ca990de..2c0890f`  
+**Steps:** 3.1–3.3
+**Implementation commits:** `ca990de..2c0890f`
 **Recorded:** 2026-10-01T17:04:11Z
 
 ## Touched areas

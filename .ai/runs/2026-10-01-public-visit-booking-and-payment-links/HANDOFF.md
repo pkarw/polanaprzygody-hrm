@@ -1,31 +1,31 @@
 # Handoff — 2026-10-01-public-visit-booking-and-payment-links
 
-**Last updated:** 2026-10-01T18:28:00Z
+**Last updated:** 2026-10-01T20:36:32Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
 **PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
-**Current phase/step:** Implementation complete; automated review is next
-**Last implementation commit:** `3e1f21e` — `test(booking): add browser journeys`
+**Current phase/step:** Every implementation Step is done; final gate is next
+**Last implementation commit:** `dd4b5d4` — `test(booking): prove fresh-install payment journey`
 
 ## What just happened
 
-- Every planned Step 1.1–5.3 is complete and pushed.
-- The full configured gate passed: generation, typecheck, lint, design-system compliance, unit tests, and production build.
-- The repository-native full integration suite passed on a production server backed by a newly initialized disposable PostgreSQL database: 103 passed, 4 conditionally skipped.
-- Fresh initialization applied the app migration chain and seeded the Polana catalog, booking duration/therapist/resource values, scoped public-booking identity and encryption maps, checkout templates, roles, and standard test users.
-- Real Chromium passed the public booking and authenticated visit/payment keyboard journeys; final screenshots are committed under `final-gate-artifacts/`.
+- Every planned Step 1.1–6.5 is complete and pushed locally.
+- Review fixes harden streamed-body bounds, exact tenant/organization credential retirement, Warsaw/DST windows, payment-state serialization, durable e-mail recovery, and supported installation defaults.
+- A second clean `mercato init --no-examples` run created eight service products, nine branded checkout templates, four therapists, exact booking mappings, and the checkout/visit custom-field definitions needed by runtime link creation.
+- Real Chromium passed booking contention and idempotent replay, staff confirmation, branded fixed-price link creation, public pay-page rendering, durable e-mail enqueue/replay, and unpaid-link deactivation.
+- Focused validation is green: 42 Jest tests, TypeScript, ESLint, and the fresh-install Playwright journey.
 
 ## Next concrete action
 
-- Run `om-auto-review-pr 13 --autofix`, apply and re-gate any review fixes, then run `om-auto-qa-pr 13 --self-qa-signoff`.
+- Publish checkpoint 5, run the full configured final gate, then run `om-auto-review-pr 13 --autofix` and `om-auto-qa-pr 13 --self-qa-signoff`.
 - When the review, UI QA, and required GitHub checks are green, mark PR #13 ready and merge it into the configured base branch.
 
 ## Blockers / open questions
 
-- No product blocker. Docker is unavailable, so the native Testcontainers wrapper cannot provision its own environment; the entire 107-case suite was nevertheless run against an equivalent fresh disposable PostgreSQL database and production build.
+- No product blocker. Docker is unavailable, so the native Testcontainers wrapper cannot provision its own environment; use the equivalent run-owned PostgreSQL 17 environment and record that limitation.
 
 ## Environment caveats
 
-- The final-gate production server is on `127.0.0.1:3212` and uses the disposable `mercato_final_gate_20261001` database in the run-owned PostgreSQL cluster.
+- The current dev server is on `127.0.0.1:3214` and uses disposable database `pbook_final_recheck` in PostgreSQL on port 55439.
 - Staged Chromium libraries are provided through `LD_LIBRARY_PATH`; keep that setting for the final QA pass.
 - Stop the server and `/tmp/pbook-checkpoint1.qczDQk/postgres` cluster after the PR is merged.
 

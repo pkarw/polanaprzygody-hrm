@@ -76,3 +76,10 @@
 - UI evidence: real Chromium passed the anonymous mobile success journey and authenticated wide visit payment/provenance keyboard journey; final screenshots are committed for PR publication.
 - Environment decision: the native Testcontainers wrapper cannot start because this host has no Docker CLI. No tests were omitted: the same full suite ran against the run-owned PostgreSQL fallback.
 2026-10-01T19:05:00Z — auto-review — CHANGES REQUESTED: independent security/data and UI/setup reviews found one payment-state race blocker plus supported-install, bounded-body, timezone, retry, worker-delivery, and real-success-path proof gaps. GitHub rejected a formal self-review, so the full report was posted as PR #13 comment 5938160959. Appended review-fix Steps 6.1–6.5; PR remains draft/in progress.
+
+## 2026-10-01T20:36:32Z — checkpoint 5 passed
+
+- Steps: 6.1–6.5, including the durable-email review fix.
+- Verification: focused Jest 42/42, TypeScript, scoped ESLint, two fresh `--no-examples` installations, seed read-back, and the real Chromium PBOOK/VPAY journey passed.
+- Installation proof: runtime-required catalog products, exact therapist/resource/duration mappings, nine checkout templates, public-booking identity, and both template/link/visit custom fields are created by default hooks; Stripe credentials remain an explicit external operator secret and were disposable test values only.
+- UI evidence: Chromium rendered the actual seeded service's public checkout page at a real `/pay/<slug>` URL; screenshot stored in `checkpoint-5-artifacts/fresh-install-payment-link.png` for PR publication.

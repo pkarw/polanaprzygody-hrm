@@ -29,12 +29,12 @@
 | 5 | 5.1 | Cover PBOOK API, scope, race, and retry integration paths | inline | done | bfe8a67 |
 | 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | done | 37809c4 |
 | 5 | 5.3 | Add browser journeys and capture final UI evidence | inline | done | 3e1f21e |
-| 6 | 6.1 | Bound public intake, scope credential retirement, and fix Warsaw date windows | dispatch:capable | done | this commit |
-| 6 | 6.2 | Make operational Polana fixtures mandatory installation defaults | dispatch:capable | done | this commit |
-| 6 | 6.3 | Serialize payment completion and harden payment-link retries | inline | done | this commit |
-| 6 | 6.4 | Make booking and payment email delivery durable and observable | dispatch:capable | done | this commit |
-| 6 | 6.4-review-fix | Harden durable email recovery and traceability | dispatch:capable | done | this commit |
-| 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | this commit |
+| 6 | 6.1 | Bound public intake, scope credential retirement, and fix Warsaw date windows | dispatch:capable | done | 77e91e4 |
+| 6 | 6.2 | Make operational Polana fixtures mandatory installation defaults | dispatch:capable | done | ddc10f7 |
+| 6 | 6.3 | Serialize payment completion and harden payment-link retries | inline | done | 18185c0 |
+| 6 | 6.4 | Make booking and payment email delivery durable and observable | dispatch:capable | done | 2379946 |
+| 6 | 6.4-review-fix | Harden durable email recovery and traceability | dispatch:capable | done | f888688 |
+| 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | dd4b5d4 |
 
 ## Goal
 
