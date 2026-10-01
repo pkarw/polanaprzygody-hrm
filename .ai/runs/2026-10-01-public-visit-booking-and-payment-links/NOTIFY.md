@@ -9,8 +9,13 @@
 - Decision: spec-implementation run; reuse the cockpit-linked worktree and use sequential cezar tasks for disjoint spec, bootstrap, and patient scopes.
 - Decision: VPAY remains behind a readiness-review gate because its current status is Draft.
 
-## 2026-10-01T14:24:00Z — installation and merge criteria expanded
+## 2026-10-01T14:20:00Z — installation and merge criteria expanded
 
 - Decision: a fresh install must idempotently seed payment templates plus explicit duration/therapist/room booking values for every Polana service; manual post-install setup is no longer acceptable.
 - Decision: after a clean automated review, the run adds automated UI QA with screenshots and merges only after all local, integration, QA, and required GitHub checks are green.
 - Guard: the cockpit requires a final explicit confirmation immediately before merging into the base branch, even though merge intent is already recorded.
+
+## 2026-10-01T14:21:30Z — draft PR opened and claimed
+
+- PR: https://github.com/pkarw/polanaprzygody-hrm/pull/13
+- Claim: assigned to `pkarw`; labels are disabled by `.ai/agentic.config.json`, so the guarded `in-progress` label is a no-op.

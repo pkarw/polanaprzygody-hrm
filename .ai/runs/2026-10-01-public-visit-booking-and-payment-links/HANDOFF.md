@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-01T14:17:59Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
-**PR:** not yet opened
+**PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
 **Current phase/step:** Phase 1 Step 1.1
 **Last commit:** `450a57f` — `docs(spec): add visit payment links spec (VPAY)`
 
@@ -13,7 +13,7 @@
 
 ## Next concrete action
 
-- Commit/push the run folder, open and claim the draft PR, then dispatch Step 1.1.
+- Dispatch Step 1.1 and validate its spec-readiness diff before entering VPAY implementation.
 
 ## Blockers / open questions
 
