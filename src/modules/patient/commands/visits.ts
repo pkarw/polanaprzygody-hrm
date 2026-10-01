@@ -109,23 +109,31 @@ export const patientVisitCrudEvents: CrudEventsConfig<PatientVisit> = {
   }),
 }
 
-function referenceService(ctx: CommandRuntimeContext): PatientReferenceService {
+async function referenceService(ctx: CommandRuntimeContext): Promise<PatientReferenceService> {
   try {
     return ctx.container.resolve('patientReferenceService') as PatientReferenceService
   } catch {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(503, {
-      error: 'The reference service required for patient visits is unavailable',
+      error: translate(
+        'patient.errors.visitReferenceServiceUnavailable',
+        'The reference service required for patient visits is unavailable',
+      ),
       code: 'visit_reference_service_unavailable',
     })
   }
 }
 
-function availabilityService(ctx: CommandRuntimeContext): PatientAvailabilityService {
+async function availabilityService(ctx: CommandRuntimeContext): Promise<PatientAvailabilityService> {
   try {
     return ctx.container.resolve('patientAvailabilityService') as PatientAvailabilityService
   } catch {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(503, {
-      error: 'The availability service required for patient visits is unavailable',
+      error: translate(
+        'patient.errors.visitAvailabilityServiceUnavailable',
+        'The availability service required for patient visits is unavailable',
+      ),
       code: 'visit_availability_service_unavailable',
     })
   }
@@ -149,14 +157,19 @@ async function requireReferenceFeature(
   try {
     rbac = ctx.container.resolve('rbacService') as ScopedRbacService
   } catch {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(503, {
-      error: 'The authorization service required for visit references is unavailable',
+      error: translate(
+        'patient.errors.visitReferenceAuthorizationUnavailable',
+        'The authorization service required for visit references is unavailable',
+      ),
       code: 'visit_reference_authorization_unavailable',
     })
   }
   if (!(await rbac.userHasAllFeatures(userId, [feature], scope))) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(403, {
-      error: 'You do not have access to the referenced records',
+      error: translate('patient.errors.visitReferenceForbidden', 'You do not have access to the referenced records'),
       code: 'visit_reference_forbidden',
       feature,
     })
@@ -180,7 +193,10 @@ async function loadVisitDecrypted(
     undefined,
     scope,
   )
-  if (!visit) throw new CrudHttpError(404, { error: 'Visit not found' })
+  if (!visit) {
+    const { translate } = await resolveTranslations()
+    throw new CrudHttpError(404, { error: translate('patient.errors.visitNotFound', 'Visit not found') })
+  }
   return visit
 }
 
@@ -206,14 +222,18 @@ async function lockVisit(
     )
   } catch (error) {
     if (isLockWaitTimeout(error)) {
+      const { translate } = await resolveTranslations()
       throw new CrudHttpError(409, {
-        error: 'This visit is being changed right now; try again in a moment',
+        error: translate('patient.errors.visitLocked', 'This visit is being changed right now; try again in a moment'),
         code: 'visit_locked',
       })
     }
     throw error
   }
-  if (!visit) throw new CrudHttpError(404, { error: 'Visit not found' })
+  if (!visit) {
+    const { translate } = await resolveTranslations()
+    throw new CrudHttpError(404, { error: translate('patient.errors.visitNotFound', 'Visit not found') })
+  }
   return visit
 }
 
@@ -280,46 +300,57 @@ async function serializeVisit(
   }
 }
 
-function assertSchedule(startsAt: Date, endsAt: Date | null): void {
+async function assertSchedule(startsAt: Date, endsAt: Date | null): Promise<void> {
   if (!endsAt) return
   if (endsAt.getTime() <= startsAt.getTime()) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(422, {
-      error: 'The visit end must be later than its start',
+      error: translate('patient.errors.visitEndNotAfterStart', 'The visit end must be later than its start'),
       code: 'visit_end_not_after_start',
     })
   }
   // Availability evaluation expands every planner rule across this span, so an unbounded
   // span blocks the event loop instead of merely storing an odd row.
   if (endsAt.getTime() - startsAt.getTime() > PATIENT_VISIT_MAX_SPAN_MS) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(422, {
-      error: 'The visit cannot span more than 31 days',
+      error: translate('patient.errors.visitSpanTooLong', 'The visit cannot span more than 31 days'),
       code: 'visit_span_too_long',
     })
   }
 }
 
-function assertUniqueServiceProductIds(productIds: string[]): void {
+async function assertUniqueServiceProductIds(productIds: string[]): Promise<void> {
   if (new Set(productIds).size !== productIds.length) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'The same service cannot be selected twice',
+      error: translate('patient.errors.visitServiceDuplicate', 'The same service cannot be selected twice'),
       code: 'visit_service_duplicate',
     })
   }
 }
 
-function assertScheduleTimeZone(startsAt: string | undefined, endsAt: string | null | undefined, timeZone: string): void {
+async function assertScheduleTimeZone(
+  startsAt: string | undefined,
+  endsAt: string | null | undefined,
+  timeZone: string,
+): Promise<void> {
   if (
     (startsAt !== undefined && !patientVisitInstantMatchesTimeZone(startsAt, timeZone)) ||
     (endsAt !== undefined && endsAt !== null && !patientVisitInstantMatchesTimeZone(endsAt, timeZone))
   ) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(422, {
-      error: 'The visit time and explicit offset must exist in the selected time zone',
+      error: translate(
+        'patient.errors.visitTimeZoneMismatch',
+        'The visit time and explicit offset must exist in the selected time zone',
+      ),
       code: 'visit_time_zone_mismatch',
     })
   }
 }
 
-function storedInstantAtTimeZone(instant: Date, timeZone: string): string {
+async function storedInstantAtTimeZone(instant: Date, timeZone: string): Promise<string> {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
@@ -342,8 +373,12 @@ function storedInstantAtTimeZone(instant: Date, timeZone: string): string {
   )
   const offsetMinutes = Math.round((localAsUtc - instant.getTime()) / 60_000)
   if (!Number.isInteger(offsetMinutes) || Math.abs(offsetMinutes) > 14 * 60) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(422, {
-      error: 'The stored visit instant cannot be represented in the selected time zone',
+      error: translate(
+        'patient.errors.visitStoredTimeZoneMismatch',
+        'The stored visit instant cannot be represented in the selected time zone',
+      ),
       code: 'visit_time_zone_mismatch',
     })
   }
@@ -356,19 +391,21 @@ function storedInstantAtTimeZone(instant: Date, timeZone: string): string {
   return `${byType.get('year')}-${byType.get('month')}-${byType.get('day')}T${byType.get('hour')}:${byType.get('minute')}:${byType.get('second')}${fraction}${offset}`
 }
 
-function assertVisitEditable(visit: PatientVisit): void {
+async function assertVisitEditable(visit: PatientVisit): Promise<void> {
   if (visit.status !== 'planned') {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'A closed visit must be reopened before it can be edited',
+      error: translate('patient.errors.visitNotEditable', 'A closed visit must be reopened before it can be edited'),
       code: 'visit_not_editable',
     })
   }
 }
 
-function assertVisitDeletable(visit: PatientVisit): void {
+async function assertVisitDeletable(visit: PatientVisit): Promise<void> {
   if (visit.status !== 'planned' || visit.isSettled) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'Only a planned, unsettled visit can be deleted',
+      error: translate('patient.errors.visitNotDeletable', 'Only a planned, unsettled visit can be deleted'),
       code: 'visit_not_deletable',
     })
   }
@@ -383,15 +420,16 @@ async function resolveCreateReferences(
   resource: ResolvedReference | null
   products: ResolvedProductReference[]
 }> {
-  const references = referenceService(ctx)
+  const references = await referenceService(ctx)
   const teamMember = await references.requireActiveTeamMember(input.teamMemberId, scope)
 
   let resource: ResolvedReference | null = null
   if (input.resourceId) {
     resource = (await references.resolveResources([input.resourceId], scope)).get(input.resourceId) ?? null
     if (!resource) {
+      const { translate } = await resolveTranslations()
       throw new CrudHttpError(422, {
-        error: 'A selected visit reference is unavailable',
+        error: translate('patient.errors.visitReferenceUnavailable', 'A selected visit reference is unavailable'),
         code: 'visit_reference_unavailable',
       })
     }
@@ -429,8 +467,12 @@ export async function acquireVisitSubjectLocks(
     }
   } catch (error) {
     if (isLockWaitTimeout(error)) {
+      const { translate } = await resolveTranslations()
       throw new CrudHttpError(409, {
-        error: 'This visit schedule is being changed right now; try again in a moment',
+        error: translate(
+          'patient.errors.visitScheduleLocked',
+          'This visit schedule is being changed right now; try again in a moment',
+        ),
         code: 'visit_schedule_locked',
       })
     }
@@ -451,7 +493,7 @@ async function evaluateCommandConflicts(input: {
    */
   resourceIsActive?: boolean
 }): Promise<VisitConflict[]> {
-  const service = availabilityService(input.ctx)
+  const service = await availabilityService(input.ctx)
   const [subjects, overlappingVisits] = await Promise.all([
     service.getSubjectAvailability({
       scope: input.scope,
@@ -541,17 +583,20 @@ async function encryptServiceSnapshots(
   return result
 }
 
-function requireUndoSnapshot(
+async function requireUndoSnapshot(
   value: unknown,
   scope: PatientScope,
   kind: 'before' | 'after',
-): VisitAuditSnapshot {
+): Promise<VisitAuditSnapshot> {
   const snapshot = value as VisitAuditSnapshot | null | undefined
   if (!snapshot?.id || !snapshot.patientId) {
     throw new Error(`[internal] Missing visit ${kind} snapshot for undo`)
   }
   if (snapshot.tenantId !== scope.tenantId || snapshot.organizationId !== scope.organizationId) {
-    throw new CrudHttpError(403, { error: 'Undo scope does not match the visit scope' })
+    const { translate } = await resolveTranslations()
+    throw new CrudHttpError(403, {
+      error: translate('patient.errors.visitUndoScopeMismatch', 'Undo scope does not match the visit scope'),
+    })
   }
   return snapshot
 }
@@ -705,14 +750,22 @@ async function resolveIdempotentVisit(
   )
   if (!existing) return null
   if (existing.createRequestPayload !== digest) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'This request id was already used with different content',
+      error: translate(
+        'patient.errors.idempotencyPayloadMismatch',
+        'This request id was already used with different content',
+      ),
       code: 'idempotency_payload_mismatch',
     })
   }
   if (existing.deletedAt) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(409, {
-      error: 'This request id belongs to a visit that was deleted',
+      error: translate(
+        'patient.errors.visitIdempotencyRecordDeleted',
+        'This request id belongs to a visit that was deleted',
+      ),
       code: 'idempotency_record_deleted',
     })
   }
@@ -730,11 +783,11 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
-    assertUniqueServiceProductIds(parsed.serviceProductIds)
+    await assertUniqueServiceProductIds(parsed.serviceProductIds)
     const startsAt = new Date(parsed.startsAt)
     const endsAt = parsed.endsAt ? new Date(parsed.endsAt) : null
-    assertSchedule(startsAt, endsAt)
-    assertScheduleTimeZone(parsed.startsAt, parsed.endsAt, parsed.timeZone)
+    await assertSchedule(startsAt, endsAt)
+    await assertScheduleTimeZone(parsed.startsAt, parsed.endsAt, parsed.timeZone)
 
     const digest = createRequestDigest({
       patientId: parsed.patientId,
@@ -937,7 +990,7 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   },
   async undo({ logEntry, ctx }) {
     const scope = requirePatientScope(ctx)
-    const after = requireUndoSnapshot(logEntry.snapshotAfter, scope, 'after')
+    const after = await requireUndoSnapshot(logEntry.snapshotAfter, scope, 'after')
     await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     const em = (ctx.container.resolve('em') as EntityManager).fork()
@@ -947,7 +1000,7 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       const patient = await lockPatient(em, after.patientId, scope)
       const visit = await lockVisit(em, after.id, scope)
       assertExpectedVersion(after.updatedAt, visit.updatedAt, VISIT_ENTITY_ID)
-      assertVisitDeletable(visit)
+      await assertVisitDeletable(visit)
       deletedAt = nextUpdatedAt(visit.updatedAt)
       visit.deletedAt = deletedAt
       visit.updatedAt = deletedAt
@@ -994,7 +1047,7 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     await requireReferenceFeature(ctx, scope, 'patient.visits.manage')
     const actorUserId = requireActorUserId(ctx)
     if (parsed.serviceProductIds !== undefined) {
-      assertUniqueServiceProductIds(parsed.serviceProductIds)
+      await assertUniqueServiceProductIds(parsed.serviceProductIds)
     }
     const rootEm = ctx.container.resolve('em') as EntityManager
     const readEm = rootEm.fork()
@@ -1007,7 +1060,7 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     } as FilterQuery<PatientVisitService>, { orderBy: { position: 'asc' } })
     const em = rootEm.fork()
 
-    const references = referenceService(ctx)
+    const references = await referenceService(ctx)
     let teamMember: ResolvedReference | null = null
     if (parsed.teamMemberId && parsed.teamMemberId !== current.teamMemberId) {
       await requireReferenceFeature(ctx, scope, 'staff.view')
@@ -1019,8 +1072,9 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         await requireReferenceFeature(ctx, scope, 'resources.view')
         resource = (await references.resolveResources([parsed.resourceId], scope)).get(parsed.resourceId) ?? undefined
         if (!resource) {
+          const { translate } = await resolveTranslations()
           throw new CrudHttpError(422, {
-            error: 'A selected visit reference is unavailable',
+            error: translate('patient.errors.visitReferenceUnavailable', 'A selected visit reference is unavailable'),
             code: 'visit_reference_unavailable',
           })
         }
@@ -1064,19 +1118,19 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
           patient = await lockPatient(phaseEm, String(current.patientId), scope)
           visit = await lockVisit(phaseEm, parsed.id, scope)
           assertExpectedVersion(parsed.expectedUpdatedAt, visit.updatedAt, VISIT_ENTITY_ID)
-          assertVisitEditable(visit)
+          await assertVisitEditable(visit)
           const startsAt = parsed.startsAt !== undefined ? new Date(parsed.startsAt) : visit.startsAt
           const endsAt = parsed.endsAt !== undefined
             ? (parsed.endsAt ? new Date(parsed.endsAt) : null)
             : (visit.endsAt ?? null)
           const timeZone = parsed.timeZone ?? visit.timeZone
-          assertSchedule(startsAt, endsAt)
-          assertScheduleTimeZone(
-            parsed.startsAt ?? storedInstantAtTimeZone(visit.startsAt, timeZone),
+          await assertSchedule(startsAt, endsAt)
+          await assertScheduleTimeZone(
+            parsed.startsAt ?? (await storedInstantAtTimeZone(visit.startsAt, timeZone)),
             parsed.endsAt !== undefined
               ? parsed.endsAt
               : visit.endsAt
-                ? storedInstantAtTimeZone(visit.endsAt, timeZone)
+                ? await storedInstantAtTimeZone(visit.endsAt, timeZone)
                 : null,
             timeZone,
           )
@@ -1245,8 +1299,8 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   },
   async undo({ logEntry, ctx }) {
     const scope = requirePatientScope(ctx)
-    const before = requireUndoSnapshot(logEntry.snapshotBefore, scope, 'before')
-    const after = requireUndoSnapshot(logEntry.snapshotAfter, scope, 'after')
+    const before = await requireUndoSnapshot(logEntry.snapshotBefore, scope, 'before')
+    const after = await requireUndoSnapshot(logEntry.snapshotAfter, scope, 'after')
     await authorizeSnapshotReferences(ctx, scope, before)
     const actorUserId = requireActorUserId(ctx)
     const encryption = tryResolveEncryptionService(ctx)
@@ -1269,7 +1323,7 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       assertPatientAcceptsNewEntries(patient)
       const visit = await lockVisit(em, before.id, scope)
       assertExpectedVersion(after.updatedAt, visit.updatedAt, VISIT_ENTITY_ID)
-      assertVisitEditable(visit)
+      await assertVisitEditable(visit)
       updatedAt = nextUpdatedAt(visit.updatedAt)
       restoreVisitHeader(visit, before, encryptedVisit, updatedAt, actorUserId)
       em.persist(visit)
@@ -1340,7 +1394,7 @@ const deleteVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
           patient = await lockPatient(phaseEm, String(current.patientId), scope)
           visit = await lockVisit(phaseEm, parsed.id, scope)
           assertExpectedVersion(parsed.expectedUpdatedAt, visit.updatedAt, VISIT_ENTITY_ID)
-          assertVisitDeletable(visit)
+          await assertVisitDeletable(visit)
           deletedAt = nextUpdatedAt(visit.updatedAt)
         },
         ({ em: phaseEm }) => {
@@ -1389,7 +1443,7 @@ const deleteVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
   },
   async undo({ logEntry, ctx }) {
     const scope = requirePatientScope(ctx)
-    const before = requireUndoSnapshot(logEntry.snapshotBefore, scope, 'before')
+    const before = await requireUndoSnapshot(logEntry.snapshotBefore, scope, 'before')
     await authorizeSnapshotReferences(ctx, scope, before)
     const actorUserId = requireActorUserId(ctx)
     const encryption = tryResolveEncryptionService(ctx)
@@ -1412,14 +1466,19 @@ const deleteVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       assertPatientAcceptsNewEntries(patient)
       const visit = await lockVisit(em, before.id, scope, { includeDeleted: true })
       if (!visit.deletedAt) {
+        const { translate } = await resolveTranslations()
         throw new CrudHttpError(409, {
-          error: 'This visit is no longer deleted; undo was refused',
+          error: translate('patient.errors.visitUndoStateChanged', 'This visit is no longer deleted; undo was refused'),
           code: 'undo_state_changed',
         })
       }
       if (visit.updatedAt.getTime() <= new Date(before.updatedAt).getTime()) {
+        const { translate } = await resolveTranslations()
         throw new CrudHttpError(409, {
-          error: 'The deleted visit version is not the one recorded by this action',
+          error: translate(
+            'patient.errors.visitUndoVersionMismatch',
+            'The deleted visit version is not the one recorded by this action',
+          ),
           code: 'undo_version_mismatch',
         })
       }
@@ -1531,15 +1590,33 @@ async function requireVisitFeatures(
   try {
     rbac = ctx.container.resolve('rbacService') as ScopedRbacService
   } catch {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(503, {
-      error: 'The authorization service required for visit actions is unavailable',
+      error: translate(
+        'patient.errors.visitAuthorizationUnavailable',
+        'The authorization service required for visit actions is unavailable',
+      ),
       code: 'visit_authorization_unavailable',
     })
   }
   if (!(await rbac.userHasAllFeatures(userId, required, scope))) {
-    throw codedForbidden('You do not have permission to perform this visit action', 'visit_action_forbidden')
+    const { translate } = await resolveTranslations()
+    throw codedForbidden(
+      translate('patient.errors.visitActionForbidden', 'You do not have permission to perform this visit action'),
+      'visit_action_forbidden',
+    )
   }
 }
+
+/**
+ * Translates a key, falling back to the given English text.
+ *
+ * A plain default (rather than requiring every caller to resolve one) keeps
+ * `assertPatientVisitTransition` synchronous and its table-driven tests unchanged — only the
+ * production call site, which already has the request's resolved `translate`, passes one in.
+ */
+type Translate = (key: string, fallback?: string) => string
+const untranslated: Translate = (_key, fallback) => fallback ?? _key
 
 /**
  * Pure transition oracle shared by the command and its table-driven tests.
@@ -1550,21 +1627,22 @@ export function assertPatientVisitTransition(
   target: PatientVisitStatus,
   startsAt: Date,
   now: Date,
+  translate: Translate = untranslated,
 ): void {
   if (target === 'planned') {
     if (current === 'planned') {
-      throw codedConflict('This visit is already planned', 'visit_status_unchanged')
+      throw codedConflict(translate('patient.errors.visitStatusUnchanged', 'This visit is already planned'), 'visit_status_unchanged')
     }
     return
   }
   if (current !== 'planned') {
-    throw codedConflict('Only a planned visit can be closed', 'visit_transition_not_allowed')
+    throw codedConflict(translate('patient.errors.visitTransitionNotAllowed', 'Only a planned visit can be closed'), 'visit_transition_not_allowed')
   }
   if ((target === 'completed' || target === 'no_show') && startsAt.getTime() > now.getTime()) {
     throw new CrudHttpError(422, {
       error: target === 'completed'
-        ? 'A visit cannot be completed before its start time'
-        : 'A patient cannot be marked absent before the visit start time',
+        ? translate('patient.errors.visitCompletionBeforeStart', 'A visit cannot be completed before its start time')
+        : translate('patient.errors.visitNoShowBeforeStart', 'A patient cannot be marked absent before the visit start time'),
       code: target === 'completed' ? 'visit_completion_before_start' : 'visit_no_show_before_start',
     })
   }
@@ -1598,6 +1676,7 @@ async function executeVisitLifecycleAction(
   const scope = requirePatientScope(ctx)
   const actorUserId = requireActorUserId(ctx)
   await requireVisitFeatures(ctx, scope, lifecycleFeatures(operation, input))
+  const { translate } = await resolveTranslations()
 
   const rootEm = ctx.container.resolve('em') as EntityManager
   const current = await loadVisitDecrypted(rootEm.fork(), input.id, scope)
@@ -1638,20 +1717,23 @@ async function executeVisitLifecycleAction(
         if (operation === 'confirm' || operation === 'unconfirm') {
           if (visit.status !== 'planned') {
             throw codedConflict(
-              'Confirmation can only be changed for a planned visit',
+              translate('patient.errors.visitConfirmationNotApplicable', 'Confirmation can only be changed for a planned visit'),
               'visit_confirmation_not_applicable',
             )
           }
           const shouldConfirm = operation === 'confirm'
           if (Boolean(visit.confirmedAt) === shouldConfirm) {
-            throw codedConflict('The visit confirmation already has this value', 'visit_confirmation_unchanged')
+            throw codedConflict(
+              translate('patient.errors.visitConfirmationUnchanged', 'The visit confirmation already has this value'),
+              'visit_confirmation_unchanged',
+            )
           }
           visit.confirmedAt = shouldConfirm ? updatedAt : null
           visit.confirmedByUserId = shouldConfirm ? actorUserId : null
         } else if (operation === 'transition') {
           const target = input.status
           if (!target) throw new Error('[internal] Missing parsed visit target status')
-          assertPatientVisitTransition(visit.status, target, visit.startsAt, wallClockNow)
+          assertPatientVisitTransition(visit.status, target, visit.startsAt, wallClockNow, translate)
           if (target === 'planned') assertPatientAcceptsNewEntries(patient)
           confirmationCleared = target === 'planned' && Boolean(visit.confirmedAt)
           visit.status = target
@@ -1667,7 +1749,10 @@ async function executeVisitLifecycleAction(
         } else {
           const shouldSettle = operation === 'settle'
           if (visit.isSettled === shouldSettle) {
-            throw codedConflict('The visit settlement already has this value', 'visit_settlement_unchanged')
+            throw codedConflict(
+              translate('patient.errors.visitSettlementUnchanged', 'The visit settlement already has this value'),
+              'visit_settlement_unchanged',
+            )
           }
           visit.isSettled = shouldSettle
           visit.settledAt = shouldSettle ? updatedAt : null

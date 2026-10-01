@@ -5,6 +5,7 @@ import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { Where, WhereValue } from '@open-mercato/shared/lib/query/types'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import {
   confirmed_at,
   conflict_override_at,
@@ -115,11 +116,15 @@ function requiredIsoTimestamp(value: Date | string, field: string): string {
   return timestamp
 }
 
-function rejectServerOwnedKeys(parsed: Record<string, unknown>): Record<string, unknown> {
+async function rejectServerOwnedKeys(parsed: Record<string, unknown>): Promise<Record<string, unknown>> {
   const present = VISIT_PROTECTED_KEYS.filter((key) => Object.prototype.hasOwnProperty.call(parsed, key))
   if (present.length > 0) {
+    const { translate } = await resolveTranslations()
     throw new CrudHttpError(400, {
-      error: 'These visit fields are set by the server and cannot be supplied',
+      error: translate(
+        'patient.errors.visitProtectedFields',
+        'These visit fields are set by the server and cannot be supplied',
+      ),
       fields: present,
     })
   }

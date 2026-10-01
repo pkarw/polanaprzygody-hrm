@@ -11,6 +11,10 @@ const ignores = [
   'dist/**',
   'out/**',
   'build/**',
+  'coverage/**',
+  'playwright-report/**',
+  '.ai/qa/test-results/**',
+  '.ai/qa/artifacts_*/**',
   'next-env.d.ts',
 ]
 
