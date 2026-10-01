@@ -16,6 +16,7 @@ import {
   PatientContactLink,
   PatientDiagnosis,
   PatientDocumentLink,
+  PatientVisit,
 } from '../data/entities'
 import {
   patientArchiveSchema,
@@ -201,8 +202,9 @@ async function resolveIdempotentPatient(
  * create rather than committing a record whose guardian silently went missing. The list stays
  * optional — the spec is explicit that a patient may have no CRM contacts at all.
  *
- * The record id is generated here rather than left to the database default because
- * `patient_number` embeds it and the children need it in the same transaction.
+ * The record id is generated here rather than left to the database default because the
+ * children need it in the same transaction. The public patient number receives a separate
+ * random UUID and therefore cannot disclose this persistence id.
  */
 const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
   id: 'patient.patients.create',
@@ -306,7 +308,7 @@ const createPatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
               id: patientId,
               tenantId: scope.tenantId,
               organizationId: scope.organizationId,
-              patientNumber: buildPatientNumber(patientId),
+              patientNumber: buildPatientNumber(),
               ...patientColumns,
               ownerTeamMemberId: parsed.ownerTeamMemberId ?? null,
               status: 'active',
@@ -708,6 +710,22 @@ const archivePatientCommand: CommandHandler<Record<string, unknown>, Patient> = 
               code: 'status_unchanged',
             })
           }
+          if (parsed.archived) {
+            const plannedVisits = await phaseEm.count(PatientVisit, {
+              patientId: parsed.id,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+              status: 'planned',
+              deletedAt: null,
+            } as FilterQuery<PatientVisit>)
+            if (plannedVisits > 0) {
+              throw new CrudHttpError(409, {
+                error: 'Planned visits must be completed or cancelled before this patient can be archived',
+                code: 'patient_has_planned_visits',
+                count: plannedVisits,
+              })
+            }
+          }
           updatedAt = nextUpdatedAt(locked.updatedAt)
         },
         ({ em: phaseEm }) => {
@@ -809,16 +827,24 @@ const deletePatientCommand: CommandHandler<Record<string, unknown>, Patient> = {
             organizationId: scope.organizationId,
             deletedAt: null,
           }
-          const [diagnoses, documentLinks, attachmentLinks] = await Promise.all([
+          const [diagnoses, documentLinks, attachmentLinks, visits] = await Promise.all([
             phaseEm.count(PatientDiagnosis, scopedChild as FilterQuery<PatientDiagnosis>),
             phaseEm.count(PatientDocumentLink, scopedChild as FilterQuery<PatientDocumentLink>),
             phaseEm.count(PatientAttachmentLink, scopedChild as FilterQuery<PatientAttachmentLink>),
+            // A visit tombstone is still care history. Counting only active rows would let
+            // "delete visit" followed by "delete patient" erase the patient record that the
+            // retained visit history belongs to and would violate VIS rollback guarantees.
+            phaseEm.count(PatientVisit, {
+              patientId: parsed.id,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+            } as FilterQuery<PatientVisit>),
           ])
-          if (diagnoses > 0 || documentLinks > 0 || attachmentLinks > 0) {
+          if (diagnoses > 0 || documentLinks > 0 || attachmentLinks > 0 || visits > 0) {
             throw new CrudHttpError(409, {
-              error: 'This record has documentation and cannot be deleted; archive it instead',
+              error: 'This record has documentation or visit history and cannot be deleted; archive it instead',
               code: 'patient_not_empty',
-              counts: { diagnoses, documentLinks, attachmentLinks },
+              counts: { diagnoses, documentLinks, attachmentLinks, visits },
             })
           }
 

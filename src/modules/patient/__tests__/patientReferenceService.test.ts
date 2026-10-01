@@ -32,6 +32,7 @@ describe('createPatientReferenceService DI contract', () => {
     // undefined.
     expect(first.startsWith('{')).toBe(false)
     expect(first.replace(/:.*$/, '').trim()).toBe('em')
+    expect(params.split(',')[1]?.replace(/:.*$/, '').trim()).toBe('queryEngine')
   })
 
   it('accepts the EntityManager positionally and queries through it', async () => {
@@ -40,7 +41,8 @@ describe('createPatientReferenceService DI contract', () => {
     // the call that threw when `em` was undefined.
     const em = { find, getMetadata: () => undefined } as never
 
-    const service = createPatientReferenceService(em)
+    const queryEngine = { query: jest.fn(async () => ({ items: [], page: 1, pageSize: 1, total: 0 })) }
+    const service = createPatientReferenceService(em, queryEngine as never)
     const resolved = await service.resolveTeamMembers(['11111111-1111-4111-8111-111111111111'], {
       tenantId: 'tenant-1',
       organizationId: 'org-1',
@@ -53,18 +55,23 @@ describe('createPatientReferenceService DI contract', () => {
   it('short-circuits without touching the EntityManager when there is nothing to resolve', async () => {
     const find = jest.fn(async () => [])
     const em = { find, getMetadata: () => undefined } as never
-    const service = createPatientReferenceService(em)
+    const queryEngine = { query: jest.fn(async () => ({ items: [], page: 1, pageSize: 1, total: 0 })) }
+    const service = createPatientReferenceService(em, queryEngine as never)
 
     // An empty id list must not issue a query with an empty `IN ()`.
     expect((await service.resolveTeamMembers([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect((await service.resolveCrmPeople([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect((await service.resolveUsers([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
+    expect((await service.resolveResources([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
+    expect((await service.resolveProducts([], { tenantId: 't', organizationId: 'o' })).size).toBe(0)
     expect(find).not.toHaveBeenCalled()
+    expect(queryEngine.query).not.toHaveBeenCalled()
   })
 
   it('refuses an unresolvable reference with 422 rather than returning a partial result', async () => {
     const em = { find: async () => [], getMetadata: () => undefined } as never
-    const service = createPatientReferenceService(em)
+    const queryEngine = { query: jest.fn(async () => ({ items: [], page: 1, pageSize: 1, total: 0 })) }
+    const service = createPatientReferenceService(em, queryEngine as never)
 
     await expect(
       service.requireActiveTeamMember('11111111-1111-4111-8111-111111111111', {
@@ -79,5 +86,71 @@ describe('createPatientReferenceService DI contract', () => {
         organizationId: 'o',
       }),
     ).rejects.toMatchObject({ status: 422 })
+
+    await expect(
+      service.requireActiveResource('11111111-1111-4111-8111-111111111111', {
+        tenantId: 't',
+        organizationId: 'o',
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+
+    await expect(
+      service.requireActiveProducts(['11111111-1111-4111-8111-111111111111'], {
+        tenantId: 't',
+        organizationId: 'o',
+      }),
+    ).rejects.toMatchObject({ status: 422 })
+  })
+
+  it('returns product snapshots in request order and rejects any inactive member', async () => {
+    const rows = [
+      { id: 'product-b', title: 'Consultation', sku: null, is_active: true, deleted_at: null },
+      { id: 'product-a', title: 'Examination', sku: 'EXAM', is_active: true, deleted_at: null },
+    ]
+    const em = { find: async () => [], getMetadata: () => undefined } as never
+    const query = jest.fn(async (_entity?: unknown, _options?: unknown) => ({
+      items: rows,
+      page: 1,
+      pageSize: 2,
+      total: 2,
+    }))
+    const service = createPatientReferenceService(em, { query } as never)
+
+    await expect(
+      service.requireActiveProducts(['product-a', 'product-b'], { tenantId: 't', organizationId: 'o' }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: 'product-a', displayName: 'Examination', sku: 'EXAM' }),
+      expect.objectContaining({ id: 'product-b', displayName: 'Consultation', sku: null }),
+    ])
+
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(query).toHaveBeenCalledWith('catalog:catalog_product', expect.objectContaining({
+      tenantId: 't',
+      organizationId: 'o',
+      filters: { id: { $in: ['product-a', 'product-b'] } },
+    }))
+
+    rows[1].is_active = false
+    await expect(
+      service.requireActiveProducts(['product-a', 'product-b'], { tenantId: 't', organizationId: 'o' }),
+    ).rejects.toMatchObject({ status: 422 })
+  })
+
+  it('resolves up to 100 host references in one public QueryEngine request', async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `product-${index}`)
+    const query = jest.fn(async () => ({
+      items: ids.map((id) => ({ id, title: id, sku: null, is_active: true, deleted_at: null })),
+      page: 1,
+      pageSize: 100,
+      total: 100,
+    }))
+    const service = createPatientReferenceService(
+      { find: async () => [], getMetadata: () => undefined } as never,
+      { query } as never,
+    )
+
+    await expect(service.requireActiveProducts(ids, { tenantId: 't', organizationId: 'o' }))
+      .resolves.toHaveLength(100)
+    expect(query).toHaveBeenCalledTimes(1)
   })
 })

@@ -46,6 +46,36 @@ export const features = [
     module: 'patient',
     dependsOn: ['patient.patients.view'],
   },
+  {
+    id: 'patient.visits.view',
+    title: 'View patient visits',
+    module: 'patient',
+    dependsOn: ['patient.patients.view'],
+  },
+  {
+    id: 'patient.visits.manage',
+    title: 'Plan and manage patient visits',
+    module: 'patient',
+    dependsOn: ['patient.visits.view'],
+  },
+  {
+    id: 'patient.visits.settle',
+    title: 'Mark patient visits as manually settled',
+    module: 'patient',
+    dependsOn: ['patient.visits.view'],
+  },
+  {
+    id: 'patient.visits.correct',
+    title: 'Reopen and correct closed patient visits',
+    module: 'patient',
+    dependsOn: ['patient.visits.manage'],
+  },
+  {
+    id: 'patient.visits.override_conflict',
+    title: 'Override patient visit availability warnings',
+    module: 'patient',
+    dependsOn: ['patient.visits.manage'],
+  },
 ]
 
 export default features

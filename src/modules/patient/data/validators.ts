@@ -400,6 +400,308 @@ export const patientAttachmentLinkDeleteSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
 })
 
+/**
+ * Timestamp accepted by VIS: an ISO instant with an explicit UTC designator or offset.
+ *
+ * The leading `\d{4}-\d{2}-\d{2}` anchor rejects the ISO extended-year form
+ * (`+275760-09-13T00:00:00Z`). Without it a caller could hand a span of ~1e8 days to the
+ * planner rrule expander, which loops to `range.end` with no occurrence cap. The write path
+ * already required a four-digit wall clock via `patientVisitInstantMatchesTimeZone`, so this
+ * rejects nothing the write path previously accepted.
+ */
+export const patientVisitInstantSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/,
+    'Expected an ISO-8601 timestamp with an explicit offset',
+  )
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid timestamp')
+
+/**
+ * Longest span a single visit (or a single availability probe for one) may cover.
+ *
+ * Availability evaluation expands every planner rule across the requested span, so an
+ * unbounded span is a denial-of-service vector rather than a merely odd request: one
+ * `COUNT`-less daily rule over a year-9999 span expands to 2,912,443 windows, which blocks
+ * the event loop for ~1.5s and allocates ~745MB per rule. 31 days is far longer than any
+ * real visit while keeping the expansion bounded.
+ */
+export const PATIENT_VISIT_MAX_SPAN_MS = 31 * 24 * 60 * 60 * 1_000
+
+/**
+ * Longest span the standalone availability probe may be asked about.
+ *
+ * Tighter than `PATIENT_VISIT_MAX_SPAN_MS` on purpose. The probe answers "is this one slot
+ * free", and the span it receives IS the window it reports back, so every unavailability
+ * overlapping it is returned. A wide span therefore turns a slot check into a schedule dump —
+ * the exact thing the VCAL security section forbids ("zwraca wyłącznie okna nakładające się na
+ * podany termin (nie cały grafik)"). A day covers any real appointment, including one that
+ * crosses midnight.
+ */
+export const PATIENT_VISIT_AVAILABILITY_PROBE_MAX_SPAN_MS = 24 * 60 * 60 * 1_000
+
+/** IANA zone validation uses the runtime's installed ICU database. */
+export const patientVisitTimeZoneSchema = z.string().trim().min(1).refine((value) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format()
+    return true
+  } catch {
+    return false
+  }
+}, 'Expected a valid IANA time zone')
+
+const visitScheduleFields = {
+  startsAt: patientVisitInstantSchema,
+  endsAt: patientVisitInstantSchema.nullish(),
+  timeZone: patientVisitTimeZoneSchema,
+}
+
+/**
+ * Confirms that the wall-clock part submitted by the client exists in the named zone and
+ * that the explicit offset selects the same instant. This rejects DST gaps while allowing
+ * either explicit offset of an autumn fold.
+ */
+export function patientVisitInstantMatchesTimeZone(instant: string, timeZone: string): boolean {
+  const wallClock = instant.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!wallClock) return false
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(instant))
+    const byType = new Map(parts.map((part) => [part.type, part.value]))
+    return (
+      byType.get('year') === wallClock[1] &&
+      byType.get('month') === wallClock[2] &&
+      byType.get('day') === wallClock[3] &&
+      byType.get('hour') === wallClock[4] &&
+      byType.get('minute') === wallClock[5] &&
+      byType.get('second') === (wallClock[6] ?? '00')
+    )
+  } catch {
+    return false
+  }
+}
+
+const serviceProductIdsSchema = z
+  .array(z.string().uuid())
+  .max(100)
+
+export const patientVisitConflictOverrideSchema = z.object({
+  acknowledgedSignatures: z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(100),
+  reason: z.string().trim().min(1).max(2_000),
+}).strict()
+
+export const patientVisitAvailabilityCheckQuerySchema = z.object({
+  teamMemberId: z.string().uuid(),
+  startsAt: patientVisitInstantSchema,
+  endsAt: patientVisitInstantSchema.optional(),
+  resourceId: z.string().uuid().optional(),
+  excludeVisitId: z.string().uuid().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (!value.endsAt) return
+  const startsAt = Date.parse(value.startsAt)
+  const endsAt = Date.parse(value.endsAt)
+  if (endsAt <= startsAt) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endsAt'],
+      message: 'The visit end must be later than its start',
+    })
+    return
+  }
+  if (endsAt - startsAt > PATIENT_VISIT_AVAILABILITY_PROBE_MAX_SPAN_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endsAt'],
+      message: 'The checked visit span cannot exceed 24 hours',
+    })
+  }
+})
+
+const PATIENT_VISIT_CALENDAR_MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1_000
+
+export const patientVisitCalendarQuerySchema = z.object({
+  from: patientVisitInstantSchema,
+  to: patientVisitInstantSchema,
+  teamMemberId: z.string().uuid().optional(),
+  resourceId: z.string().uuid().optional(),
+  patientId: z.string().uuid().optional(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']).optional(),
+}).strict().superRefine((value, ctx) => {
+  const from = Date.parse(value.from)
+  const to = Date.parse(value.to)
+  if (to <= from) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range end must be later than its start',
+    })
+    return
+  }
+  if (to - from > PATIENT_VISIT_CALENDAR_MAX_RANGE_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range cannot exceed 62 days',
+    })
+  }
+})
+
+export const patientVisitCreateSchema = z
+  .object({
+    ...visitScheduleFields,
+    patientId: z.string().uuid(),
+    teamMemberId: z.string().uuid(),
+    resourceId: z.string().uuid().nullish(),
+    description: clearableText(20_000).optional(),
+    serviceProductIds: serviceProductIdsSchema.optional().default([]),
+    clientRequestId: z.string().uuid(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
+  })
+  .strict()
+
+export const patientVisitUpdateSchema = z
+  .object({
+    id: z.string().uuid(),
+    expectedUpdatedAt: z.string().min(1),
+    teamMemberId: z.string().uuid().optional(),
+    resourceId: z.string().uuid().nullish(),
+    startsAt: patientVisitInstantSchema.optional(),
+    endsAt: patientVisitInstantSchema.nullish(),
+    timeZone: patientVisitTimeZoneSchema.optional(),
+    description: clearableText(20_000).optional(),
+    serviceProductIds: serviceProductIdsSchema.optional(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
+  })
+  .strict()
+
+export const patientVisitDeleteSchema = z.object({
+  id: z.string().uuid(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+const patientVisitActionBase = {
+  id: z.string().uuid(),
+  expectedUpdatedAt: z.string().min(1),
+}
+
+const patientVisitActionReasonSchema = z.string().trim().min(1).max(2_000)
+
+function addPatientVisitTransitionIssues(
+  value: { status: 'planned' | 'completed' | 'cancelled' | 'no_show'; reason?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const reasonRequired = value.status === 'planned' || value.status === 'cancelled' || value.status === 'no_show'
+  if (reasonRequired && !value.reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A reason is required for this visit status change',
+      path: ['reason'],
+    })
+  }
+  if (value.status === 'completed' && value.reason !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A completion does not accept a reason',
+      path: ['reason'],
+    })
+  }
+}
+
+/** Commands are split by action so a caller cannot smuggle the target state. */
+export const patientVisitConfirmationActionSchema = z.object(patientVisitActionBase).strict()
+
+export const patientVisitTransitionSchema = z
+  .object({
+    ...patientVisitActionBase,
+    status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+    reason: patientVisitActionReasonSchema.optional(),
+  })
+  .strict()
+  .superRefine(addPatientVisitTransitionIssues)
+
+export const patientVisitSettleSchema = z.object({
+  ...patientVisitActionBase,
+  reason: patientVisitActionReasonSchema.optional(),
+}).strict()
+
+export const patientVisitUnsettleSchema = z.object({
+  ...patientVisitActionBase,
+  reason: patientVisitActionReasonSchema,
+}).strict()
+
+/** HTTP action bodies keep the record id in the path and reject all scope/actor keys. */
+export const patientVisitConfirmationRequestSchema = z.object({
+  confirmed: z.boolean(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+export const patientVisitStatusRequestSchema = z.object({
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  reason: patientVisitActionReasonSchema.optional(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict().superRefine(addPatientVisitTransitionIssues)
+
+export const patientVisitSettlementRequestSchema = z.object({
+  isSettled: z.boolean(),
+  reason: patientVisitActionReasonSchema.optional(),
+  expectedUpdatedAt: z.string().min(1),
+}).strict().superRefine((value, ctx) => {
+  if (!value.isSettled && !value.reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A reason is required to remove manual settlement',
+      path: ['reason'],
+    })
+  }
+})
+
+const patientVisitIdsQuerySchema = z.string().superRefine((value, ctx) => {
+  const ids = value.split(',').map((entry) => entry.trim()).filter(Boolean)
+  if (ids.length === 0 || ids.length > 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'ids must contain between 1 and 100 UUIDs',
+    })
+    return
+  }
+  const uuid = z.string().uuid()
+  if (ids.some((id) => !uuid.safeParse(id).success)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'ids must contain only UUIDs' })
+  }
+})
+
+const patientVisitListQueryFields = {
+  id: z.string().uuid().optional(),
+  ids: patientVisitIdsQuerySchema.optional(),
+  patientId: z.string().uuid().optional(),
+  teamMemberId: z.string().uuid().optional(),
+  resourceId: z.string().uuid().optional(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']).optional(),
+  isSettled: z.enum(['true', 'false']).optional(),
+  from: patientVisitInstantSchema.optional(),
+  to: patientVisitInstantSchema.optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
+  sortField: z.enum(['id', 'starts_at', 'startsAt', 'ends_at', 'endsAt', 'status', 'is_settled', 'isSettled', 'updated_at', 'updatedAt']).optional().default('starts_at'),
+  sortDir: z.enum(['asc', 'desc']).optional().default('asc'),
+}
+
+/** Unrefined twin used by the installed OpenAPI CRUD helper, which extends object schemas. */
+export const patientVisitListOpenApiQuerySchema = z.object(patientVisitListQueryFields).strict()
+
+export const patientVisitListQuerySchema = z.object(patientVisitListQueryFields).strict().refine((value) => !value.from || !value.to || Date.parse(value.to) > Date.parse(value.from), {
+  message: 'The range end must be later than its start',
+  path: ['to'],
+})
+
 export type PatientCreateInput = z.infer<typeof patientCreateSchema>
 export type PatientUpdateInput = z.infer<typeof patientUpdateSchema>
 export type PatientAddressCreateInput = z.infer<typeof patientAddressCreateSchema>
@@ -408,3 +710,6 @@ export type PatientContactCreateInput = z.infer<typeof patientContactCreateSchem
 export type PatientContactUpdateInput = z.infer<typeof patientContactUpdateSchema>
 export type PatientDiagnosisCreateInput = z.infer<typeof patientDiagnosisCreateSchema>
 export type PatientDiagnosisCorrectInput = z.infer<typeof patientDiagnosisCorrectSchema>
+export type PatientVisitCreateInput = z.infer<typeof patientVisitCreateSchema>
+export type PatientVisitUpdateInput = z.infer<typeof patientVisitUpdateSchema>
+export type PatientVisitTransitionInput = z.infer<typeof patientVisitTransitionSchema>

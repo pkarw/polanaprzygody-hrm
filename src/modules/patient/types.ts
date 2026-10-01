@@ -36,7 +36,15 @@ export type PatientListItem = {
   createdAt: string | null
   /** The optimistic-lock token. Dropping it silently disables conflict detection. */
   updatedAt: string | null
+  nextVisit?: PatientNextVisit | null
 } & Record<`cf_${string}`, unknown>
+
+export type PatientNextVisit = {
+  startsAt: string
+  timeZone: string
+  resourceNameSnapshot: string | null
+  confirmedAt: string | null
+}
 
 export type PatientDetailItem = PatientListItem & {
   birthDate: string | null
@@ -119,6 +127,96 @@ export type PatientAttachmentLinkItem = {
   fileName: string | null
   state: 'active' | 'detached'
   updatedAt: string | null
+}
+
+export type PatientVisitStatusValue = 'planned' | 'completed' | 'cancelled' | 'no_show'
+
+export type PatientVisitServiceItem = {
+  id: string
+  productId: string
+  title: string
+  sku: string | null
+  isAvailable: boolean
+  position: number
+}
+
+export type PatientVisitItem = {
+  id: string
+  patientId: string
+  patientName: string | null
+  teamMemberId: string
+  teamMemberName: string
+  resourceId: string | null
+  resourceName: string | null
+  startsAt: string
+  endsAt: string | null
+  timeZone: string
+  description?: string | null
+  status: PatientVisitStatusValue
+  confirmedAt: string | null
+  conflictOverrideAt?: string | null
+  conflictOverrideByUserId?: string | null
+  conflictOverrideByUserName?: string | null
+  conflictOverrideCodes?: string[] | null
+  /** Present only for an explicit detail lookup. */
+  conflictOverrideReason?: string | null
+  isConfirmed: boolean
+  confirmationApplicable: boolean
+  isSettled: boolean
+  settledAt: string | null
+  services: PatientVisitServiceItem[]
+  updatedAt: string
+}
+
+export type PatientVisitCalendarItem = {
+  id: string
+  patientId: string
+  patientName: string | null
+  teamMemberId: string
+  teamMemberName: string
+  resourceId: string | null
+  resourceName: string | null
+  startsAt: string
+  endsAt: string | null
+  timeZone: string
+  status: PatientVisitStatusValue
+  confirmedAt: string | null
+  isSettled: boolean
+  conflictOverrideAt: string | null
+  conflictOverrideCodes: string[] | null
+  updatedAt: string
+}
+
+export type PatientVisitAvailabilityLaneWindow = {
+  id: string
+  kind: 'availability' | 'exception'
+  from: string
+  to: string
+  reasonLabel?: string
+}
+
+export type PatientVisitAvailabilityLane = {
+  subjectType: 'member' | 'resource'
+  subjectId: string
+  subjectName: string
+  hasSchedule: boolean
+  isActive?: boolean
+  unknown: boolean
+  windows: PatientVisitAvailabilityLaneWindow[]
+}
+
+export type PatientVisitCalendarDegradation = {
+  code: 'availability_unknown'
+  subjectType: 'member' | 'resource'
+  subjectId: string
+  subjectName: string
+}
+
+export type PatientVisitCalendarResponse = {
+  items: PatientVisitCalendarItem[]
+  lanes: PatientVisitAvailabilityLane[]
+  degraded: PatientVisitCalendarDegradation[]
+  range: { from: string; to: string }
 }
 
 /** The standard paged envelope every list route in this module returns. */

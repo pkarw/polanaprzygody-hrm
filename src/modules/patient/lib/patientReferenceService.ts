@@ -1,6 +1,7 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { CustomerEntity } from '@open-mercato/core/modules/customers/data/entities'
 import { StaffTeamMember } from '@open-mercato/core/modules/staff/data/entities'
 import { User } from '@open-mercato/core/modules/auth/data/entities'
@@ -52,6 +53,10 @@ export type ResolvedReference = {
   isAvailable: boolean
 }
 
+export type ResolvedProductReference = ResolvedReference & {
+  sku: string | null
+}
+
 export type PatientReferenceService = {
   resolveCrmPeople(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
   resolveTeamMembers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
@@ -64,10 +69,16 @@ export type PatientReferenceService = {
    * still refused.
    */
   resolveUsers(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
+  resolveResources(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedReference>>
+  resolveProducts(ids: string[], scope: PatientReferenceScope): Promise<Map<string, ResolvedProductReference>>
   /** Throws 422 unless the id is an active CRM person in scope. */
   requireActiveCrmPerson(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
   /** Throws 422 unless the id is an active staff team member in scope. */
   requireActiveTeamMember(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
+  /** Throws 422 unless the id is an active resource in scope. */
+  requireActiveResource(id: string, scope: PatientReferenceScope): Promise<ResolvedReference>
+  /** Returns all active products in input order or throws 422 without disclosing which foreign id failed. */
+  requireActiveProducts(ids: string[], scope: PatientReferenceScope): Promise<ResolvedProductReference[]>
 }
 
 /** Drops blanks and duplicates so one repeated id is one row in the `IN (…)` list. */
@@ -92,7 +103,7 @@ function normalizeIds(ids: string[]): string[] {
  *
  * `__tests__/patientReferenceService.test.ts` pins the parameter name for that reason.
  */
-export function createPatientReferenceService(em: EntityManager): PatientReferenceService {
+export function createPatientReferenceService(em: EntityManager, queryEngine: QueryEngine): PatientReferenceService {
   async function resolveCrmPeople(
     ids: string[],
     scope: PatientReferenceScope,
@@ -200,6 +211,74 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     return resolved
   }
 
+  async function resolveResources(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<Map<string, ResolvedReference>> {
+    const wanted = normalizeIds(ids)
+    const resolved = new Map<string, ResolvedReference>()
+    if (wanted.length === 0) return resolved
+
+    // QueryEngine is the installed modules' public, scope-aware read contract. Importing
+    // ResourcesResource here would couple this app module to a private host ORM class and
+    // bypass any query extension/decryption policy owned by resources.
+    const { items: rows } = await queryEngine.query<Record<string, unknown>>(
+      'resources:resources_resource',
+      {
+        fields: ['id', 'name', 'is_active', 'deleted_at'],
+        filters: { id: { $in: wanted } },
+        page: { page: 1, pageSize: wanted.length },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        withDeleted: true,
+      },
+    )
+    for (const row of rows) {
+      const id = String(row.id ?? '')
+      if (!id) continue
+      resolved.set(id, {
+        id,
+        displayName: String(row.name ?? ''),
+        isAvailable: (row.is_active ?? row.isActive) !== false && !(row.deleted_at ?? row.deletedAt),
+      })
+    }
+    return resolved
+  }
+
+  async function resolveProducts(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<Map<string, ResolvedProductReference>> {
+    const wanted = normalizeIds(ids)
+    const resolved = new Map<string, ResolvedProductReference>()
+    if (wanted.length === 0) return resolved
+
+    // The catalog product entity is likewise private. One bounded QueryEngine read keeps
+    // selection validation on the public contract and avoids an N-query lookup per service.
+    const { items: rows } = await queryEngine.query<Record<string, unknown>>(
+      'catalog:catalog_product',
+      {
+        fields: ['id', 'title', 'sku', 'is_active', 'deleted_at'],
+        filters: { id: { $in: wanted } },
+        page: { page: 1, pageSize: wanted.length },
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        withDeleted: true,
+      },
+    )
+    for (const row of rows) {
+      const id = String(row.id ?? '')
+      if (!id) continue
+      resolved.set(id, {
+        id,
+        displayName: String(row.title ?? ''),
+        sku: typeof row.sku === 'string' ? row.sku : null,
+        isAvailable: (row.is_active ?? row.isActive) !== false && !(row.deleted_at ?? row.deletedAt),
+      })
+    }
+    return resolved
+  }
+
   /**
    * 422, not 404, for both `require*` helpers.
    *
@@ -226,11 +305,35 @@ export function createPatientReferenceService(em: EntityManager): PatientReferen
     return resolved
   }
 
+  async function requireActiveResource(id: string, scope: PatientReferenceScope): Promise<ResolvedReference> {
+    const resolved = (await resolveResources([id], scope)).get(id)
+    if (!resolved || !resolved.isAvailable) {
+      throw new CrudHttpError(422, { error: 'Referenced resource is not active in this scope' })
+    }
+    return resolved
+  }
+
+  async function requireActiveProducts(
+    ids: string[],
+    scope: PatientReferenceScope,
+  ): Promise<ResolvedProductReference[]> {
+    const resolved = await resolveProducts(ids, scope)
+    const ordered = ids.map((id) => resolved.get(id))
+    if (ordered.some((product) => !product?.isAvailable)) {
+      throw new CrudHttpError(422, { error: 'One or more referenced services are not active in this scope' })
+    }
+    return ordered as ResolvedProductReference[]
+  }
+
   return {
     resolveCrmPeople,
     resolveTeamMembers,
     resolveUsers,
+    resolveResources,
+    resolveProducts,
     requireActiveCrmPerson,
     requireActiveTeamMember,
+    requireActiveResource,
+    requireActiveProducts,
   }
 }

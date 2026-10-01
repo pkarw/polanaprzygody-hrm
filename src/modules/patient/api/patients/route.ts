@@ -40,6 +40,8 @@ import type { PatientReferenceService, ResolvedReference } from '../../lib/patie
 import { toIsoTimestamp } from '../../lib/commandSupport'
 import { buildDeleteCommandInput } from '../../lib/deleteInput'
 import { PATIENT_PROTECTED_KEYS } from '../../lib/routeSupport'
+import { hasCompletePatientSearchScope } from '../../lib/searchScope'
+import { assertCanSortPatientsByNextVisit, enrichPatientNextVisits } from '../../lib/visitApi'
 import {
   createPatientCrudOpenApi,
   createPatientPagedListResponseSchema,
@@ -49,6 +51,7 @@ import {
 } from '../openapi'
 
 const ENTITY_ID = 'patient:patient' as const
+const LIST_ENTITY_ID = 'patient:patient_list_projection' as const
 
 /**
  * The encrypted columns the single search box reaches through the token index.
@@ -81,7 +84,17 @@ const querySchema = z
     ids: z.string().optional(),
     page: z.coerce.number().min(1).default(1),
     pageSize: z.coerce.number().min(1).max(100).default(50),
-    sortField: z.string().optional().default('created_at'),
+    sortField: z.enum([
+      'id',
+      'patient_number',
+      'patientNumber',
+      'status',
+      'created_at',
+      'createdAt',
+      'updated_at',
+      'updatedAt',
+      'nextVisit',
+    ]).optional().default('created_at'),
     sortDir: z.enum(['asc', 'desc']).optional().default('desc'),
     status: z.enum(['active', 'archived']).optional(),
     /** The list's one search box: patient number, name, email or phone. */
@@ -269,18 +282,25 @@ const SEARCH_FALLBACK_SCAN_LIMIT = 200
  * name matched", so it contributes nothing rather than an empty result — the number half
  * still answers.
  */
-async function resolvePatientSearchIds(
+export async function resolvePatientSearchIds(
   term: string,
   scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
 ): Promise<string[]> {
+  // `buildFilters` runs before makeCrudRoute's final scope guard. Refuse the lookup here
+  // too so neither the plaintext number probe nor the decrypted index-lag fallback can
+  // scan another organization while the eventual HTTP response is being failed closed.
+  if (!hasCompletePatientSearchScope(scope)) return []
   const ids = new Set<string>()
 
   const numberRows = await scope.em.find(
     Patient,
     {
-      patientNumber: { $ilike: `%${term}%` },
-      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
-      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+      $or: [
+        { patientNumber: { $ilike: `%${term}%` } },
+        { legacyPatientNumber: { $ilike: `%${term}%` } },
+      ],
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
       deletedAt: null,
     } as never,
     { fields: ['id'], limit: SEARCH_ID_LIMIT },
@@ -336,6 +356,85 @@ async function resolvePatientSearchIds(
   return Array.from(ids)
 }
 
+async function resolvePatientNumberIds(
+  patientNumber: string,
+  scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
+): Promise<string[]> {
+  if (!hasCompletePatientSearchScope(scope)) return []
+  const rows = await scope.em.find(
+    Patient,
+    {
+      $or: [{ patientNumber }, { legacyPatientNumber: patientNumber }],
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+      deletedAt: null,
+    } as never,
+    { fields: ['id'], limit: 2 },
+  )
+  return rows.map((row) => String(row.id))
+}
+
+type PatientEncryptedFilter = {
+  query: string | undefined
+  tokenField: (typeof PATIENT_SEARCH_TOKEN_FIELDS)[number]
+  property: 'firstName' | 'lastName' | 'email' | 'phone'
+}
+
+export async function resolvePatientEncryptedFieldIds(
+  filter: PatientEncryptedFilter,
+  scope: { em: EntityManager; tenantId: string | null; organizationId: string | null },
+): Promise<string[] | null> {
+  if (!filter.query) return null
+  if (!hasCompletePatientSearchScope(scope)) return []
+  const tokenMatch = await findEntityIdsBySearchTokens({
+    db: scope.em.getKysely<SearchTokenDatabase>(),
+    entityType: ENTITY_ID,
+    query: filter.query,
+    fields: [filter.tokenField],
+    scope: { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  })
+  if (tokenMatch.matched && tokenMatch.ids.length > 0) {
+    return tokenMatch.ids.slice(0, SEARCH_ID_LIMIT)
+  }
+
+  // Same bounded index-lag bridge as the register search, but restricted to the
+  // requested field. QueryEngine is reading from the projection entity in this route,
+  // while the authoritative tokens belong to `patient:patient`; resolving ids here keeps
+  // that ownership explicit and avoids ever applying ILIKE to ciphertext.
+  const needle = filter.query.replaceAll('%', '').toLocaleLowerCase()
+  if (!needle) return []
+  const recent = await findWithDecryption(
+    scope.em,
+    Patient,
+    {
+      ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
+      deletedAt: null,
+    } as never,
+    { orderBy: { createdAt: 'desc' }, limit: SEARCH_FALLBACK_SCAN_LIMIT },
+    { tenantId: scope.tenantId, organizationId: scope.organizationId },
+  )
+  return recent
+    .filter((row) => {
+      const value = row[filter.property]
+      return typeof value === 'string' && value.toLocaleLowerCase().includes(needle)
+    })
+    .map((row) => String(row.id))
+}
+
+function intersectPatientIds(filters: Record<string, WhereValue>, ids: string[]): void {
+  const narrowed = ids.length > 0 ? ids : [NO_MATCH_ID]
+  const existing = filters.id
+  if (existing && typeof existing === 'object' && '$in' in existing) {
+    const allowed = new Set(narrowed)
+    filters.id = { $in: (existing as { $in: string[] }).$in.filter((id) => allowed.has(id)) }
+  } else if (typeof existing === 'string') {
+    filters.id = narrowed.includes(existing) ? existing : NO_MATCH_ID
+  } else {
+    filters.id = { $in: narrowed }
+  }
+}
+
 const sortFieldMap: Record<string, string> = {
   id: idField,
   patient_number,
@@ -345,6 +444,7 @@ const sortFieldMap: Record<string, string> = {
   createdAt: created_at,
   updated_at,
   updatedAt: updated_at,
+  nextVisit: 'next_visit_at',
 }
 
 type PatientRow = {
@@ -381,6 +481,12 @@ type PatientItem = {
   archivedAt?: string | null
   createdAt: string | null
   updatedAt: string | null
+  nextVisit?: {
+    startsAt: string
+    timeZone: string
+    resourceNameSnapshot: string | null
+    confirmedAt: string | null
+  } | null
 }
 
 /** `null` rather than an empty string when both halves are missing, so the UI can branch. */
@@ -419,14 +525,28 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
   events: { module: 'patient', entity: 'patient', persistent: true },
   indexer: { entityType: ENTITY_ID },
   list: {
+    // `next_visit_at` depends on visit writes and on wall-clock time. A cached patient page
+    // can therefore have stale global sort/page membership even if afterList refreshes the
+    // displayed value; disable the generic page cache for this time-dependent projection.
+    disableListCache: true,
     schema: querySchema,
-    entityId: ENTITY_ID,
+    entityId: LIST_ENTITY_ID,
     fields: (query: Query, ctx: CrudCtx) => [
       ...baseListFields,
       ...(isSingleRecordRequest(query) ? [descriptionField, birth_date, archived_at] : []),
       ...customFieldKeysFor(ctx).map((key) => `cf:${key}`),
     ],
     sortFieldMap,
+    tiebreakSortField: idField,
+    customFieldSources: [
+      {
+        entityId: ENTITY_ID,
+        table: 'patient_patients',
+        alias: 'patient_base',
+        recordIdColumn: 'id',
+        join: { fromField: 'id', toField: 'id' },
+      },
+    ],
     buildFilters: async (q: Query, ctx): Promise<Where<PatientRow>> => {
       const filters: Where<PatientRow> = {}
       const F = filters as Record<string, WhereValue>
@@ -439,8 +559,16 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       }
       if (q.id) F.id = q.id
       if (q.status) F.status = q.status
-      // Plaintext column, so an exact equality is a real index lookup.
-      if (q.patientNumber) F.patient_number = q.patientNumber
+      // Preserve exact lookup by the deprecated preview-era number while only returning
+      // the independent canonical number in API responses.
+      if (q.patientNumber) {
+        const ids = await resolvePatientNumberIds(q.patientNumber, {
+          em: ctx.container.resolve<EntityManager>('em'),
+          tenantId: ctx.auth?.tenantId ?? null,
+          organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null,
+        })
+        intersectPatientIds(F, ids)
+      }
 
       // The list's single search box. One term has to reach both a plaintext column and
       // five encrypted ones, and those need opposite treatments, so the two halves are
@@ -453,26 +581,22 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         })
         // An empty set is a real "no match", not an absent filter: without the
         // impossible predicate the search box would silently return the whole register.
-        const narrowed = matchedIds.length > 0 ? matchedIds : [NO_MATCH_ID]
-        const existing = F.id
-        if (existing && typeof existing === 'object' && '$in' in existing) {
-          const previous = (existing as { $in: string[] }).$in
-          const allowed = new Set(narrowed)
-          F.id = { $in: previous.filter((value) => allowed.has(value)) }
-        } else if (typeof existing === 'string') {
-          F.id = narrowed.includes(existing) ? existing : NO_MATCH_ID
-        } else {
-          F.id = { $in: narrowed }
-        }
+        intersectPatientIds(F, matchedIds)
       }
-      // Encrypted columns. A plain `$ilike` is deliberate: the query engine intercepts it
-      // and rewrites it into a `search_tokens` lookup over hashes of the decrypted value.
-      // Hand-rolling an id narrowing here would duplicate that and would have to re-apply
-      // the tenant/organization scope the engine's token path already applies.
-      if (q.firstName) F.first_name = { $ilike: q.firstName }
-      if (q.lastName) F.last_name = { $ilike: q.lastName }
-      if (q.email) F.email = { $ilike: q.email }
-      if (q.phone) F.phone = { $ilike: q.phone }
+      const encryptedFilterScope = {
+        em: ctx.container.resolve<EntityManager>('em'),
+        tenantId: ctx.auth?.tenantId ?? null,
+        organizationId: ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null,
+      }
+      const encryptedFilterIds = await Promise.all([
+        resolvePatientEncryptedFieldIds({ query: q.firstName, tokenField: 'first_name', property: 'firstName' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.lastName, tokenField: 'last_name', property: 'lastName' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.email, tokenField: 'email', property: 'email' }, encryptedFilterScope),
+        resolvePatientEncryptedFieldIds({ query: q.phone, tokenField: 'phone', property: 'phone' }, encryptedFilterScope),
+      ])
+      for (const ids of encryptedFilterIds) {
+        if (ids) intersectPatientIds(F, ids)
+      }
       if (q.ownerTeamMemberId) F.owner_team_member_id = q.ownerTeamMemberId
 
       const cfFilterMap = await buildCustomFieldFiltersFromQuery({
@@ -514,6 +638,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
      * selectors and still return the record, not turn a readable patient into an error.
      */
     beforeList: async (_query: Query, ctx: CrudCtx) => {
+      if (_query.sortField === 'nextVisit') {
+        await assertCanSortPatientsByNextVisit(ctx)
+      }
       try {
         requestCustomFieldKeys.set(ctx, await discoverCustomFieldKeys(ctx))
       } catch {
@@ -530,6 +657,7 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
     afterList: async (res: { items?: PatientItem[] }, ctx: CrudCtx) => {
       const items = Array.isArray(res?.items) ? res.items : []
       if (items.length === 0) return
+      await enrichPatientNextVisits(items, ctx)
       const tenantId = ctx.auth?.tenantId ?? null
       const organizationId = ctx.selectedOrganizationId ?? ctx.auth?.orgId ?? null
       if (!tenantId || !organizationId) return
@@ -537,22 +665,23 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       const ownerIds = items
         .map((item) => item.ownerTeamMemberId)
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      if (ownerIds.length === 0) return
 
-      const references = ctx.container.resolve<PatientReferenceService>('patientReferenceService')
-      const resolved: Map<string, ResolvedReference> = await references.resolveTeamMembers(ownerIds, {
-        tenantId,
-        organizationId,
-      })
-      for (const item of items) {
-        if (!item.ownerTeamMemberId) continue
-        const reference = resolved.get(item.ownerTeamMemberId)
-        // A reference that resolves to nothing is left null rather than rendered as a raw
-        // uuid: the spec forbids showing identifiers in the UI, and "unavailable" is the
-        // honest label for a staff member this scope can no longer see.
-        item.owner = reference
-          ? { id: reference.id, name: reference.displayName, isAvailable: reference.isAvailable }
-          : null
+      if (ownerIds.length > 0) {
+        const references = ctx.container.resolve<PatientReferenceService>('patientReferenceService')
+        const resolved: Map<string, ResolvedReference> = await references.resolveTeamMembers(ownerIds, {
+          tenantId,
+          organizationId,
+        })
+        for (const item of items) {
+          if (!item.ownerTeamMemberId) continue
+          const reference = resolved.get(item.ownerTeamMemberId)
+          // A reference that resolves to nothing is left null rather than rendered as a raw
+          // uuid: the spec forbids showing identifiers in the UI, and "unavailable" is the
+          // honest label for a staff member this scope can no longer see.
+          item.owner = reference
+            ? { id: reference.id, name: reference.displayName, isAvailable: reference.isAvailable }
+            : null
+        }
       }
     },
   },

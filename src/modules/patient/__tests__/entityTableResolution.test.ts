@@ -85,7 +85,7 @@ function readDeclaredEntities(): Array<{ className: string; tableName: string }>
 describe('patient entity table naming', () => {
   const declared = readDeclaredEntities()
 
-  it('declares all six tables the spec names', () => {
+  it('declares all eight tables the PAT and VIS specs name', () => {
     expect(declared.map((entry) => entry.tableName).sort()).toEqual([
       'patient_addresses',
       'patient_attachment_links',
@@ -93,6 +93,8 @@ describe('patient entity table naming', () => {
       'patient_diagnoses',
       'patient_document_links',
       'patient_patients',
+      'patient_visit_services',
+      'patient_visits',
     ])
   })
 
@@ -147,6 +149,8 @@ describe('patient entity table naming', () => {
       'patient:patient_contact_link',
       'patient:patient_diagnosis',
       'patient:patient_document_link',
+      'patient:patient_visit',
+      'patient:patient_visit_service',
     ])
   })
 })

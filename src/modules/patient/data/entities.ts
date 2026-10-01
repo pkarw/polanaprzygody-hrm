@@ -1,5 +1,5 @@
 import { OptionalProps } from '@mikro-orm/core'
-import { Check, Entity, Index, PrimaryKey, Property } from '@mikro-orm/decorators/legacy'
+import { Check, Entity, Index, ManyToOne, PrimaryKey, Property } from '@mikro-orm/decorators/legacy'
 
 /**
  * Entities for the `patient` module (spec PAT, "Data Models").
@@ -31,6 +31,7 @@ export type PatientStatus = 'active' | 'archived'
 export type PatientDiagnosisStatus = 'active' | 'superseded' | 'voided'
 export type PatientDocumentLinkState = 'pending_create' | 'linked' | 'abandoned'
 export type PatientAttachmentLinkState = 'active' | 'detached'
+export type PatientVisitStatus = 'planned' | 'completed' | 'cancelled' | 'no_show'
 
 /**
  * The patient record — `patient:patient`.
@@ -55,6 +56,11 @@ export type PatientAttachmentLinkState = 'active' | 'detached'
     `create unique index "patient_patients_scope_number_uq" on "patient_patients" ("tenant_id", "organization_id", "patient_number") where "deleted_at" is null`,
 })
 @Index({
+  name: 'patient_patients_scope_legacy_number_uq',
+  expression:
+    `create unique index "patient_patients_scope_legacy_number_uq" on "patient_patients" ("tenant_id", "organization_id", "legacy_patient_number") where "deleted_at" is null and "legacy_patient_number" is not null`,
+})
+@Index({
   name: 'patient_patients_scope_request_uq',
   expression:
     `create unique index "patient_patients_scope_request_uq" on "patient_patients" ("tenant_id", "organization_id", "client_request_id")`,
@@ -68,7 +74,7 @@ export type PatientAttachmentLinkState = 'active' | 'detached'
   expression: `("status" = 'archived') = ("archived_at" is not null)`,
 })
 export class Patient {
-  [OptionalProps]?: 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archivedAt'
+  [OptionalProps]?: 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archivedAt' | 'legacyPatientNumber'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -82,6 +88,13 @@ export class Patient {
   /** Server-assigned, immutable, non-clinical handle (`P-<uuid>`). Never a national id. */
   @Property({ name: 'patient_number', type: 'text' })
   patientNumber!: string
+
+  /**
+   * Deprecated lookup-only alias for preview rows whose old public number was derived
+   * from the persistence id. Never returned by the API and never assigned to new rows.
+   */
+  @Property({ name: 'legacy_patient_number', type: 'text', nullable: true })
+  legacyPatientNumber?: string | null
 
   /** Encrypted. Reachable by exact search through the hashed token index only. */
   @Property({ name: 'first_name', type: 'text' })
@@ -147,6 +160,103 @@ export class Patient {
 
   @Property({ name: 'deleted_at', type: Date, nullable: true })
   deletedAt?: Date | null
+}
+
+/**
+ * Read-only projection used by the patient register.
+ *
+ * `next_visit_at` must be computed before pagination to support a globally correct sort.
+ * A view keeps it exact as time passes; a denormalized patient column would become stale
+ * without any write occurring. The correlated lookup is covered by the visit
+ * scope/patient/start index and never broadens tenant or organization scope.
+ */
+@Entity({
+  tableName: 'patient_patient_list_projection',
+  view: true,
+  expression: `
+    select
+      p.id,
+      p.tenant_id,
+      p.organization_id,
+      p.patient_number,
+      p.first_name,
+      p.last_name,
+      p.birth_date,
+      p.email,
+      p.phone,
+      p.description,
+      p.owner_team_member_id,
+      p.status,
+      p.archived_at,
+      p.created_at,
+      p.updated_at,
+      p.deleted_at,
+      (
+        select v.starts_at
+        from patient_visits v
+        where v.tenant_id = p.tenant_id
+          and v.organization_id = p.organization_id
+          and v.patient_id = p.id
+          and v.status = 'planned'
+          and v.starts_at >= current_timestamp
+          and v.deleted_at is null
+        order by v.starts_at asc, v.id asc
+        limit 1
+      ) as next_visit_at
+    from patient_patients p
+  `,
+})
+export class PatientListProjection {
+  @PrimaryKey({ type: 'uuid' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'patient_number', type: 'text' })
+  patientNumber!: string
+
+  @Property({ name: 'first_name', type: 'text' })
+  firstName!: string
+
+  @Property({ name: 'last_name', type: 'text' })
+  lastName!: string
+
+  @Property({ name: 'birth_date', type: 'text', nullable: true })
+  birthDate?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  email?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  phone?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  description?: string | null
+
+  @Property({ name: 'owner_team_member_id', type: 'uuid', nullable: true })
+  ownerTeamMemberId?: string | null
+
+  @Property({ type: 'text' })
+  status!: PatientStatus
+
+  @Property({ name: 'archived_at', type: Date, nullable: true })
+  archivedAt?: Date | null
+
+  @Property({ name: 'created_at', type: Date })
+  createdAt!: Date
+
+  @Property({ name: 'updated_at', type: Date })
+  updatedAt!: Date
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+
+  @Property({ name: 'next_visit_at', type: Date, nullable: true })
+  nextVisitAt?: Date | null
 }
 
 /**
@@ -657,6 +767,236 @@ export class PatientAttachmentLink {
    */
   @Property({ name: 'create_request_payload', type: 'text' })
   createRequestPayload!: string
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  @Property({ name: 'created_by_user_id', type: 'uuid' })
+  createdByUserId!: string
+
+  @Property({ name: 'updated_by_user_id', type: 'uuid' })
+  updatedByUserId!: string
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+}
+
+/**
+ * A scheduled or historical visit belonging to one patient — `patient:patient_visit`.
+ *
+ * Installed-module references stay scalar ids with server-owned snapshots. The only ORM
+ * relation is the same-module patient FK, represented as its primary key so commands and
+ * response DTOs keep using `patientId` rather than leaking an ORM object.
+ */
+@Entity({ tableName: 'patient_visits' })
+@Index({ name: 'patient_visits_scope_patient_start_idx', properties: ['tenantId', 'organizationId', 'patientId', 'startsAt'] })
+@Index({ name: 'patient_visits_scope_staff_start_idx', properties: ['tenantId', 'organizationId', 'teamMemberId', 'startsAt'] })
+@Index({ name: 'patient_visits_scope_resource_start_idx', properties: ['tenantId', 'organizationId', 'resourceId', 'startsAt'] })
+@Index({ name: 'patient_visits_scope_start_id_idx', properties: ['tenantId', 'organizationId', 'startsAt', 'id'] })
+@Index({ name: 'patient_visits_scope_status_start_idx', properties: ['tenantId', 'organizationId', 'status', 'startsAt'] })
+@Index({ name: 'patient_visits_scope_settled_start_idx', properties: ['tenantId', 'organizationId', 'isSettled', 'startsAt'] })
+@Index({
+  name: 'patient_visits_member_busy_idx',
+  expression:
+    `create index "patient_visits_member_busy_idx" on "patient_visits" ("tenant_id", "organization_id", "team_member_id", "starts_at", "ends_at") where "deleted_at" is null and "status" <> 'cancelled'`,
+})
+@Index({
+  name: 'patient_visits_resource_busy_idx',
+  expression:
+    `create index "patient_visits_resource_busy_idx" on "patient_visits" ("tenant_id", "organization_id", "resource_id", "starts_at", "ends_at") where "deleted_at" is null and "status" <> 'cancelled' and "resource_id" is not null`,
+})
+@Index({
+  name: 'patient_visits_scope_request_uq',
+  expression:
+    `create unique index "patient_visits_scope_request_uq" on "patient_visits" ("tenant_id", "organization_id", "client_request_id")`,
+})
+@Check({
+  name: 'patient_visits_end_after_start_chk',
+  expression: `"ends_at" is null or "ends_at" > "starts_at"`,
+})
+@Check({
+  name: 'patient_visits_confirmation_pair_chk',
+  expression: `("confirmed_at" is null) = ("confirmed_by_user_id" is null)`,
+})
+@Check({
+  name: 'patient_visits_resource_snapshot_pair_chk',
+  expression: `("resource_id" is null) = ("resource_name_snapshot" is null)`,
+})
+@Check({
+  name: 'patient_visits_settlement_fields_chk',
+  expression:
+    `("is_settled" and "settled_at" is not null and "settled_by_user_id" is not null) or (not "is_settled" and "settled_at" is null and "settled_by_user_id" is null)`,
+})
+@Check({
+  name: 'patient_visits_conflict_override_fields_chk',
+  expression:
+    `("conflict_override_reason" is null and "conflict_override_at" is null and "conflict_override_by_user_id" is null and "conflict_override_codes" is null) or ("conflict_override_reason" is not null and "conflict_override_at" is not null and "conflict_override_by_user_id" is not null and jsonb_typeof("conflict_override_codes") = 'array' and jsonb_array_length("conflict_override_codes") > 0)`,
+})
+export class PatientVisit {
+  [OptionalProps]?:
+    | 'status'
+    | 'isSettled'
+    | 'confirmedAt'
+    | 'confirmedByUserId'
+    | 'settledAt'
+    | 'settledByUserId'
+    | 'statusReason'
+    | 'settlementReason'
+    | 'conflictOverrideReason'
+    | 'conflictOverrideAt'
+    | 'conflictOverrideByUserId'
+    | 'conflictOverrideCodes'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'deletedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => Patient, { fieldName: 'patient_id', mapToPk: true, deleteRule: 'restrict', updateRule: 'cascade' })
+  patientId!: string
+
+  /** Scalar `staff:staff_team_member`; never an auth user id. */
+  @Property({ name: 'team_member_id', type: 'uuid' })
+  teamMemberId!: string
+
+  /** Encrypted historical display name, refreshed only when the selected member changes. */
+  @Property({ name: 'team_member_name_snapshot', type: 'text' })
+  teamMemberNameSnapshot!: string
+
+  /** Optional scalar `resources:resources_resource`. No reservation is implied. */
+  @Property({ name: 'resource_id', type: 'uuid', nullable: true })
+  resourceId?: string | null
+
+  @Property({ name: 'resource_name_snapshot', type: 'text', nullable: true })
+  resourceNameSnapshot?: string | null
+
+  @Property({ name: 'starts_at', type: Date })
+  startsAt!: Date
+
+  @Property({ name: 'ends_at', type: Date, nullable: true })
+  endsAt?: Date | null
+
+  @Property({ name: 'time_zone', type: 'text' })
+  timeZone!: string
+
+  /** Encrypted organisational note. Clinical content belongs in diagnoses. */
+  @Property({ type: 'text', nullable: true })
+  description?: string | null
+
+  @Property({ type: 'text', default: 'planned' })
+  status: PatientVisitStatus = 'planned'
+
+  @Property({ name: 'confirmed_at', type: Date, nullable: true })
+  confirmedAt?: Date | null
+
+  @Property({ name: 'confirmed_by_user_id', type: 'uuid', nullable: true })
+  confirmedByUserId?: string | null
+
+  @Property({ name: 'status_changed_at', type: Date })
+  statusChangedAt!: Date
+
+  @Property({ name: 'status_changed_by_user_id', type: 'uuid' })
+  statusChangedByUserId!: string
+
+  /** Encrypted reason for cancel/no-show/reopen. */
+  @Property({ name: 'status_reason', type: 'text', nullable: true })
+  statusReason?: string | null
+
+  @Property({ name: 'is_settled', type: 'boolean', default: false })
+  isSettled: boolean = false
+
+  @Property({ name: 'settled_at', type: Date, nullable: true })
+  settledAt?: Date | null
+
+  @Property({ name: 'settled_by_user_id', type: 'uuid', nullable: true })
+  settledByUserId?: string | null
+
+  /** Encrypted reason for the most recent settlement change. */
+  @Property({ name: 'settlement_reason', type: 'text', nullable: true })
+  settlementReason?: string | null
+
+  /** Encrypted operator rationale for the most recent explicit warning override. */
+  @Property({ name: 'conflict_override_reason', type: 'text', nullable: true })
+  conflictOverrideReason?: string | null
+
+  @Property({ name: 'conflict_override_at', type: Date, nullable: true })
+  conflictOverrideAt?: Date | null
+
+  @Property({ name: 'conflict_override_by_user_id', type: 'uuid', nullable: true })
+  conflictOverrideByUserId?: string | null
+
+  @Property({ name: 'conflict_override_codes', type: 'json', nullable: true })
+  conflictOverrideCodes?: string[] | null
+
+  @Property({ name: 'client_request_id', type: 'uuid' })
+  clientRequestId!: string
+
+  /** Encrypted normalized original create payload, never returned or logged. */
+  @Property({ name: 'create_request_payload', type: 'text' })
+  createRequestPayload!: string
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  @Property({ name: 'created_by_user_id', type: 'uuid' })
+  createdByUserId!: string
+
+  @Property({ name: 'updated_by_user_id', type: 'uuid' })
+  updatedByUserId!: string
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+}
+
+/** One ordered catalog service snapshot inside a visit aggregate. */
+@Entity({ tableName: 'patient_visit_services' })
+@Index({ name: 'patient_visit_services_scope_visit_position_idx', properties: ['tenantId', 'organizationId', 'visitId', 'position'] })
+@Index({
+  name: 'patient_visit_services_active_product_uq',
+  expression:
+    `create unique index "patient_visit_services_active_product_uq" on "patient_visit_services" ("tenant_id", "organization_id", "visit_id", "product_id") where "deleted_at" is null`,
+})
+@Check({ name: 'patient_visit_services_position_nonnegative_chk', expression: `"position" >= 0` })
+export class PatientVisitService {
+  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @ManyToOne(() => PatientVisit, { fieldName: 'visit_id', mapToPk: true, deleteRule: 'restrict', updateRule: 'cascade' })
+  visitId!: string
+
+  /** Scalar `catalog:catalog_product`, intentionally not a variant id. */
+  @Property({ name: 'product_id', type: 'uuid' })
+  productId!: string
+
+  @Property({ name: 'product_title_snapshot', type: 'text' })
+  productTitleSnapshot!: string
+
+  @Property({ name: 'product_sku_snapshot', type: 'text', nullable: true })
+  productSkuSnapshot?: string | null
+
+  @Property({ type: 'integer' })
+  position!: number
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

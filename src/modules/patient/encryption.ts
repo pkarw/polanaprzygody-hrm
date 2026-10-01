@@ -58,6 +58,18 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
     ],
   },
   {
+    // Read-only patient-list view; its encrypted values are the same ciphertext columns.
+    entityId: 'patient:patient_list_projection',
+    fields: [
+      { field: 'first_name' },
+      { field: 'last_name' },
+      { field: 'birth_date' },
+      { field: 'email' },
+      { field: 'phone' },
+      { field: 'description' },
+    ],
+  },
+  {
     entityId: 'patient:patient_address',
     fields: [
       { field: 'name' },
@@ -104,6 +116,25 @@ export const defaultEncryptionMaps: ModuleEncryptionMap[] = [
     fields: [
       { field: 'original_file_name' },
       { field: 'create_request_payload' },
+    ],
+  },
+  {
+    entityId: 'patient:patient_visit',
+    fields: [
+      { field: 'team_member_name_snapshot' },
+      { field: 'resource_name_snapshot' },
+      { field: 'description' },
+      { field: 'status_reason' },
+      { field: 'settlement_reason' },
+      { field: 'conflict_override_reason' },
+      { field: 'create_request_payload' },
+    ],
+  },
+  {
+    entityId: 'patient:patient_visit_service',
+    fields: [
+      { field: 'product_title_snapshot' },
+      { field: 'product_sku_snapshot' },
     ],
   },
 ]

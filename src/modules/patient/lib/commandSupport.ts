@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { LockMode } from '@mikro-orm/core'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
@@ -220,11 +220,13 @@ export function nextUpdatedAt(previous: Date | null | undefined): Date {
  * Builds the patient's non-clinical handle.
  *
  * `P-<uuid>` rather than a sequential number: a counter needs a global lock to stay
- * gapless, and its value would leak how many patients the organization has. The spec
- * rules out both a counter and any national identifier.
+ * gapless, and its value would leak how many patients the organization has. The UUID is
+ * generated independently from the persistence id so the public handle cannot reveal or
+ * be used to reconstruct the primary key. The spec rules out both a counter and any
+ * national identifier.
  */
-export function buildPatientNumber(id: string): string {
-  return `P-${id}`
+export function buildPatientNumber(): string {
+  return `P-${randomUUID()}`
 }
 
 /**

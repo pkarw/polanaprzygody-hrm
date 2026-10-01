@@ -1,9 +1,9 @@
 # Patient — wizyty pacjenta
 
 **Date**: 2026-09-29
-**Status**: Draft
+**Status**: Ready for implementation
 **Spec ID**: VIS
-**Zakres**: projekt, bez implementacji.
+**Zakres**: zatwierdzony do implementacji; VIS-1 i VIS-2 śledzone w ledgerze poniżej.
 **Zależność**: [PAT — kartoteka i dokumentacja](2026-09-29-patient-ehr-base.md), faza PAT-1. Ten sam moduł `patient`.
 
 ## TLDR
@@ -361,6 +361,8 @@ Każdy niżej wymieniony mechanizm ma klasyfikację **`emitted-example`** wedłu
 
 Po PAT-1 włączyć VIS-1 z migracją wyłącznie nowych tabel `patient_visits`/`patient_visit_services`, indexami i snapshotem. `yarn db:generate` + review, zgoda przed apply, `yarn generate` po discovery. Nie migrować do walidacji. Brak backfill z CRM i automatycznej konwersji opiekunów w pacjentów.
 
+Upgrade materializuje mapy szyfrowania dla `patient:patient_list_projection`, `patient:patient_visit` i `patient:patient_visit_service` we wszystkich istniejących scope'ach, które już mają aktywne szyfrowanie. Preview-era numery w formacie `P-<id rekordu>` otrzymują niezależny numer kanoniczny; poprzednia wartość trafia do nieeksponowanego aliasu wyszukiwania, dlatego zapisane linki/integracje nadal rozwiązują pacjenta. Migracja deklaruje reindex `patient:patient`, a rollback przywraca alias jako numer kanoniczny przed usunięciem kolumny.
+
 VIS-2 dodaje zachowania i uprawnienia na istniejących polach; stare planned wizyty pozostają planned/unconfirmed/unsettled. Stan dostarczony w VIS-1 nie może zostać zgubiony w aktualizacji. Rollback ukrywa nowe akcje i pozostawia tabele, historię i czytelny stan; nie zeruje potwierdzeń ani rozliczeń. Wycofanie VIS nie może przywrócić możliwości usunięcia pacjenta z istniejącą historią wizyt.
 
 ## Risks and Tradeoffs
@@ -384,6 +386,21 @@ VIS-2 dodaje zachowania i uprawnienia na istniejących polach; stare planned wiz
 - [ ] **VIS-AC05:** lista, create/detail i tab pacjenta tworzą pełny przepływ z nazwami rekordów oraz wszystkimi stanami, klawiaturą, 360 px i oboma motywami.
 - [ ] **VIS-AC06:** izolacja, 409, atomowe usługi, protected audit, retry, DST i walidacja test-env przechodzą; żaden test nie wymaga danych produkcyjnych.
 
+## Implementation Status
+
+Source doc: `.ai/specs/2026-09-29-patient-visits.md`
+
+Zgoda na pełną implementację VIS-1 i VIS-2 została udzielona w zleceniu z 2026-09-30. Zależność PAT-1 jest spełniona: faza ma stan `done` w specyfikacji PAT, a odpowiadający jej moduł, API, UI i testy istnieją w `src/modules/patient/`.
+
+| Phase | State | Dependencies | Acceptance IDs | Focused validation | Exit gate |
+|---|---|---|---|---|---|
+| VIS-1 — planowanie i lista usług | in_progress | PAT-1 (`done`) | VIS-AC01, VIS-AC02, VIS-AC05, VIS-AC06 | `yarn db:generate`; `yarn generate`; focused unit/integration/browser checks | Empty and populated service lists, scoped staff/resource references, atomic edits, patient surfaces, a11y/themes/360 px |
+| VIS-2 — potwierdzenie, zamknięcie i rozliczenie | pending | VIS-1 | VIS-AC03, VIS-AC04, VIS-AC05, VIS-AC06 | full configured gate; `yarn test:integration:ephemeral`; browser checks | Full transition/settlement matrix, separate ACL, conflicts and no finance/reservation side effects |
+
+### VIS-1 progress
+
+- [ ] Aggregate schema, commands, CRUD API, patient projections, UI, and VIS-1 acceptance evidence remain to be implemented.
+
 ## Final Compliance Report
 
 Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **approve**. Potwierdzono rozdzielenie PAT/VIS, tożsamość pacjenta, opcjonalnego prowadzącego versus wymaganego wykonawcę, 0..n usług, reguły cyklu życia oraz zależność VIS wyłącznie od PAT-1. Przegląd nie jest odbiorem implementacji. Lokalna kontrola dokumentów: wszystkie 25 sekcji szablonu, linki względne, ścieżki wzorców i mapowanie capability IDs poprawne; oryginalny diagram zachowany bez zmian.
@@ -396,9 +413,9 @@ Niezależny przegląd spójności zakresu (cezar `615190ef`, 2026-09-29): **appr
 | Platform reuse | pass — design | catalog/staff/resources scalar IDs, istniejące UI/commands |
 | UI references/states | pass — design | Trasy, makiety listy i M01–M14 szczegółów wizyty, VIS-T08 |
 | Dependencies/tests/value/exit gates | pass — design | Zależność tylko PAT-1, konkretne oracles każdej fazy |
-| Approval to implement | pending | Zlecenie dotyczy specyfikacji, testy implementacyjne nie były wykonywane |
+| Approval to implement | pass — 2026-09-30 | Użytkownik zlecił pełną implementację VIS-1 i VIS-2 wraz z testami przeglądarkowymi i screenshotami po każdym etapie |
 
-**Verdict:** Blocked — rozpoczęcie implementacji wymaga zatwierdzenia i ukończonej PAT-1. Projekt VIS nie wymaga rozwiązania SEC-ATT, ponieważ nie dodaje plików.
+**Verdict:** Ready for implementation — zgoda została udzielona 2026-09-30, a PAT-1 jest oznaczone jako wdrożone. Projekt VIS nie wymaga rozwiązania SEC-ATT, ponieważ nie dodaje plików.
 
 ## Open Questions
 
@@ -413,4 +430,5 @@ Brak nierozstrzygniętych pytań blokujących model. Q1: dwa dokumenty, jeden mo
 | 2026-09-29 | Makieta UI listy wizyt i formularza dołączona do przeglądu; bez zmian modelu, API i faz |
 | 2026-09-29 | Pole `nextVisit` i kolumna „Kolejna wizyta” na liście pacjentów: kontrakt, ACL, jedno zapytanie na stronę, oracle VIS-T08 |
 | 2026-09-30 | Makiety M01–M14 szczegółów wizyty (wszystkie zakładki, formularze, dialogi, stany, 360 px) wraz z odnośnikami w sekcji UI, fazach i VIS-T08; bez zmian modelu, API i faz |
+| 2026-09-30 | Zatwierdzenie pełnej implementacji VIS-1/VIS-2; PAT-1 potwierdzone jako wdrożone; dodano ledger implementacji i ustawiono VIS-1 jako in progress |
 | 2026-09-30 | Odsyłacz do VCAL w non-goals: kalendarz i kontrola dostępności mają własną specyfikację zależną od VIS-1; model, API i fazy VIS bez zmian |

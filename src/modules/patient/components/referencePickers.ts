@@ -55,6 +55,28 @@ export type CrmPersonContact = {
 
 type ListResponse<T> = { items?: T[] }
 
+type PatientOptionItem = {
+  id?: unknown
+  displayName?: unknown
+  patientNumber?: unknown
+  status?: unknown
+}
+
+type ResourceOptionItem = {
+  id?: unknown
+  name?: unknown
+  is_active?: unknown
+  isActive?: unknown
+}
+
+type ProductOptionItem = {
+  id?: unknown
+  title?: unknown
+  sku?: unknown
+  is_active?: unknown
+  isActive?: unknown
+}
+
 /** Reads whichever casing the host route used, so a response-shape change is not silent. */
 function readDisplayName(item: { displayName?: unknown; display_name?: unknown }): string | null {
   if (typeof item.displayName === 'string' && item.displayName.length > 0) return item.displayName
@@ -112,6 +134,90 @@ function toTeamMemberOptions(items: StaffTeamMemberListItem[]): CrudFieldOption[
 
 const OPTION_PAGE_SIZE = 50
 
+function toNamedOption(id: unknown, name: unknown, description?: unknown): CrudFieldOption | null {
+  if (typeof id !== 'string' || typeof name !== 'string' || name.trim().length === 0) return null
+  const detail = typeof description === 'string' && description.trim().length > 0
+    ? description.trim()
+    : null
+  return { value: id, label: detail ? `${name.trim()} — ${detail}` : name.trim() }
+}
+
+export async function loadPatientOptions(query?: string): Promise<CrudFieldOption[]> {
+  const params = new URLSearchParams({ pageSize: String(OPTION_PAGE_SIZE), status: 'active' })
+  if (query?.trim()) params.set('search', query.trim())
+  const data = await readApiResultOrThrow<ListResponse<PatientOptionItem>>(
+    `/api/patient/patients?${params.toString()}`,
+  )
+  return (data.items ?? [])
+    .map((item) => toNamedOption(item.id, item.displayName, item.patientNumber))
+    .filter((item): item is CrudFieldOption => item !== null)
+}
+
+export async function resolvePatientLabel(id: string): Promise<string> {
+  if (!id) return ''
+  const data = await readApiResultOrThrow<ListResponse<PatientOptionItem>>(
+    `/api/patient/patients?id=${encodeURIComponent(id)}&pageSize=1`,
+  )
+  const item = data.items?.[0]
+  return (item && toNamedOption(item.id, item.displayName, item.patientNumber)?.label) || '—'
+}
+
+export async function loadResourceOptions(query?: string): Promise<CrudFieldOption[]> {
+  const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE), isActive: 'true' })
+  if (query?.trim()) params.set('search', query.trim())
+  const data = await readApiResultOrThrow<ListResponse<ResourceOptionItem>>(
+    `/api/resources/resources?${params.toString()}`,
+  )
+  return (data.items ?? [])
+    .map((item) => toNamedOption(item.id, item.name))
+    .filter((item): item is CrudFieldOption => item !== null)
+}
+
+export async function resolveResourceLabel(id: string): Promise<string> {
+  if (!id) return ''
+  const data = await readApiResultOrThrow<ListResponse<ResourceOptionItem>>(
+    `/api/resources/resources?ids=${encodeURIComponent(id)}&pageSize=1`,
+  )
+  const item = data.items?.[0]
+  return (item && toNamedOption(item.id, item.name)?.label) || '—'
+}
+
+export async function loadProductOptions(query?: string): Promise<CrudFieldOption[]> {
+  const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE), isActive: 'true' })
+  if (query?.trim()) params.set('search', query.trim())
+  const data = await readApiResultOrThrow<ListResponse<ProductOptionItem>>(
+    `/api/catalog/products?${params.toString()}`,
+  )
+  return (data.items ?? [])
+    .map((item) => toNamedOption(item.id, item.title, item.sku))
+    .filter((item): item is CrudFieldOption => item !== null)
+}
+
+export async function resolveProductLabel(id: string): Promise<string> {
+  if (!id) return ''
+  const data = await readApiResultOrThrow<ListResponse<ProductOptionItem>>(
+    `/api/catalog/products?id=${encodeURIComponent(id)}&pageSize=1`,
+  )
+  const item = data.items?.[0]
+  return (item && toNamedOption(item.id, item.title, item.sku)?.label) || '—'
+}
+
+export async function resolveProductAvailability(id: string): Promise<boolean> {
+  if (!id) return false
+  try {
+    const data = await readApiResultOrThrow<ListResponse<ProductOptionItem>>(
+      `/api/catalog/products?id=${encodeURIComponent(id)}&pageSize=1`,
+    )
+    const item = data.items?.[0]
+    if (!item) return false
+    return (item.isActive ?? item.is_active) === true
+  } catch {
+    // If the owner API cannot confirm the reference, the editor must not present it as
+    // selectable/current. The visit's stored snapshot still keeps history readable.
+    return false
+  }
+}
+
 /**
  * Active staff team members, for the optional lead-carer field.
  *
@@ -132,8 +238,7 @@ export async function loadTeamMemberOptions(query?: string): Promise<CrudFieldOp
  *
  * Deliberately does NOT pass `isActive=true`: this is the read path for a value the record
  * already holds, and a carer who left must still render by name rather than silently
- * becoming a blank field. The value's id is returned unchanged when it cannot be resolved,
- * so the caller can decide how to present an unavailable reference.
+ * becoming a blank field. An unresolved value is an em dash, never a raw UUID.
  */
 export async function resolveTeamMemberLabel(id: string): Promise<string> {
   if (!id) return ''
@@ -141,11 +246,11 @@ export async function resolveTeamMemberLabel(id: string): Promise<string> {
     `/api/staff/team-members?ids=${encodeURIComponent(id)}&pageSize=1`,
   )
   const first = (data?.items ?? [])[0]
-  if (!first) return id
+  if (!first) return '—'
   const name = readDisplayName(first)
   // Same label shape as the option list, so the selected value does not visibly change once
   // the field resolves it.
-  return name ? composeTeamMemberLabel(name, readTags(first.tags)) : id
+  return name ? composeTeamMemberLabel(name, readTags(first.tags)) : '—'
 }
 
 /**

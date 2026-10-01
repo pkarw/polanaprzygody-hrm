@@ -46,6 +46,9 @@ const EXPLICIT_TRANSACTION_SITES: Record<string, number> = {
   // Undo has no `runCrudCommandWrite` to open a transaction for it, so it calls `em.begin()`
   // and owns the commit/rollback.
   'patients.ts': 1,
+  // Create/update/delete undo each owns an explicit transaction and preserves the same
+  // patient → visit lock order as the forward command.
+  'visits.ts': 3,
 }
 
 function readCommandSources(): Array<{ file: string; source: string }> {
@@ -96,5 +99,31 @@ describe('patient commands take the row lock inside a transaction', () => {
     const firstVersionCheck = source.search(/assertExpectedVersion\(/)
     if (firstLock === -1 || firstVersionCheck === -1) return
     expect(firstLock).toBeLessThan(firstVersionCheck)
+  })
+
+  /**
+   * The same bug class one layer down: raw SQL that escapes the transaction.
+   *
+   * `em.getConnection().execute(q, p)` leaves MikroORM's `ctx` undefined, and
+   * `AbstractSqlConnection.execute` then falls back to `(ctx ?? this.#client)` — the pool.
+   * `SqlEntityManager.execute` is the only form that forwards `getTransactionContext()`.
+   *
+   * That distinction is invisible for most statements but fatal for two of them:
+   *   - `pg_advisory_xact_lock` on a pooled connection lives in its own implicit
+   *     single-statement transaction and is released before the call returns, so it provides
+   *     no mutual exclusion whatsoever — two concurrent writers both "hold" the slot lock.
+   *   - a transaction-local `set_config('lock_timeout', …, true)` does not apply to another
+   *     connection, so the 409 lock-wait branch becomes dead code.
+   *
+   * Positional guards cannot catch this: the argument is the correct `phaseEm` while the SQL
+   * still leaves its transaction. The form itself has to be banned.
+   */
+  it.each(readCommandSources())('$file issues raw SQL through the transaction-aware em', ({ source }) => {
+    expect(source).not.toMatch(/getConnection\(\)\s*\.\s*execute\(/)
+  })
+
+  it.each(readCommandSources())('$file takes advisory locks through em.execute', ({ source }) => {
+    if (!source.includes('pg_advisory')) return
+    expect(source).toMatch(/await\s+em\.execute\(\s*\n?\s*'select pg_advisory_xact_lock/)
   })
 })

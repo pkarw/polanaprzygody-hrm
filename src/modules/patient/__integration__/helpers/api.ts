@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext } from '@playwright/test'
+import { getAuthToken } from '@open-mercato/core/helpers/integration/api'
 
 /**
  * Self-contained API helpers for the `patient` integration suite.
@@ -26,9 +27,6 @@ export type PagedResponse<T> = {
   totalPages?: number
 }
 
-const DEFAULT_EMAIL_ENV = 'OM_INTEGRATION_ADMIN_EMAIL'
-const DEFAULT_PASSWORD_ENV = 'OM_INTEGRATION_ADMIN_PASSWORD'
-
 /**
  * Signs in and returns a bearer-token actor.
  *
@@ -41,26 +39,9 @@ export async function login(
   request: APIRequestContext,
   credentials?: { email?: string; password?: string },
 ): Promise<ScopedActor> {
-  const email = credentials?.email ?? process.env[DEFAULT_EMAIL_ENV]
-  const password = credentials?.password ?? process.env[DEFAULT_PASSWORD_ENV]
-  if (!email || !password) {
-    throw new Error(
-      `[internal] Integration credentials are missing. Set ${DEFAULT_EMAIL_ENV} and ${DEFAULT_PASSWORD_ENV}.`,
-    )
-  }
-
-  const response = await request.post('/api/auth/login', {
-    data: { email, password },
-    headers: { 'content-type': 'application/json' },
-  })
-  expect(
-    response.ok(),
-    `login failed with ${response.status()}: ${await response.text()}`,
-  ).toBeTruthy()
-
-  const body = (await response.json()) as { token?: unknown }
-  const token = typeof body.token === 'string' ? body.token : null
-  if (!token) throw new Error('[internal] Login succeeded but returned no bearer token')
+  const token = credentials?.email
+    ? await getAuthToken(request, credentials.email, credentials.password)
+    : await getAuthToken(request, 'admin')
 
   return {
     token,
@@ -167,6 +148,115 @@ export function buildPatientInput(overrides: PatientFixtureInput = {}): Record<s
 }
 
 export type CreatedPatient = { id: string; patientNumber?: string; updatedAt?: string | null }
+
+export type VisitRecord = {
+  id: string
+  patientId: string
+  teamMemberId: string
+  teamMemberName: string
+  resourceId: string | null
+  resourceName: string | null
+  startsAt: string
+  endsAt: string | null
+  timeZone: string
+  description?: string | null
+  status: 'planned' | 'completed' | 'cancelled' | 'no_show'
+  confirmedAt: string | null
+  isConfirmed: boolean
+  isSettled: boolean
+  settledAt: string | null
+  services: Array<{
+    id: string
+    productId: string
+    title: string
+    sku: string | null
+    isAvailable: boolean
+    position: number
+  }>
+  updatedAt: string
+}
+
+export type VisitLifecycleResult = {
+  ok: true
+  id: string
+  status: VisitRecord['status']
+  confirmedAt: string | null
+  isConfirmed: boolean
+  confirmationApplicable: boolean
+  isSettled: boolean
+  settledAt: string | null
+  updatedAt: string
+}
+
+/** Executes one of the guarded visit lifecycle endpoints. */
+export async function visitAction(
+  request: APIRequestContext,
+  actor: ScopedActor,
+  id: string,
+  action: 'confirmation' | 'status' | 'settlement',
+  data: Record<string, unknown>,
+): Promise<VisitLifecycleResult> {
+  return await callApiOk<VisitLifecycleResult>(
+    request,
+    'POST',
+    `/api/patient/visits/${encodeURIComponent(id)}/${action}`,
+    actor,
+    data,
+  )
+}
+
+export async function createVisit(
+  request: APIRequestContext,
+  actor: ScopedActor,
+  input: {
+    patientId: string
+    teamMemberId: string
+    startsAt: string
+    timeZone: string
+    endsAt?: string | null
+    resourceId?: string | null
+    description?: string | null
+    serviceProductIds?: string[]
+    clientRequestId?: string
+  },
+): Promise<{ id: string; updatedAt: string }> {
+  return await callApiOk(request, 'POST', '/api/patient/visits', actor, {
+    ...input,
+    clientRequestId: input.clientRequestId ?? newRequestId(),
+  })
+}
+
+export async function readVisit(
+  request: APIRequestContext,
+  actor: ScopedActor,
+  id: string,
+): Promise<VisitRecord | null> {
+  const body = await callApiOk<PagedResponse<VisitRecord>>(
+    request,
+    'GET',
+    `/api/patient/visits?id=${encodeURIComponent(id)}&pageSize=1`,
+    actor,
+  )
+  return body.items?.[0] ?? null
+}
+
+export async function cleanupVisit(
+  request: APIRequestContext,
+  actor: ScopedActor,
+  id: string | null,
+): Promise<void> {
+  if (!id) return
+  try {
+    const record = await readVisit(request, actor, id)
+    if (!record || record.status !== 'planned' || record.isSettled) return
+    await callApi(request, 'DELETE', '/api/patient/visits', actor, {
+      id,
+      expectedUpdatedAt: record.updatedAt,
+    })
+  } catch {
+    return
+  }
+}
 
 export async function createPatient(
   request: APIRequestContext,
