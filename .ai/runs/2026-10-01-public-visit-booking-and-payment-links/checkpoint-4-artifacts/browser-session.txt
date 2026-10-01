@@ -1,0 +1,10 @@
+PASS production Chromium booking form and consent state
+PASS PII-free thank-you route after mocked successful HTTP boundary
+PASS authenticated backend visit provenance and payment panel
+PASS availability reported conflict-free
+Browser errors: 0
+
+Runtime: production Next.js server on 127.0.0.1:3211
+Browser: Playwright Chromium headless shell 1243
+Viewport: 1440 x 1000, locale pl-PL
+Data: deterministic HTTP-boundary fixtures; isolated authenticated checkpoint tenant

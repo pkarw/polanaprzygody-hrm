@@ -59,3 +59,10 @@
 - Verification: generate, 11 focused public-auth/discovery/pricing/wizard tests, typecheck, lint, design-system check, and production build all passed.
 - UI evidence: production runtime and real Chromium passed at wide and mobile viewports; home, live-pricing rendering, therapist selection, available-day focus, slot selection, and success feedback were captured.
 - Test-data decision: pricing/availability fixtures were intercepted at the public HTTP boundary because the repository prohibits applying the new migration only for screenshot data; real API behavior remains covered by focused tests and Phase 5 integration tests.
+
+## 2026-10-01T18:00:00Z — checkpoint 4 passed
+
+- Steps: 4.1–4.4 (`91575bd..d9893bf`).
+- Verification: generation, 54 focused public-booking/patient tests, typecheck, lint, design-system check, and production build all passed.
+- UI evidence: real Chromium rendered the filled booking intake, PII-free thank-you route, and authenticated visit provenance/payment surface at 1440px with zero browser errors.
+- Test-data decision: deterministic HTTP fixtures drive the screenshots because applying the new migration only for visual data is prohibited; the authenticated shell uses an isolated test tenant created under the current test encryption key.

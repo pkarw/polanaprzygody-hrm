@@ -25,7 +25,7 @@
 | 4 | 4.1 | Orchestrate hardened idempotent booking submission | inline | done | 91575bd |
 | 4 | 4.2 | Complete booking intake and thank-you UI states | inline | done | 7e1af8a |
 | 4 | 4.3 | Deliver booking confirmation emails after visit confirmation | inline | done | 188ed21 |
-| 4 | 4.4 | Show online-booking provenance on visit details | inline | done | this commit |
+| 4 | 4.4 | Show online-booking provenance on visit details | inline | done | d9893bf |
 | 5 | 5.1 | Cover PBOOK API, scope, race, and retry integration paths | inline | todo | — |
 | 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | todo | — |
 | 5 | 5.3 | Add browser journeys and capture final UI evidence | inline | todo | — |
