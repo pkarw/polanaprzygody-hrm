@@ -428,6 +428,18 @@ export const patientVisitInstantSchema = z
  */
 export const PATIENT_VISIT_MAX_SPAN_MS = 31 * 24 * 60 * 60 * 1_000
 
+/**
+ * Longest span the standalone availability probe may be asked about.
+ *
+ * Tighter than `PATIENT_VISIT_MAX_SPAN_MS` on purpose. The probe answers "is this one slot
+ * free", and the span it receives IS the window it reports back, so every unavailability
+ * overlapping it is returned. A wide span therefore turns a slot check into a schedule dump —
+ * the exact thing the VCAL security section forbids ("zwraca wyłącznie okna nakładające się na
+ * podany termin (nie cały grafik)"). A day covers any real appointment, including one that
+ * crosses midnight.
+ */
+export const PATIENT_VISIT_AVAILABILITY_PROBE_MAX_SPAN_MS = 24 * 60 * 60 * 1_000
+
 /** IANA zone validation uses the runtime's installed ICU database. */
 export const patientVisitTimeZoneSchema = z.string().trim().min(1).refine((value) => {
   try {
@@ -504,11 +516,11 @@ export const patientVisitAvailabilityCheckQuerySchema = z.object({
     })
     return
   }
-  if (endsAt - startsAt > PATIENT_VISIT_MAX_SPAN_MS) {
+  if (endsAt - startsAt > PATIENT_VISIT_AVAILABILITY_PROBE_MAX_SPAN_MS) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['endsAt'],
-      message: 'The checked visit span cannot exceed 31 days',
+      message: 'The checked visit span cannot exceed 24 hours',
     })
   }
 })

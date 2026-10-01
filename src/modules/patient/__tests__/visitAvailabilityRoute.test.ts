@@ -47,18 +47,64 @@ describe('visit availability-check route', () => {
       ...valid,
       endsAt: '9999-12-31T23:59:59Z',
     }).success).toBe(false)
-    // 31 days is the documented ceiling; one day under it stays valid.
+    // The probe answers "is this one slot free", so its ceiling is a day — tighter than the
+    // stored-visit span. A wider window would return every unavailability overlapping it,
+    // which is the schedule dump VCAL's security section forbids.
+    expect(patientVisitAvailabilityCheckQuerySchema.safeParse({
+      ...valid,
+      startsAt: '2026-09-01T08:00:00Z',
+      endsAt: '2026-09-02T08:00:00Z',
+    }).success).toBe(true)
+    expect(patientVisitAvailabilityCheckQuerySchema.safeParse({
+      ...valid,
+      startsAt: '2026-09-01T08:00:00Z',
+      endsAt: '2026-09-02T08:00:01Z',
+    }).success).toBe(false)
     expect(patientVisitAvailabilityCheckQuerySchema.safeParse({
       ...valid,
       startsAt: '2026-09-01T00:00:00Z',
       endsAt: '2026-09-30T00:00:00Z',
-    }).success).toBe(true)
-    expect(patientVisitAvailabilityCheckQuerySchema.safeParse({
-      ...valid,
-      startsAt: '2026-09-01T00:00:00Z',
-      endsAt: '2026-10-03T00:00:00Z',
     }).success).toBe(false)
   })
+
+  it('bounds the overlap read so one decision cannot load a whole visit history', () => {
+    const source = readFileSync(
+      path.join(__dirname, '..', 'lib', 'patientAvailabilityService.ts'),
+      'utf8',
+    )
+    // Every returned row becomes an acknowledgeable `*_double_booked` conflict, so an
+    // unbounded `em.find` is both a memory risk and an enumeration surface.
+    expect(source).toContain('limit: PATIENT_VISIT_MAX_OVERLAP_ROWS')
+  })
+
+  it('localizes the operator-facing errors these routes render verbatim', () => {
+    const calendar = readFileSync(
+      path.join(__dirname, '..', 'api', 'visits', 'calendar', 'route.ts'),
+      'utf8',
+    )
+    const availability = readFileSync(
+      path.join(__dirname, '..', 'api', 'visits', 'availability-check', 'route.ts'),
+      'utf8',
+    )
+    expect(calendar).toContain("translate(\n          'patient.errors.calendarTooManyItems'")
+    expect(availability).toContain("translate(\n          'patient.errors.visitReferenceUnavailable'")
+    // The machine-readable codes must survive localization.
+    expect(calendar).toContain("code: 'visit_calendar_too_many_items'")
+    expect(availability).toContain("code: 'visit_reference_unavailable'")
+    for (const locale of ['en', 'pl'] as const) {
+      const catalog = JSON.parse(readFileSync(
+        path.join(__dirname, '..', 'i18n', `${locale}.json`),
+        'utf8',
+      )) as Record<string, string>
+      for (const key of [
+        'patient.errors.calendarTooManyItems',
+        'patient.errors.visitReferenceUnavailable',
+      ]) {
+        expect(catalog[key] ?? '').not.toBe('')
+      }
+    }
+  })
+
 
   it('publishes stable conflict enums without making private reasons mandatory', () => {
     const result = patientVisitAvailabilityCheckResponseSchema.safeParse({

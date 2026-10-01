@@ -13,6 +13,16 @@ import type {
 
 const logger = createLogger('patient').child({ component: 'availability' })
 
+/**
+ * Upper bound on overlap rows loaded for one conflict decision.
+ *
+ * The decision is binary — the slot is taken or it is not — so the read never needs the full
+ * set. Capping it keeps one request from loading a therapist's entire visit history into
+ * conflict objects, which is both a memory risk and the enumeration surface VCAL's security
+ * section closes.
+ */
+const PATIENT_VISIT_MAX_OVERLAP_ROWS = 200
+
 type AvailabilityRule = {
   id: string
   subjectType: 'member' | 'resource' | 'ruleset'
@@ -265,6 +275,11 @@ export function createPatientAvailabilityService(
       const visits = await targetEm.find(PatientVisit, where, {
         fields: ['id', 'teamMemberId', 'resourceId', 'startsAt', 'endsAt'],
         orderBy: { startsAt: 'asc', id: 'asc' },
+        // Every row returned here becomes a `*_double_booked` conflict the caller must
+        // acknowledge, so an unbounded read is both a memory risk and an enumeration surface.
+        // The decision only needs to know THAT the slot is taken; the cap is far above any
+        // real overlap count for one subject and one slot.
+        limit: PATIENT_VISIT_MAX_OVERLAP_ROWS,
       })
       return visits.map((visit) => ({
         id: String(visit.id),

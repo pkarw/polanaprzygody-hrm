@@ -175,7 +175,13 @@ export async function GET(request: Request) {
     ))
     if (visits.length > PATIENT_VISIT_CALENDAR_MAX_ITEMS) {
       throw new CrudHttpError(400, {
-        error: 'The calendar contains too many visits; narrow the range or add a filter',
+        // Localized: `raiseCrudError` surfaces this body's `error` as the thrown message and
+        // `VisitsCalendar` renders it verbatim, so a Polish practice would otherwise read
+        // English. The machine-readable `code` stays stable for clients.
+        error: translate(
+          'patient.errors.calendarTooManyItems',
+          'The calendar contains too many visits; narrow the range or add a filter',
+        ),
         code: 'visit_calendar_too_many_items',
         maxItems: PATIENT_VISIT_CALENDAR_MAX_ITEMS,
       })

@@ -82,7 +82,10 @@ export async function GET(request: Request) {
     const resource = parsed.resourceId ? resources.get(parsed.resourceId) ?? null : null
     if (parsed.resourceId && !resource) {
       throw new CrudHttpError(422, {
-        error: 'A selected visit reference is unavailable',
+        error: translate(
+          'patient.errors.visitReferenceUnavailable',
+          'A selected visit reference is unavailable',
+        ),
         code: 'visit_reference_unavailable',
       })
     }

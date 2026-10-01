@@ -24,6 +24,23 @@ describe('patient visit calendar route', () => {
     })
   })
 
+  /**
+   * The stable 503 previously made the failure invisible: a `CrudHttpError` bypasses
+   * `toPatientErrorResponse`'s `logger.error` branch, so a permanent fault — an undecryptable
+   * row after a key rotation — looked like a retryable blip with no trace anywhere. It is
+   * logged now, but by error CLASS only: a driver message can quote the offending row, and
+   * these rows hold clinical data.
+   */
+  it('records the failure class without putting a database fragment in the log', () => {
+    const source = readFileSync(
+      path.join(__dirname, '..', 'lib', 'patientCalendarStorage.ts'),
+      'utf8',
+    )
+    expect(source).toContain('logger.error(')
+    expect(source).toContain('errorName:')
+    expect(source).not.toContain('error.message')
+  })
+
   it('accepts a 62-day range and rejects reversed, wider, offset-free, and scoped inputs', () => {
     const valid = {
       from: '2026-09-01T00:00:00Z',
