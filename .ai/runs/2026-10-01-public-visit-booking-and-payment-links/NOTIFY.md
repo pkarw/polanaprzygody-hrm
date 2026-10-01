@@ -26,3 +26,17 @@
 - `7cf9a214`: read-only installed-contract investigation for checkout, custom fields, API keys/auth, queues, and email.
 - `37eb1cae`: read-only integration/browser/screenshot environment investigation.
 - Parallelism: three cezar children are in flight in disjoint scopes; no two may edit the same file.
+
+## 2026-10-01T15:08:00Z — payment implementation delegated
+
+- Step 1.2 seeded branded, valid checkout templates with focused tests.
+- Steps 1.3–1.5 were delegated sequentially in the patient scope and landed as one commit per Step.
+- Decision: multi-service visits use one fixed summed amount because the installed checkout `price_list` contract selects a single item; payment URLs use only the configured trusted application origin.
+- Decision: checkout links carry an indexed `patient_visit_id`; orphan recovery requires exactly one scoped match and terminal `completed` state is absorbing.
+
+## 2026-10-01T15:52:00Z — checkpoint 1 passed
+
+- Steps: 1.1–1.5 (`a34cf35..1c8db09`).
+- Verification: generate, typecheck, 364 patient tests, design-system check, production build, fresh isolated install, and Playwright browser path all passed.
+- UI evidence: responsive/light and wide/dark payment states posted to PR #13 on the dedicated evidence branch.
+- Environment decision: Docker-free QA uses isolated PostgreSQL 17 plus staged Chromium libraries; the existing Webpack dev fallback issue did not block the green production runtime.
