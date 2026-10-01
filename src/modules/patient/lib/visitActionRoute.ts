@@ -17,7 +17,7 @@ type VisitActionPayload = Record<string, unknown> & { expectedUpdatedAt: string 
 type VisitActionRouteOptions<TPayload extends VisitActionPayload> = {
   schema: z.ZodType<TPayload>
   commandId(payload: TPayload): string
-  commandInput(payload: TPayload, visitId: string): Record<string, unknown>
+  commandInput(payload: TPayload, visitId: string, req: Request): Record<string, unknown>
   errorContext: string
   paymentResult?: boolean
 }
@@ -77,7 +77,7 @@ export async function runVisitActionRoute<TPayload extends VisitActionPayload>(
       PatientVisit | VisitPaymentActionResult
     >(
       options.commandId(guardedPayload),
-      { input: options.commandInput(guardedPayload, params.id), ctx },
+      { input: options.commandInput(guardedPayload, params.id, req), ctx },
     )
     const paymentResult = options.paymentResult
       ? result as VisitPaymentActionResult

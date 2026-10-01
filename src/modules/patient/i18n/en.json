@@ -42,6 +42,8 @@
   "patient.errors.calendarTooManyItems": "The calendar contains too many visits; narrow the range or add a filter",
   "patient.errors.contactChannelRequired": "A patient must keep at least an email address or a phone number",
   "patient.errors.idempotencyPayloadMismatch": "This request id was already used with different content",
+  "patient.errors.paymentEmailOperationMismatch": "This email operation key was already used for another delivery",
+  "patient.errors.paymentEmailOperationTerminal": "This email operation reached a terminal delivery state. Start a new resend operation.",
   "patient.errors.invalidInput": "The request payload is invalid.",
   "patient.errors.patientAlreadyActive": "This record is already active",
   "patient.errors.patientAlreadyArchived": "This record is already archived",

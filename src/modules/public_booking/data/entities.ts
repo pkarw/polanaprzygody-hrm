@@ -1,6 +1,13 @@
 import { OptionalProps } from '@mikro-orm/core'
 import { Check, Entity, Index, PrimaryKey, Property } from '@mikro-orm/decorators/legacy'
 
+export type BookingConfirmationEmailDeliveryStatus =
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'ambiguous'
+
 /**
  * Durable audit record for one completed public-booking request.
  *
@@ -27,8 +34,22 @@ import { Check, Entity, Index, PrimaryKey, Property } from '@mikro-orm/decorator
   name: 'public_booking_intakes_request_hash_chk',
   expression: `"request_payload_hash" ~ '^[0-9a-f]{64}$'`,
 })
+@Check({
+  name: 'public_booking_intakes_confirmation_email_status_chk',
+  expression:
+    `"confirmation_email_delivery_status" is null or "confirmation_email_delivery_status" in ('pending', 'sending', 'sent', 'failed', 'ambiguous')`,
+})
 export class BookingIntake {
-  [OptionalProps]?: 'createdAt' | 'updatedAt' | 'deletedAt' | 'requesterEmailSnapshot' | 'confirmationEmailSentAt'
+  [OptionalProps]?:
+    | 'createdAt'
+    | 'updatedAt'
+    | 'deletedAt'
+    | 'requesterEmailSnapshot'
+    | 'confirmationEmailDeliveryStatus'
+    | 'confirmationEmailClaimedAt'
+    | 'confirmationEmailSentAt'
+    | 'confirmationEmailFailedAt'
+    | 'confirmationEmailFailureCode'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -77,9 +98,23 @@ export class BookingIntake {
   @Property({ name: 'submitted_at', type: Date })
   submittedAt!: Date
 
-  /** Durable delivery marker; set only after the booking-confirmation email succeeds. */
+  /** One durable operation per intake; null means confirmation delivery was never requested. */
+  @Property({ name: 'confirmation_email_delivery_status', type: 'text', nullable: true })
+  confirmationEmailDeliveryStatus?: BookingConfirmationEmailDeliveryStatus | null
+
+  @Property({ name: 'confirmation_email_claimed_at', type: Date, nullable: true })
+  confirmationEmailClaimedAt?: Date | null
+
+  /** Set only after the provider call returns successfully. */
   @Property({ name: 'confirmation_email_sent_at', type: Date, nullable: true })
   confirmationEmailSentAt?: Date | null
+
+  @Property({ name: 'confirmation_email_failed_at', type: Date, nullable: true })
+  confirmationEmailFailedAt?: Date | null
+
+  /** Stable diagnostic code only; provider messages, recipient data and payloads are never stored. */
+  @Property({ name: 'confirmation_email_failure_code', type: 'text', nullable: true })
+  confirmationEmailFailureCode?: string | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

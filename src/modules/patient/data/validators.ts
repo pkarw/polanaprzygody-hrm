@@ -667,7 +667,11 @@ export const patientVisitPaymentLinkEmailRequestSchema = z.object({
 }).strict()
 
 export const patientVisitEnsurePaymentLinkActionSchema = z.object(patientVisitActionBase).strict()
-export const patientVisitSendPaymentLinkEmailActionSchema = z.object(patientVisitActionBase).strict()
+export const patientVisitSendPaymentLinkEmailActionSchema = z.object({
+  ...patientVisitActionBase,
+  /** Optional only for backward compatibility with direct command callers. */
+  emailOperationKey: z.string().min(16).max(160).optional(),
+}).strict()
 
 export const patientVisitStatusRequestSchema = z.object({
   status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),

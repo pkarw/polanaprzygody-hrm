@@ -55,6 +55,7 @@ describe('patient visit action route contracts', () => {
     expect(settlementRoute).toContain("payload.isSettled ? 'patient.visits.settle' : 'patient.visits.unsettle'")
     expect(paymentLinkRoute).toContain("commandId: () => 'patient.visits.ensurePaymentLink'")
     expect(paymentLinkEmailRoute).toContain("commandId: () => 'patient.visits.sendPaymentLinkEmail'")
+    expect(paymentLinkEmailRoute).toContain("request.headers.get('idempotency-key')")
     expect(routeSupport).toContain('err instanceof ZodError')
     expect(routeSupport).toContain('{ status: 400 }')
   })

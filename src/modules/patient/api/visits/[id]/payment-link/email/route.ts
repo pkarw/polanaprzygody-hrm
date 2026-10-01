@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { patientVisitPaymentLinkEmailRequestSchema } from '../../../../../data/validators'
 import { runVisitActionRoute } from '../../../../../lib/visitActionRoute'
@@ -18,7 +19,11 @@ export async function POST(
   return await runVisitActionRoute(req, routeCtx, {
     schema: patientVisitPaymentLinkEmailRequestSchema,
     commandId: () => 'patient.visits.sendPaymentLinkEmail',
-    commandInput: (payload, id) => ({ id, expectedUpdatedAt: payload.expectedUpdatedAt }),
+    commandInput: (payload, id, request) => ({
+      id,
+      expectedUpdatedAt: payload.expectedUpdatedAt,
+      emailOperationKey: request.headers.get('idempotency-key')?.trim() || randomUUID(),
+    }),
     errorContext: 'visits.payment-link.email',
     paymentResult: true,
   })
@@ -31,7 +36,7 @@ export const openApi: OpenApiRouteDoc = {
     POST: {
       summary: 'Queue the current payment link for email delivery',
       description:
-        'Creates or reuses the scoped active link and queues its opaque URL for delivery to the authorized patient contact. Requires the current visit version.',
+        'Creates or reuses the scoped active link and queues its opaque URL for delivery to the authorized patient contact. Requires the current visit version. An optional Idempotency-Key header reuses the same delivery operation on HTTP retry; use a new key for an intentional resend.',
       tags: [patientTag],
       requestBody: { contentType: 'application/json', schema: patientVisitPaymentLinkEmailRequestSchema },
       responses: [{
