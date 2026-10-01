@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import { commandRegistry, type CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
+import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { Patient, PatientVisit } from '../data/entities'
@@ -303,6 +304,35 @@ describe('patient visit lifecycle command behavior', () => {
     })
     expect(failedResult.paymentLinkError.message).not.toContain('credential')
     expect(failed.commit).toHaveBeenCalledTimes(1)
+
+    const gatewayMissing = createHarness({}, null, {
+      visitPaymentLinkService: {
+        ensureForVisit: jest.fn(async () => {
+          throw new CrudHttpError(422, {
+            error: 'Validation failed',
+            fieldErrors: {
+              gatewayProviderKey: 'checkout.validation.gatewayProviderKey.notConfigured',
+            },
+          })
+        }),
+        deactivateForVisit: jest.fn(),
+      },
+    })
+    const gatewayMissingResult = await execute('patient.visits.confirm', {
+      id: ids.visit,
+      expectedUpdatedAt: gatewayMissing.visit.updatedAt.toISOString(),
+    }, gatewayMissing.context) as {
+      visit: PatientVisit
+      paymentLink: null
+      paymentLinkError: { code: string; message: string }
+    }
+    expect(gatewayMissingResult.visit.confirmedAt).toBeInstanceOf(Date)
+    expect(gatewayMissingResult.paymentLink).toBeNull()
+    expect(gatewayMissingResult.paymentLinkError).toEqual({
+      code: 'gateway_not_configured',
+      message: 'The payment gateway is not configured',
+    })
+    expect(gatewayMissing.commit).toHaveBeenCalledTimes(1)
   })
 
   it('replays a lost confirmation response without a second lifecycle mutation or event', async () => {

@@ -1570,6 +1570,16 @@ function paymentFailure(error: unknown): VisitPaymentLinkFailure {
     return { code: error.code, message: error.message }
   }
   if (isCrudHttpError(error)) {
+    const fieldErrors = error.body.fieldErrors
+    const gatewayProviderError = fieldErrors && typeof fieldErrors === 'object' && !Array.isArray(fieldErrors)
+      ? (fieldErrors as Record<string, unknown>).gatewayProviderKey
+      : null
+    if (gatewayProviderError === 'checkout.validation.gatewayProviderKey.notConfigured') {
+      return {
+        code: 'gateway_not_configured',
+        message: 'The payment gateway is not configured',
+      }
+    }
     return {
       code: typeof error.body.code === 'string' ? error.body.code : 'payment_link_failed',
       message: typeof error.body.error === 'string' ? error.body.error : 'The payment link operation failed',

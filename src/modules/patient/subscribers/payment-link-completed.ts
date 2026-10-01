@@ -1,12 +1,12 @@
 import { LockMode } from '@mikro-orm/core'
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import { setRecordCustomFields } from '@open-mercato/core/modules/entities/lib/helpers'
-import type { EventBus } from '@open-mercato/events/types'
 import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { createLogger } from '@open-mercato/shared/lib/logger'
 import { PatientVisit } from '../data/entities'
+import { emitPatientEvent } from '../events'
 import { isLockWaitTimeout, resolvePatientLockWaitTimeoutMs } from '../lib/commandSupport'
 import { PATIENT_VISIT_ENTITY_ID } from '../lib/visitPaymentFields'
 import {
@@ -28,7 +28,6 @@ export default async function onPaymentLinkCompleted(
   const container = await createRequestContainer()
   const queryEngine = container.resolve<QueryEngine>('queryEngine')
   const rootEm = container.resolve<EntityManager>('em')
-  const eventBus = container.resolve<EventBus>('eventBus')
   const outcome = await applyPaymentCompletion(payload, {
     async findVisitsByPaymentLink(linkId, scope) {
       const result = await queryEngine.query<Record<string, unknown>>(PATIENT_VISIT_ENTITY_ID, {
@@ -92,21 +91,21 @@ export default async function onPaymentLinkCompleted(
             payment_received_at: storedReceivedAt || receivedAt,
           },
         })
-        return 'updated' as const
+        return {
+          status: 'updated' as const,
+          patientId: visit.patientId,
+          updatedAt: visit.updatedAt.toISOString(),
+        }
       })
-      if (result === 'updated') {
-        await eventBus.emitEvent('patient.patient_visit.updated', {
-          id: visitId,
-          tenantId: scope.tenantId,
-          organizationId: scope.organizationId,
-        }, {
-          persistent: true,
-          tenantId: scope.tenantId,
-          organizationId: scope.organizationId,
-          emitterModuleId: 'patient',
-        })
-      }
-      return result
+      if (typeof result !== 'object') return result
+      await emitPatientEvent('patient.visit.updated', {
+        id: visitId,
+        patientId: result.patientId,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        updatedAt: result.updatedAt,
+      })
+      return result.status
     },
   })
   if (outcome === 'ignored') {

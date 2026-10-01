@@ -35,6 +35,7 @@
 | 6 | 6.4 | Make booking and payment email delivery durable and observable | dispatch:capable | done | 2379946 |
 | 6 | 6.4-review-fix | Harden durable email recovery and traceability | dispatch:capable | done | f888688 |
 | 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | dd4b5d4 |
+| 6 | 6.6-review-fix | Preserve gateway errors and declared payment-completion events | inline | done | this commit |
 
 ## Goal
 
