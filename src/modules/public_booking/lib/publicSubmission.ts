@@ -7,7 +7,9 @@ import { CrudHttpError, isCrudHttpError } from '@open-mercato/shared/lib/crud/er
 import { runRouteMutationGuards } from '@open-mercato/shared/lib/crud/route-mutation-guard'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { createLogger } from '@open-mercato/shared/lib/logger'
+import { readJsonSafe } from '@open-mercato/shared/lib/http/readJsonSafe'
 import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
+import { readBoundedRequestBody, WebhookBodyTooLargeError } from '@open-mercato/shared/lib/webhooks'
 import { ZodError } from 'zod'
 import { BookingIntake } from '../data/entities'
 import {
@@ -210,6 +212,19 @@ export function assertPublicBookingRequestSize(request: Request): void {
   const size = Number(raw)
   if (!Number.isSafeInteger(size) || size < 0 || size > MAX_REQUEST_BYTES) {
     throw new CrudHttpError(400, { error: 'Invalid booking request' })
+  }
+}
+
+export async function readPublicBookingRequestBody(request: Request): Promise<Record<string, unknown>> {
+  assertPublicBookingRequestSize(request)
+  try {
+    const raw = await readBoundedRequestBody(request, { maxBytes: MAX_REQUEST_BYTES })
+    return await readJsonSafe<Record<string, unknown>>(raw, {}) ?? {}
+  } catch (error) {
+    if (error instanceof WebhookBodyTooLargeError) {
+      throw new CrudHttpError(400, { error: 'Invalid booking request' })
+    }
+    throw error
   }
 }
 

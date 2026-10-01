@@ -10,8 +10,29 @@ import {
   publicBookingPayloadHash,
   publicBookingSubmissionError,
   publicBookingUuidV5,
+  readPublicBookingRequestBody,
   validatePublicBookingOrigin,
 } from '../lib/publicSubmission'
+
+const MAX_REQUEST_BYTES = 32 * 1024
+
+function streamingRequest(chunks: Uint8Array[], contentLength?: string): Request {
+  let index = 0
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunk = chunks[index]
+      index += 1
+      if (chunk) controller.enqueue(chunk)
+      else controller.close()
+    },
+  })
+  return new Request('https://example.test/api/public/booking/requests', {
+    method: 'POST',
+    headers: contentLength === undefined ? undefined : { 'content-length': contentLength },
+    body,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' })
+}
 
 const valid = {
   productId: '11111111-1111-4111-8111-111111111111',
@@ -78,10 +99,47 @@ describe('public booking submission contracts', () => {
     }), env)).toThrow('Invalid request host')
   })
 
-  it('bounds anonymous bodies and redacts visit conflict details', () => {
+  it.each([
+    ['absent metadata', undefined],
+    ['forged-small metadata', '2'],
+  ])('rejects an oversized anonymous body with %s', async (_case, contentLength) => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ value: 'a'.repeat(MAX_REQUEST_BYTES) }))
+    await expect(readPublicBookingRequestBody(streamingRequest([bytes], contentLength)))
+      .rejects.toThrow('Invalid booking request')
+  })
+
+  it('counts multibyte payload bytes and accepts the exact boundary', async () => {
+    const encoder = new TextEncoder()
+    const prefix = '{"value":"'
+    const suffix = '"}'
+    const multibyte = '€'
+    const filler = 'a'.repeat(
+      MAX_REQUEST_BYTES
+      - encoder.encode(prefix).byteLength
+      - encoder.encode(multibyte).byteLength
+      - encoder.encode(suffix).byteLength,
+    )
+    const raw = `${prefix}${filler}${multibyte}${suffix}`
+    const bytes = encoder.encode(raw)
+    const multibyteOffset = encoder.encode(`${prefix}${filler}`).byteLength
+
+    expect(bytes.byteLength).toBe(MAX_REQUEST_BYTES)
+    await expect(readPublicBookingRequestBody(streamingRequest([
+      bytes.slice(0, multibyteOffset + 1),
+      bytes.slice(multibyteOffset + 1),
+    ]))).resolves.toEqual({ value: `${filler}${multibyte}` })
+  })
+
+  it('rejects oversized body metadata before parsing', async () => {
     expect(() => assertPublicBookingRequestSize(new Request('https://example.test', {
-      headers: { 'content-length': String(32 * 1024 + 1) },
+      headers: { 'content-length': String(MAX_REQUEST_BYTES + 1) },
     }))).toThrow('Invalid booking request')
+    await expect(readPublicBookingRequestBody(streamingRequest([
+      new TextEncoder().encode('{}'),
+    ], String(MAX_REQUEST_BYTES + 1)))).rejects.toThrow('Invalid booking request')
+  })
+
+  it('redacts visit conflict details', () => {
     const mapped = publicBookingSubmissionError(new CrudHttpError(422, {
       error: 'visit_conflict_blocking',
       conflicts: [{ conflictingVisitId: 'secret', subjectName: 'private' }],
@@ -127,7 +185,8 @@ describe('public booking submission contracts', () => {
       'resources.view',
       'catalog.products.view',
     ]) expect(submission).toContain(`'${feature}'`)
-    expect(route).toContain('readJsonSafe<Record<string, unknown>>(request, {})')
+    expect(route).toContain('readPublicBookingRequestBody(request)')
+    expect(route).not.toContain('readJsonSafe')
     expect(route).not.toContain('request.json(')
   })
 })

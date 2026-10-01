@@ -5,6 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CalendarDays, ChevronRight, Clock3, Loader2, Phone, RefreshCw, Send, UserRoundSearch } from 'lucide-react'
+import { addDays } from 'date-fns/addDays'
+import { startOfDay } from 'date-fns/startOfDay'
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Alert, AlertDescription, AlertTitle } from '@open-mercato/ui/primitives/alert'
 import { Avatar } from '@open-mercato/ui/primitives/avatar'
@@ -47,17 +50,15 @@ const EMPTY_INTAKE: IntakeValues = {
   terms: false, privacyPolicy: false,
 }
 
-function nextDayStart(): Date {
-  const next = new Date()
-  next.setHours(0, 0, 0, 0)
-  next.setDate(next.getDate() + 1)
-  return next
-}
-
-function addDays(value: Date, days: number): Date {
-  const next = new Date(value)
-  next.setDate(next.getDate() + days)
-  return next
+export function publicBookingDateWindow(now: Date = new Date()): { from: Date; to: Date; days: Date[] } {
+  const localTomorrow = addDays(startOfDay(toZonedTime(now, FACILITY_TIME_ZONE)), 1)
+  return {
+    from: fromZonedTime(localTomorrow, FACILITY_TIME_ZONE),
+    to: fromZonedTime(addDays(localTomorrow, SEARCH_DAYS), FACILITY_TIME_ZONE),
+    days: Array.from({ length: SEARCH_DAYS }, (_, index) => (
+      fromZonedTime(addDays(localTomorrow, index), FACILITY_TIME_ZONE)
+    )),
+  }
 }
 
 function dayKey(value: Date | string): string {
@@ -101,7 +102,7 @@ export function BookingWizard({ productId }: { productId: string }) {
   const [availabilityRequest, setAvailabilityRequest] = useState(0)
   const [availability, setAvailability] = useState<PublicBookingAvailabilityResult>({ slots: [] })
   const [availabilityState, setAvailabilityState] = useState<LoadState>('idle')
-  const [selectedDay, setSelectedDay] = useState<string>(() => dayKey(nextDayStart()))
+  const [selectedDay, setSelectedDay] = useState<string>(() => dayKey(publicBookingDateWindow().from))
   const [selectedSlot, setSelectedSlot] = useState<PublicBookingSlot | null>(null)
   const [intake, setIntake] = useState<IntakeValues>(EMPTY_INTAKE)
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'error'>('idle')
@@ -113,8 +114,7 @@ export function BookingWizard({ productId }: { productId: string }) {
   const submissionRef = useRef<{ payload: string; key: string } | null>(null)
 
   const days = useMemo(() => {
-    const start = nextDayStart()
-    return Array.from({ length: SEARCH_DAYS }, (_, index) => addDays(start, index))
+    return publicBookingDateWindow().days
   }, [])
   const slotsByDay = useMemo(() => {
     const grouped = new Map<string, PublicBookingSlot[]>()
@@ -152,8 +152,7 @@ export function BookingWizard({ productId }: { productId: string }) {
     if (!selectedTherapist) return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      const from = nextDayStart()
-      const to = addDays(new Date(), SEARCH_DAYS)
+      const { from, to } = publicBookingDateWindow()
       setAvailabilityState('loading')
       setSelectedSlot(null)
       const query = new URLSearchParams({

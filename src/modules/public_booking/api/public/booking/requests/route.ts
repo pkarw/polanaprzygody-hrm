@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
-import { readJsonSafe } from '@open-mercato/shared/lib/http/readJsonSafe'
 import {
   publicBookingErrorSchema,
   publicBookingRequestBodySchema,
@@ -14,6 +13,7 @@ import {
   assertPublicBookingRequestSize,
   buildPublicBookingSubmissionContext,
   publicBookingSubmissionError,
+  readPublicBookingRequestBody,
   submitPublicBookingRequest,
   validatePublicBookingOrigin,
 } from '../../../../lib/publicSubmission'
@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
     const container = await createRequestContainer()
     const rateLimitResponse = await enforcePublicBookingSubmitRateLimit(request, container)
     if (rateLimitResponse) return rateLimitResponse
-    const body = await readJsonSafe<Record<string, unknown>>(request, {})
+    const body = await readPublicBookingRequestBody(request)
     const parsed = publicBookingRequestSchema.parse(body)
     const context = await buildPublicBookingSubmissionContext(request, container)
     await submitPublicBookingRequest(context, parsed, idempotencyKey)

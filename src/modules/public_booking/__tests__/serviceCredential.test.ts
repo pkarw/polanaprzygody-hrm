@@ -10,7 +10,7 @@ import type { PublicBookingScope } from '../lib/commandSupport'
 
 function memoryDependencies() {
   const credentials = new Map<string, PublicBookingCredentialRef>()
-  const keys = new Map<string, { serviceUserId: string; roleId: string }>()
+  const keys = new Map<string, { serviceUserId: string; roleId: string; scope: string }>()
   let keySequence = 0
   const materialized: string[] = []
 
@@ -25,20 +25,27 @@ function memoryDependencies() {
     transaction: async <T>(run: (trx: PublicBookingIdentityTransaction) => Promise<T>) => {
       const trx: PublicBookingIdentityTransaction = {
         findCredential: async (scope) => credentials.get(scopeKey(scope)) ?? null,
-        findApiKey: async ({ id, serviceUserId, roleId }) => {
+        findApiKey: async ({ id, serviceUserId, roleId, scope }) => {
           const key = keys.get(id)
-          return key?.serviceUserId === serviceUserId && key.roleId === roleId ? { id } : null
+          return key?.serviceUserId === serviceUserId
+            && key.roleId === roleId
+            && key.scope === scopeKey(scope)
+            ? { id }
+            : null
         },
-        retireCredential: async (id) => {
-          for (const [scope, credential] of credentials) {
-            if (credential.id === id) credentials.delete(scope)
-          }
+        retireCredential: async (id, scope) => {
+          if (!scope) return
+          const key = scopeKey(scope)
+          if (credentials.get(key)?.id === id) credentials.delete(key)
         },
-        retireApiKey: async (id) => { keys.delete(id) },
-        createApiKey: async ({ serviceUserId, roleId }) => {
+        retireApiKey: async (id, scope) => {
+          if (!scope || keys.get(id)?.scope !== scopeKey(scope)) return
+          keys.delete(id)
+        },
+        createApiKey: async ({ serviceUserId, roleId, scope }) => {
           keySequence += 1
           const id = `key-${keySequence}`
-          keys.set(id, { serviceUserId, roleId })
+          keys.set(id, { serviceUserId, roleId, scope: scopeKey(scope) })
           return { id, secret: `secret-${keySequence}` }
         },
         createCredential: async ({ serviceUserId, apiKeyId, scope }) => {
@@ -111,5 +118,27 @@ describe('public booking service identity', () => {
     expect(replacement.apiKeyId).not.toBe(first.apiKeyId)
     expect(state.credentials.get(scopeKey(scope))).toEqual(replacement)
     expect(state.keys.size).toBe(1)
+  })
+
+  it('refuses to retire a credential or API key from another scope', async () => {
+    const state = memoryDependencies()
+    const firstScope = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      organizationId: '22222222-2222-4222-8222-222222222222',
+    }
+    const secondScope = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      organizationId: '33333333-3333-4333-8333-333333333333',
+    }
+    const first = await ensurePublicBookingIdentity(state.dependencies, firstScope)
+    const second = await ensurePublicBookingIdentity(state.dependencies, secondScope)
+    state.keys.delete(first.apiKeyId)
+    first.apiKeyId = second.apiKeyId
+
+    const replacement = await ensurePublicBookingIdentity(state.dependencies, firstScope)
+
+    expect(replacement.apiKeyId).not.toBe(second.apiKeyId)
+    expect(state.keys.has(second.apiKeyId)).toBe(true)
+    expect(state.credentials.get(scopeKey(secondScope))).toEqual(second)
   })
 })

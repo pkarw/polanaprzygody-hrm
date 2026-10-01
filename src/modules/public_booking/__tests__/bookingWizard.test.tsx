@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
-import { BookingWizard } from '../frontend/components/BookingWizard'
+import { BookingWizard, publicBookingDateWindow } from '../frontend/components/BookingWizard'
 
 const fetchMock = jest.fn<typeof fetch>()
 const pushMock = jest.fn()
@@ -61,6 +61,46 @@ describe('public booking therapist and slot selection', () => {
     window.requestAnimationFrame = (callback) => {
       callback(0)
       return 1
+    }
+  })
+
+  it.each([
+    {
+      case: 'a Los Angeles browser one calendar day behind Warsaw',
+      clientTimeZone: 'America/Los_Angeles',
+      now: '2026-03-29T00:30:00.000Z',
+      from: '2026-03-29T22:00:00.000Z',
+      secondDay: '2026-03-30T22:00:00.000Z',
+      to: '2026-05-28T22:00:00.000Z',
+    },
+    {
+      case: 'the Warsaw spring DST boundary',
+      clientTimeZone: 'Pacific/Honolulu',
+      now: '2026-03-28T12:00:00.000Z',
+      from: '2026-03-28T23:00:00.000Z',
+      secondDay: '2026-03-29T22:00:00.000Z',
+      to: '2026-05-27T22:00:00.000Z',
+    },
+    {
+      case: 'the Warsaw autumn DST boundary',
+      clientTimeZone: 'Asia/Tokyo',
+      now: '2026-10-24T12:00:00.000Z',
+      from: '2026-10-24T22:00:00.000Z',
+      secondDay: '2026-10-25T23:00:00.000Z',
+      to: '2026-12-23T23:00:00.000Z',
+    },
+  ])('builds an exact Warsaw date window for $case', ({ clientTimeZone, now, from, secondDay, to }) => {
+    const originalTimeZone = process.env.TZ
+    process.env.TZ = clientTimeZone
+    try {
+      const result = publicBookingDateWindow(new Date(now))
+      expect(result.from.toISOString()).toBe(from)
+      expect(result.days).toHaveLength(60)
+      expect(result.days[0]?.toISOString()).toBe(from)
+      expect(result.days[1]?.toISOString()).toBe(secondDay)
+      expect(result.to.toISOString()).toBe(to)
+    } finally {
+      process.env.TZ = originalTimeZone
     }
   })
 
