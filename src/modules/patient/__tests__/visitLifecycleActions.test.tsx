@@ -50,6 +50,7 @@ const visit: PatientVisitItem = {
   isSettled: false,
   settledAt: null,
   services: [],
+  payment: null,
   updatedAt: '2026-09-30T09:00:00.000Z',
 }
 
@@ -99,6 +100,23 @@ describe('VisitLifecycleActions', () => {
       expectedUpdatedAt: visit.updatedAt,
     })
     expect(onSaved).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers an accessible opt-in and sends the email flag only when selected', async () => {
+    render(<VisitLifecycleActions visit={visit} access={access} onSaved={() => undefined} />)
+    fireEvent.click(screen.getByRole('button', { name: 'patient.visits.lifecycle.confirm' }))
+    const optIn = screen.getByRole('checkbox', { name: 'patient.visits.payment.sendOnConfirm' })
+    expect(optIn).not.toBeChecked()
+    fireEvent.click(optIn)
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter', ctrlKey: true })
+
+    await waitFor(() => expect(mockApiCall).toHaveBeenCalledTimes(1))
+    const [, init] = mockApiCall.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({
+      confirmed: true,
+      expectedUpdatedAt: visit.updatedAt,
+      sendPaymentLinkEmail: true,
+    })
   })
 
   it('keeps a required reason in the open dialog across a version conflict and refresh', async () => {

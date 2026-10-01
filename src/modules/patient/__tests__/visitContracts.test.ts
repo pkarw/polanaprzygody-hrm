@@ -5,12 +5,15 @@ import {
   patientVisitCreateSchema,
   patientVisitConfirmationActionSchema,
   patientVisitConfirmationRequestSchema,
+  patientVisitPaymentLinkEmailRequestSchema,
+  patientVisitPaymentLinkRequestSchema,
   patientVisitListQuerySchema,
   patientVisitSettlementRequestSchema,
   patientVisitSettleSchema,
   patientVisitStatusRequestSchema,
   patientVisitTransitionSchema,
   patientVisitUnsettleSchema,
+  patientVisitUnconfirmActionSchema,
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { features } from '../acl'
@@ -100,6 +103,8 @@ describe('patient visit contracts', () => {
   it('keeps lifecycle payloads strict and requires reasons only for destructive corrections', () => {
     const versioned = { id: uuid(1), expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }
     expect(patientVisitConfirmationActionSchema.safeParse(versioned).success).toBe(true)
+    expect(patientVisitConfirmationActionSchema.safeParse({ ...versioned, sendPaymentLinkEmail: true }).success).toBe(true)
+    expect(patientVisitUnconfirmActionSchema.safeParse({ ...versioned, sendPaymentLinkEmail: true }).success).toBe(false)
     expect(patientVisitConfirmationActionSchema.safeParse({ ...versioned, confirmed: true }).success).toBe(false)
     expect(patientVisitTransitionSchema.safeParse({ ...versioned, status: 'completed' }).success).toBe(true)
     expect(patientVisitTransitionSchema.safeParse({ ...versioned, status: 'completed', reason: 'extra' }).success).toBe(false)
@@ -116,7 +121,12 @@ describe('patient visit contracts', () => {
   it('validates action-route intent without accepting path, scope, or actor fields', () => {
     const version = { expectedUpdatedAt: '2026-09-30T09:00:00.000Z' }
     expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: true }).success).toBe(true)
+    expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: true, sendPaymentLinkEmail: true }).success).toBe(true)
+    expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: false, sendPaymentLinkEmail: true }).success).toBe(false)
     expect(patientVisitConfirmationRequestSchema.safeParse({ ...version, confirmed: true, id: uuid(1) }).success).toBe(false)
+    expect(patientVisitPaymentLinkRequestSchema.safeParse(version).success).toBe(true)
+    expect(patientVisitPaymentLinkEmailRequestSchema.safeParse(version).success).toBe(true)
+    expect(patientVisitPaymentLinkRequestSchema.safeParse({ ...version, tenantId: uuid(9) }).success).toBe(false)
     expect(patientVisitStatusRequestSchema.safeParse({ ...version, status: 'cancelled', reason: 'Operator decision' }).success).toBe(true)
     expect(patientVisitStatusRequestSchema.safeParse({ ...version, status: 'cancelled' }).success).toBe(false)
     expect(patientVisitSettlementRequestSchema.safeParse({ ...version, isSettled: true }).success).toBe(true)

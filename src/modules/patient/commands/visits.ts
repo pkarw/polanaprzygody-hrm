@@ -4,20 +4,25 @@ import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { runCrudCommandWrite } from '@open-mercato/shared/lib/commands/runCrudCommandWrite'
+import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { conflict, CrudHttpError, forbidden, isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
+import type { QueryEngine } from '@open-mercato/shared/lib/query/types'
 import { Patient, PatientVisit, PatientVisitService, type PatientVisitStatus } from '../data/entities'
 import {
   PATIENT_VISIT_MAX_SPAN_MS,
   patientVisitCreateSchema,
-  patientVisitConfirmationActionSchema,
+  patientVisitConfirmActionSchema,
   patientVisitDeleteSchema,
+  patientVisitEnsurePaymentLinkActionSchema,
   patientVisitInstantMatchesTimeZone,
   patientVisitSettleSchema,
+  patientVisitSendPaymentLinkEmailActionSchema,
   patientVisitTransitionSchema,
   patientVisitUnsettleSchema,
+  patientVisitUnconfirmActionSchema,
   patientVisitUpdateSchema,
 } from '../data/validators'
 import { emitPatientEvent } from '../events'
@@ -31,6 +36,13 @@ import type {
   PlannerAvailabilityService,
 } from '../lib/patientAvailabilityService'
 import { evaluateVisitConflicts, type VisitConflict, type VisitConflictDraft } from '../lib/visitConflicts'
+import {
+  VisitPaymentLinkError,
+  type VisitPaymentLink,
+  type VisitPaymentLinkService,
+} from '../lib/visitPaymentLinkService'
+import { PATIENT_VISIT_ENTITY_ID } from '../lib/visitPaymentFields'
+import type { VisitPaymentLinkEmailService } from '../lib/visitPaymentEmail'
 import {
   assertExpectedVersion,
   assertPatientAcceptsNewEntries,
@@ -1513,6 +1525,20 @@ type VisitLifecycleInput = {
   expectedUpdatedAt: string
   status?: PatientVisitStatus
   reason?: string
+  sendPaymentLinkEmail?: boolean
+}
+
+export type VisitPaymentLinkFailure = {
+  code: string
+  message: string
+}
+
+export type VisitPaymentActionResult = {
+  visit: PatientVisit
+  paymentLink: VisitPaymentLink | null
+  paymentLinkError: VisitPaymentLinkFailure | null
+  paymentLinkEmailQueued?: boolean
+  paymentLinkEmailError?: VisitPaymentLinkFailure | null
 }
 
 type VisitLifecycleAuditSnapshot = {
@@ -1537,6 +1563,55 @@ type VisitLifecycleCommandDefinition = {
   labelKey: string
   label: string
   parse(input: Record<string, unknown>): VisitLifecycleInput
+}
+
+function paymentFailure(error: unknown): VisitPaymentLinkFailure {
+  if (error instanceof VisitPaymentLinkError) {
+    return { code: error.code, message: error.message }
+  }
+  if (isCrudHttpError(error)) {
+    const fieldErrors = error.body.fieldErrors
+    const gatewayProviderError = fieldErrors && typeof fieldErrors === 'object' && !Array.isArray(fieldErrors)
+      ? (fieldErrors as Record<string, unknown>).gatewayProviderKey
+      : null
+    if (gatewayProviderError === 'checkout.validation.gatewayProviderKey.notConfigured') {
+      return {
+        code: 'gateway_not_configured',
+        message: 'The payment gateway is not configured',
+      }
+    }
+    return {
+      code: typeof error.body.code === 'string' ? error.body.code : 'payment_link_failed',
+      message: typeof error.body.error === 'string' ? error.body.error : 'The payment link operation failed',
+    }
+  }
+  return { code: 'payment_link_failed', message: 'The payment link operation failed' }
+}
+
+function paymentService(ctx: CommandRuntimeContext): VisitPaymentLinkService {
+  try {
+    return ctx.container.resolve('visitPaymentLinkService') as VisitPaymentLinkService
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'The visit payment-link service is unavailable',
+      code: 'payment_link_service_unavailable',
+    })
+  }
+}
+
+function paymentEmailService(ctx: CommandRuntimeContext): VisitPaymentLinkEmailService {
+  try {
+    return ctx.container.resolve('visitPaymentLinkEmailService') as VisitPaymentLinkEmailService
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'The visit payment-link email service is unavailable',
+      code: 'payment_link_email_service_unavailable',
+    })
+  }
+}
+
+function unwrapVisitLifecycleResult(result: PatientVisit | VisitPaymentActionResult): PatientVisit {
+  return 'visit' in result ? result.visit : result
 }
 
 function codedConflict(message: string, code: string): CrudHttpError {
@@ -1668,6 +1743,55 @@ function lifecycleChanges(
   }
 }
 
+async function assertVisitCanBeUnconfirmed(
+  em: EntityManager,
+  visitId: string,
+  scope: PatientScope,
+  ctx: CommandRuntimeContext,
+): Promise<void> {
+  const custom = await loadCustomFieldValues({
+    em,
+    entityId: PATIENT_VISIT_ENTITY_ID,
+    recordIds: [visitId],
+    tenantIdByRecord: { [visitId]: scope.tenantId },
+    organizationIdByRecord: { [visitId]: scope.organizationId },
+  })
+  const values = (custom[visitId] ?? {}) as Record<string, unknown>
+  const paymentStatus = values.cf_payment_link_status
+    ?? values['cf:payment_link_status']
+    ?? values.payment_link_status
+  const paymentReceivedAt = values.cf_payment_received_at
+    ?? values['cf:payment_received_at']
+    ?? values.payment_received_at
+  if (paymentStatus === 'completed' || (typeof paymentReceivedAt === 'string' && paymentReceivedAt.trim())) {
+    throw codedConflict('A paid visit cannot be unconfirmed', 'visit_already_paid')
+  }
+  const paymentLinkId = values.cf_payment_link_id
+    ?? values['cf:payment_link_id']
+    ?? values.payment_link_id
+  if (typeof paymentLinkId !== 'string' || !paymentLinkId.trim()) return
+
+  let queryEngine: QueryEngine
+  try {
+    queryEngine = ctx.container.resolve('queryEngine') as QueryEngine
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'Payment status could not be verified; try again in a moment',
+      code: 'payment_status_unavailable',
+    })
+  }
+  const completed = await queryEngine.query<Record<string, unknown>>('checkout:checkout_transaction', {
+    fields: ['id', 'linkId', 'status'],
+    filters: { linkId: { $eq: paymentLinkId.trim() }, status: { $eq: 'completed' } },
+    page: { page: 1, pageSize: 1 },
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+  })
+  if (completed.total > 0) {
+    throw codedConflict('A paid visit cannot be unconfirmed', 'visit_already_paid')
+  }
+}
+
 async function executeVisitLifecycleAction(
   input: VisitLifecycleInput,
   ctx: CommandRuntimeContext,
@@ -1711,6 +1835,9 @@ async function executeVisitLifecycleAction(
         patient = await lockPatient(phaseEm, String(current.patientId), scope)
         visit = await lockVisit(phaseEm, input.id, scope)
         assertExpectedVersion(input.expectedUpdatedAt, visit.updatedAt, VISIT_ENTITY_ID)
+        if (operation === 'unconfirm') {
+          await assertVisitCanBeUnconfirmed(phaseEm, input.id, scope, ctx)
+        }
         updatedAt = nextUpdatedAt(patient.updatedAt > visit.updatedAt ? patient.updatedAt : visit.updatedAt)
       },
       ({ em: phaseEm }) => {
@@ -1797,9 +1924,36 @@ async function executeVisitLifecycleAction(
   return await loadVisitDecrypted(em, input.id, scope)
 }
 
+async function executeVisitLifecycleActionWithConfirmationReplay(
+  input: VisitLifecycleInput,
+  ctx: CommandRuntimeContext,
+  operation: VisitLifecycleOperation,
+): Promise<PatientVisit> {
+  try {
+    return await executeVisitLifecycleAction(input, ctx, operation)
+  } catch (error) {
+    if (operation !== 'confirm' || !isCrudHttpError(error) || error.status !== 409) throw error
+    const scope = requirePatientScope(ctx)
+    const latest = await loadVisitDecrypted(
+      (ctx.container.resolve('em') as EntityManager).fork(),
+      input.id,
+      scope,
+    )
+    const requestedVersion = Date.parse(input.expectedUpdatedAt)
+    if (
+      latest.confirmedAt
+      && Number.isFinite(requestedVersion)
+      && requestedVersion < latest.updatedAt.getTime()
+    ) {
+      return latest
+    }
+    throw error
+  }
+}
+
 function createVisitLifecycleCommand(
   definition: VisitLifecycleCommandDefinition,
-): CommandHandler<Record<string, unknown>, PatientVisit> {
+): CommandHandler<Record<string, unknown>, PatientVisit | VisitPaymentActionResult> {
   return {
     id: definition.id,
     // Reversal is an explicit, reasoned domain action (unconfirm/reopen/unsettle),
@@ -1816,22 +1970,61 @@ function createVisitLifecycleCommand(
     },
     async execute(rawInput, ctx) {
       const input = definition.parse(rawInput)
-      return await executeVisitLifecycleAction(input, ctx, definition.operation)
+      const visit = await executeVisitLifecycleActionWithConfirmationReplay(input, ctx, definition.operation)
+      if (definition.operation !== 'confirm' && definition.operation !== 'unconfirm') return visit
+
+      let paymentLink: VisitPaymentLink | null = null
+      let paymentLinkError: VisitPaymentLinkFailure | null = null
+      let paymentLinkEmailQueued = false
+      let paymentLinkEmailError: VisitPaymentLinkFailure | null = null
+      try {
+        paymentLink = definition.operation === 'confirm'
+          ? await paymentService(ctx).ensureForVisit(input.id, ctx, visit.updatedAt.toISOString())
+          : await paymentService(ctx).deactivateForVisit(input.id, ctx)
+      } catch (error) {
+        // Confirmation/unconfirmation is already committed. Checkout is an
+        // explicitly isolated post-commit effect and is reported for safe retry.
+        paymentLinkError = paymentFailure(error)
+      }
+
+      if (definition.operation === 'confirm' && input.sendPaymentLinkEmail && paymentLink) {
+        try {
+          await paymentEmailService(ctx).enqueueForVisit(
+            input.id,
+            paymentLink,
+            `confirm:${input.id}:${input.expectedUpdatedAt}:${paymentLink.id}`,
+            ctx,
+          )
+          paymentLinkEmailQueued = true
+        } catch (error) {
+          paymentLinkEmailError = paymentFailure(error)
+        }
+      }
+
+      return {
+        visit,
+        paymentLink,
+        paymentLinkError,
+        ...(input.sendPaymentLinkEmail
+          ? { paymentLinkEmailQueued, paymentLinkEmailError }
+          : {}),
+      }
     },
     async captureAfter(_rawInput, result, ctx) {
-      return lifecycleSnapshot(result, requirePatientScope(ctx))
+      return lifecycleSnapshot(unwrapVisitLifecycleResult(result), requirePatientScope(ctx))
     },
     async buildLog({ input: rawInput, result, snapshots }) {
       const input = definition.parse(rawInput)
+      const visit = unwrapVisitLifecycleResult(result)
       const { translate } = await resolveTranslations()
       return {
         actionLabel: translate(definition.labelKey, definition.label),
         resourceKind: 'patient.patient_visit',
-        resourceId: String(result.id),
+        resourceId: String(visit.id),
         parentResourceKind: 'patient.patient',
-        parentResourceId: String(result.patientId),
-        tenantId: String(result.tenantId),
-        organizationId: String(result.organizationId),
+        parentResourceId: String(visit.patientId),
+        tenantId: String(visit.tenantId),
+        organizationId: String(visit.organizationId),
         snapshotBefore: snapshots.before ?? null,
         snapshotAfter: snapshots.after ?? null,
         // Free-text reasons remain only in encrypted entity fields; audit records presence only.
@@ -1850,7 +2043,7 @@ const confirmVisitCommand = createVisitLifecycleCommand({
   operation: 'confirm',
   labelKey: 'patient.audit.visits.confirm',
   label: 'Confirm visit',
-  parse: (input) => patientVisitConfirmationActionSchema.parse(input),
+  parse: (input) => patientVisitConfirmActionSchema.parse(input),
 })
 
 const unconfirmVisitCommand = createVisitLifecycleCommand({
@@ -1858,7 +2051,7 @@ const unconfirmVisitCommand = createVisitLifecycleCommand({
   operation: 'unconfirm',
   labelKey: 'patient.audit.visits.unconfirm',
   label: 'Unconfirm visit',
-  parse: (input) => patientVisitConfirmationActionSchema.parse(input),
+  parse: (input) => patientVisitUnconfirmActionSchema.parse(input),
 })
 
 const transitionVisitCommand = createVisitLifecycleCommand({
@@ -1885,6 +2078,84 @@ const unsettleVisitCommand = createVisitLifecycleCommand({
   parse: (input) => patientVisitUnsettleSchema.parse(input),
 })
 
+function rethrowPaymentActionError(error: unknown): never {
+  if (isCrudHttpError(error)) throw error
+  if (error instanceof VisitPaymentLinkError) {
+    const status = error.code === 'visit_already_paid'
+      ? 409
+      : error.code.endsWith('_missing') || error.code.endsWith('_ambiguous')
+        ? 503
+        : 422
+    throw new CrudHttpError(status, { error: error.message, code: error.code })
+  }
+  throw new CrudHttpError(503, {
+    error: 'The payment-link operation could not be completed',
+    code: 'payment_link_failed',
+  })
+}
+
+async function paymentActionVisit(
+  ctx: CommandRuntimeContext,
+  visitId: string,
+): Promise<PatientVisit> {
+  const scope = requirePatientScope(ctx)
+  return await loadVisitDecrypted(
+    (ctx.container.resolve('em') as EntityManager).fork(),
+    visitId,
+    scope,
+  )
+}
+
+const ensureVisitPaymentLinkCommand: CommandHandler<Record<string, unknown>, VisitPaymentActionResult> = {
+  id: 'patient.visits.ensurePaymentLink',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const input = patientVisitEnsurePaymentLinkActionSchema.parse(rawInput)
+    const scope = requirePatientScope(ctx)
+    requireActorUserId(ctx)
+    await requireVisitFeatures(ctx, scope, ['patient.visits.manage'])
+    try {
+      const paymentLink = await paymentService(ctx).ensureForVisit(input.id, ctx, input.expectedUpdatedAt)
+      return {
+        visit: await paymentActionVisit(ctx, input.id),
+        paymentLink,
+        paymentLinkError: null,
+      }
+    } catch (error) {
+      rethrowPaymentActionError(error)
+    }
+  },
+}
+
+const sendVisitPaymentLinkEmailCommand: CommandHandler<Record<string, unknown>, VisitPaymentActionResult> = {
+  id: 'patient.visits.sendPaymentLinkEmail',
+  isUndoable: false,
+  async execute(rawInput, ctx) {
+    const input = patientVisitSendPaymentLinkEmailActionSchema.parse(rawInput)
+    const scope = requirePatientScope(ctx)
+    requireActorUserId(ctx)
+    await requireVisitFeatures(ctx, scope, ['patient.visits.manage'])
+    try {
+      const paymentLink = await paymentService(ctx).ensureForVisit(input.id, ctx, input.expectedUpdatedAt)
+      await paymentEmailService(ctx).enqueueForVisit(
+        input.id,
+        paymentLink,
+        input.emailOperationKey ?? randomUUID(),
+        ctx,
+      )
+      return {
+        visit: await paymentActionVisit(ctx, input.id),
+        paymentLink,
+        paymentLinkError: null,
+        paymentLinkEmailQueued: true,
+        paymentLinkEmailError: null,
+      }
+    } catch (error) {
+      rethrowPaymentActionError(error)
+    }
+  },
+}
+
 registerCommand(createVisitCommand)
 registerCommand(updateVisitCommand)
 registerCommand(deleteVisitCommand)
@@ -1893,3 +2164,5 @@ registerCommand(unconfirmVisitCommand)
 registerCommand(transitionVisitCommand)
 registerCommand(settleVisitCommand)
 registerCommand(unsettleVisitCommand)
+registerCommand(ensureVisitPaymentLinkCommand)
+registerCommand(sendVisitPaymentLinkEmailCommand)

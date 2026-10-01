@@ -616,7 +616,15 @@ function addPatientVisitTransitionIssues(
 }
 
 /** Commands are split by action so a caller cannot smuggle the target state. */
-export const patientVisitConfirmationActionSchema = z.object(patientVisitActionBase).strict()
+export const patientVisitConfirmActionSchema = z.object({
+  ...patientVisitActionBase,
+  sendPaymentLinkEmail: z.boolean().optional(),
+}).strict()
+
+export const patientVisitUnconfirmActionSchema = z.object(patientVisitActionBase).strict()
+
+/** Backward-compatible name for existing internal consumers of the confirm shape. */
+export const patientVisitConfirmationActionSchema = patientVisitConfirmActionSchema
 
 export const patientVisitTransitionSchema = z
   .object({
@@ -638,9 +646,31 @@ export const patientVisitUnsettleSchema = z.object({
 }).strict()
 
 /** HTTP action bodies keep the record id in the path and reject all scope/actor keys. */
-export const patientVisitConfirmationRequestSchema = z.object({
-  confirmed: z.boolean(),
+export const patientVisitConfirmationRequestSchema = z.discriminatedUnion('confirmed', [
+  z.object({
+    confirmed: z.literal(true),
+    expectedUpdatedAt: z.string().min(1),
+    sendPaymentLinkEmail: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    confirmed: z.literal(false),
+    expectedUpdatedAt: z.string().min(1),
+  }).strict(),
+])
+
+export const patientVisitPaymentLinkRequestSchema = z.object({
   expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+export const patientVisitPaymentLinkEmailRequestSchema = z.object({
+  expectedUpdatedAt: z.string().min(1),
+}).strict()
+
+export const patientVisitEnsurePaymentLinkActionSchema = z.object(patientVisitActionBase).strict()
+export const patientVisitSendPaymentLinkEmailActionSchema = z.object({
+  ...patientVisitActionBase,
+  /** Optional only for backward compatibility with direct command callers. */
+  emailOperationKey: z.string().min(16).max(160).optional(),
 }).strict()
 
 export const patientVisitStatusRequestSchema = z.object({

@@ -44,6 +44,8 @@ describe('visit command registry', () => {
       'patient.visits.transition',
       'patient.visits.settle',
       'patient.visits.unsettle',
+      'patient.visits.ensurePaymentLink',
+      'patient.visits.sendPaymentLinkEmail',
     ]) {
       const handler = commandRegistry.get(id)
       expect(handler).not.toBeNull()

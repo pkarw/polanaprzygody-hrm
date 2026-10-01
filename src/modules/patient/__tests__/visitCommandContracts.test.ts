@@ -16,8 +16,10 @@ describe('visit command invariants', () => {
       'patient.visits.transition',
       'patient.visits.settle',
       'patient.visits.unsettle',
+      'patient.visits.ensurePaymentLink',
+      'patient.visits.sendPaymentLinkEmail',
     ]) expect(visitsSource).toContain(`id: '${id}'`)
-    expect(visitsSource.match(/registerCommand\(/g)).toHaveLength(8)
+    expect(visitsSource.match(/registerCommand\(/g)).toHaveLength(10)
     expect(visitsSource.match(/isUndoable: true/g)).toHaveLength(3)
     expect(visitsSource).toContain('isUndoable: false')
   })

@@ -5,29 +5,55 @@ import { createCatalogBootstrapDependencies, seedPolanaCatalog } from './catalog
 import { createResourceBootstrapDependencies, seedPolanaResources } from './resource-bootstrap'
 import { seedPolanaOrganization } from './organization-bootstrap'
 import { seedPolanaTherapists } from './lib/staffBootstrap'
+import {
+  createPaymentLinkBootstrapDependencies,
+  seedPolanaPaymentLinkTemplates,
+} from './payment-link-bootstrap'
+import {
+  createBookingBootstrapDependencies,
+  seedPolanaBookingDefaults,
+} from './booking-bootstrap'
+import { backfillCustomerIdentityProjections } from '../public_booking/lib/customerIdentityProjection'
 
 export const setup: ModuleSetupConfig = {
-  // The workspace identity is structural, not demo data: it must land even on a
-  // `--no-examples` install.
+  // These records are the operational baseline for public booking and visit
+  // payment, not demo data. Keep the dependency order identical on regular and
+  // `--no-examples` installs.
   seedDefaults: async (ctx) => {
-    await seedPolanaOrganization(ctx.em, ctx.container, {
+    const scope = {
       tenantId: ctx.tenantId,
       organizationId: ctx.organizationId,
-    })
+    }
+    await seedPolanaOrganization(ctx.em, ctx.container, scope)
+    await seedPolanaCustomers(createCustomerBootstrapDependencies(ctx.em, ctx.container), scope)
+    // public_booking defaults run before this app-owned bootstrap on a fresh install,
+    // so reconcile the customer identities immediately after their operational
+    // fixtures exist. The customer event subscriber remains the ongoing path.
+    await backfillCustomerIdentityProjections(ctx.em, scope)
+    await seedPolanaCatalog(createCatalogBootstrapDependencies(ctx.em, ctx.container), scope)
+    await seedPolanaPaymentLinkTemplates(createPaymentLinkBootstrapDependencies(ctx.em, ctx.container), scope)
+    const resources = await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)
+    if (!resources.availabilityRuleSetId) {
+      throw new Error('Polana operational bootstrap requires a resolved availability rule set.')
+    }
+    const dataEngine = ctx.container.resolve<DataEngine>('dataEngine')
+    await seedPolanaTherapists(ctx.em, dataEngine, scope, resources.availabilityRuleSetId)
+    // Booking relations are resolved only after every owning fixture exists.
+    // Exact stable keys make a missing/ambiguous fixture fatal instead of silently
+    // assigning every therapist or room in the organization.
+    await seedPolanaBookingDefaults(createBookingBootstrapDependencies(ctx.container), scope)
   },
-
+  // checkout adds its generic demo templates from seedExamples after all
+  // seedDefaults hooks have completed. Reconcile just the payment-template
+  // slice once more in example-enabled installs so the generic templates are
+  // inactivated while --no-examples installs still receive the operational
+  // Polana templates from seedDefaults above.
   seedExamples: async (ctx) => {
     const scope = {
       tenantId: ctx.tenantId,
       organizationId: ctx.organizationId,
     }
-    await seedPolanaCustomers(createCustomerBootstrapDependencies(ctx.em, ctx.container), scope)
-    await seedPolanaCatalog(createCatalogBootstrapDependencies(ctx.em, ctx.container), scope)
-    // Runs after the core `resources` seed, so its example set is already in the
-    // database and can be replaced with the real gabinets in one pass.
-    await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)
-    const dataEngine = ctx.container.resolve<DataEngine>('dataEngine')
-    await seedPolanaTherapists(ctx.em, dataEngine, scope)
+    await seedPolanaPaymentLinkTemplates(createPaymentLinkBootstrapDependencies(ctx.em, ctx.container), scope)
   },
 }
 

@@ -50,6 +50,7 @@ describe('patient visit API contracts', () => {
       isSettled: false,
       settledAt: null,
       services: [],
+      payment: null,
       updatedAt: '2026-10-05T09:00:00.000Z',
       description: 'documented only when the runtime detail lookup supplies it',
     })

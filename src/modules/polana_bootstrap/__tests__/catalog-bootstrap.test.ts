@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals'
 import { POLANA_CATALOG_FIXTURES } from '../catalog-fixtures'
 import {
+  isPreservedProductFieldKey,
   isPolanaProductFieldKey,
   planPolanaCatalog,
   seedPolanaCatalog,
@@ -40,6 +41,13 @@ describe('Polana catalog bootstrap', () => {
     expect(isPolanaProductFieldKey('shoe_size')).toBe(false)
     expect(isPolanaProductFieldKey('service_schedule')).toBe(false)
     expect(isPolanaProductFieldKey('my_custom_field')).toBe(false)
+  })
+
+  it('preserves public-booking fields while removing unrelated examples', () => {
+    expect(isPreservedProductFieldKey('booking_duration_minutes')).toBe(true)
+    expect(isPreservedProductFieldKey('booking_team_member_ids')).toBe(true)
+    expect(isPreservedProductFieldKey('booking_resource_ids')).toBe(true)
+    expect(isPreservedProductFieldKey('shoe_size')).toBe(false)
   })
 
   it('creates four categories and exactly eight services, variants, and PLN prices', async () => {

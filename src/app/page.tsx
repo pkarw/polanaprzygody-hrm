@@ -1,13 +1,19 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getAuthFromCookies } from '@open-mercato/shared/lib/auth/server'
+import PublicBookingHomePage from '@/modules/public_booking/frontend/page'
+
+export const metadata: Metadata = {
+  title: 'Polana Przygody — Centrum Rozwoju Dziecka',
+  description: 'Umów wizytę online w Centrum Rozwoju Dziecka Polana Przygody we Wrocławiu.',
+}
 
 function isAutoLoginEnabled(): boolean {
   return Boolean(process.env.OM_AUTOLOGIN_EMAIL?.trim() && process.env.OM_AUTOLOGIN_PASSWORD)
 }
 
-// The home route is a pure router: it never renders. It sends visitors
-// straight into the app (backend when authenticated, login otherwise). The
-// onboarding/role-picker page remains reachable directly at /start.
+// Authenticated staff keep the direct backend entry. Anonymous visitors land
+// on the app-owned public Polana site; /login remains available explicitly.
 export default async function Home() {
   const auth = await getAuthFromCookies()
 
@@ -20,5 +26,6 @@ export default async function Home() {
     redirect('/api/auth/autologin')
   }
 
-  redirect(auth ? '/backend' : '/login')
+  if (auth) redirect('/backend')
+  return <PublicBookingHomePage />
 }

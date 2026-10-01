@@ -32,6 +32,12 @@ export type PatientDiagnosisStatus = 'active' | 'superseded' | 'voided'
 export type PatientDocumentLinkState = 'pending_create' | 'linked' | 'abandoned'
 export type PatientAttachmentLinkState = 'active' | 'detached'
 export type PatientVisitStatus = 'planned' | 'completed' | 'cancelled' | 'no_show'
+export type PatientVisitPaymentEmailDeliveryStatus =
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'ambiguous'
 
 /**
  * The patient record — `patient:patient`.
@@ -1012,4 +1018,84 @@ export class PatientVisitService {
 
   @Property({ name: 'deleted_at', type: Date, nullable: true })
   deletedAt?: Date | null
+}
+
+/**
+ * One intentional payment-link email operation.
+ *
+ * A visit can have many rows because a staff member may deliberately resend the
+ * same active payment link. `operation_key` makes one HTTP/command attempt
+ * idempotent, while a new key creates a new intentional delivery. The checkout
+ * link remains a scalar id: the installed checkout module owns that row.
+ */
+@Entity({ tableName: 'patient_visit_payment_email_deliveries' })
+@Index({
+  name: 'patient_visit_payment_email_deliveries_scope_visit_created_idx',
+  properties: ['tenantId', 'organizationId', 'visitId', 'createdAt'],
+})
+@Index({
+  name: 'patient_visit_payment_email_deliveries_scope_operation_uq',
+  expression:
+    `create unique index "patient_visit_payment_email_deliveries_scope_operation_uq" on "patient_visit_payment_email_deliveries" ("tenant_id", "organization_id", "operation_key")`,
+})
+@Check({
+  name: 'patient_visit_payment_email_deliveries_status_chk',
+  expression: `"status" in ('pending', 'sending', 'sent', 'failed', 'ambiguous')`,
+})
+export class PatientVisitPaymentEmailDelivery {
+  [OptionalProps]?:
+    | 'status'
+    | 'claimedAt'
+    | 'claimJobId'
+    | 'sentAt'
+    | 'failedAt'
+    | 'failureCode'
+    | 'createdAt'
+    | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  /** Same-module aggregate id, intentionally kept scalar for worker payloads and recovery. */
+  @Property({ name: 'visit_id', type: 'uuid' })
+  visitId!: string
+
+  /** Scalar `checkout:checkout_link`; never an ORM relation. */
+  @Property({ name: 'payment_link_id', type: 'uuid' })
+  paymentLinkId!: string
+
+  @Property({ name: 'operation_key', type: 'text' })
+  operationKey!: string
+
+  @Property({ type: 'text', default: 'pending' })
+  status: PatientVisitPaymentEmailDeliveryStatus = 'pending'
+
+  @Property({ name: 'claimed_at', type: Date, nullable: true })
+  claimedAt?: Date | null
+
+  /** Queue job that owns the provider call after the committed sending claim. */
+  @Property({ name: 'claim_job_id', type: 'text', nullable: true })
+  claimJobId?: string | null
+
+  @Property({ name: 'sent_at', type: Date, nullable: true })
+  sentAt?: Date | null
+
+  @Property({ name: 'failed_at', type: Date, nullable: true })
+  failedAt?: Date | null
+
+  /** Stable diagnostic code only; never provider text, recipient data or payload content. */
+  @Property({ name: 'failure_code', type: 'text', nullable: true })
+  failureCode?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
 }

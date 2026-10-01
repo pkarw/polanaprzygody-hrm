@@ -88,6 +88,7 @@ function assertScope(scope: BootstrapScope): void {
 /** Address is identical for every gabinet, so it is merged in from one place. */
 export function buildResourceCustomFieldValues(fixture: PolanaResourceFixture): ResourceCustomFieldValues {
   return {
+    polana_resource_key: fixture.key,
     polana_room_address_street: POLANA_ROOM_ADDRESS.street,
     polana_room_address_postal_code: POLANA_ROOM_ADDRESS.postalCode,
     polana_room_address_city: POLANA_ROOM_ADDRESS.city,
@@ -213,9 +214,13 @@ async function run(
 
   // 2. One shared availability rule set: every day 09:00–19:00.
   const ruleSets = await dependencies.listAvailabilityRuleSets(scope)
-  const existingRuleSet = ruleSets.find((ruleSet) => (
+  const matchingRuleSets = ruleSets.filter((ruleSet) => (
     ruleSet.name.trim().toLowerCase() === POLANA_AVAILABILITY_RULE_SET.name.toLowerCase()
-  )) ?? null
+  ))
+  if (matchingRuleSets.length > 1) {
+    throw new Error(`Polana resource bootstrap found ambiguous availability rule sets: ${POLANA_AVAILABILITY_RULE_SET.name}`)
+  }
+  const existingRuleSet = matchingRuleSets[0] ?? null
   plan.availabilityRuleSetToCreate = existingRuleSet === null
   let availabilityRuleSetId = existingRuleSet?.id ?? null
   if (write) {
@@ -227,8 +232,9 @@ async function run(
         description: POLANA_AVAILABILITY_RULE_SET.description,
         timezone: POLANA_AVAILABILITY_RULE_SET.timezone,
       }, scope) as { ruleSetId?: string } | null
-      availabilityRuleSetId = created?.ruleSetId ?? null
-      if (!availabilityRuleSetId) throw new Error('Availability rule set creation returned no id.')
+      const createdRuleSetId = created?.ruleSetId
+      if (!createdRuleSetId) throw new Error('Availability rule set creation returned no id.')
+      availabilityRuleSetId = createdRuleSetId
     }
     // `weekly.replace` is declarative: it clears the recurring rules it owns and
     // writes the requested windows, so re-running the bootstrap never stacks them.

@@ -1,7 +1,7 @@
 # Linki płatności za wizytę
 
 **Date**: 2026-10-01
-**Status**: Draft — gotowa do implementacji po przeglądzie
+**Status**: Ready for implementation
 **Spec ID**: VPAY
 
 ## 📝 TLDR
@@ -14,6 +14,22 @@ Rejestracja Polany Przygody potwierdza wizyty pacjentów w panelu `/backend` (ko
 
 Źródło: brief użytkownika 2026-10-01 (PL); referencje wizualne `https://polanaprzygody.pl/` (kolory, logo); zainstalowany kod `@open-mercato/checkout` (`CheckoutLinkTemplate`, `CheckoutLink`, `CheckoutTransaction`, `frontend/pay/[slug]`), `@open-mercato/core` `payment_gateways` (`GatewayTransaction`, `gateway_stripe`); istniejące specyfikacje [PAT](2026-09-29-patient-ehr-base.md), [VIS](2026-09-29-patient-visits.md) i ich zaimplementowany kod w `src/modules/patient/`; cennik `src/modules/polana_bootstrap/catalog-fixtures.ts`; powiązana, niezależna specyfikacja [PBOOK](2026-10-01-public-visit-booking-website.md) (publiczna rezerwacja — jawnie wyklucza płatności online ze swojego zakresu).
 
+## Overview and Success Measures
+
+- **Primary outcome:** każda potwierdzona wizyta z usługą może dostać dokładnie jeden aktywny, markowy link płatniczy bez ręcznego konfigurowania szablonów po instalacji.
+- **Leading indicators:** odsetek potwierdzeń z poprawnie utworzonym linkiem; brak duplikatów po retry; czas od potwierdzenia do dostępności URL; odsetek completed poprawnie skojarzonych z wizytą.
+- **Baseline:** brak linków powiązanych z wizytami i brak danych seedowych Polany w `checkout`.
+- **Market/product reference:** istniejący, zainstalowany checkout pozostaje jedynym publicznym checkoutem; nie budujemy drugiej strony płatniczej.
+
+## Goals
+
+| ID | Observable outcome |
+|---|---|
+| VPAY-R01 | Świeża instalacja idempotentnie seeduje jeden aktywny, markowy szablon per SKU oraz jeden ważny szablon wielousługowy, bez generycznych przykładów checkout |
+| VPAY-R02 | Potwierdzenie wizyty z usługami tworzy lub zwraca idempotentnie validator-complete link i nie cofa potwierdzenia przy awarii checkout |
+| VPAY-R03 | Operator może skopiować, wysłać i regenerować link w chronionym UI/API, ze stanami błędu i konfliktu |
+| VPAY-R04 | Zdarzenie ukończenia płatności w tym samym scope jednoznacznie aktualizuje właściwą wizytę; opłaconej wizyty nie można odpotwierdzić |
+
 ## Resolved decisions (brama Open Questions zamknięta)
 
 Szkic tej specyfikacji przechodził przez bramę Open Questions. Użytkownik potwierdził kierunek "custom fields wszędzie, gdzie potrzebna jest referencja" (zarówno wizyta→link, jak i szablon→usługa) i poprosił o kontynuację — poniższe decyzje domykają pozostałe pytania architektoniczne z rekomendacją najbardziej odwracalnego, najmniej inwazyjnego wariantu. Każda jest oznaczona do ewentualnej korekty.
@@ -21,13 +37,32 @@ Szkic tej specyfikacji przechodził przez bramę Open Questions. Użytkownik pot
 | # | Pytanie | Decyzja | Uzasadnienie |
 |---|---|---|---|
 | Q1 | Gdzie żyje referencja wizyta→link? | **Custom fields na `patient:patient_visit`** (`payment_link_id`, `payment_link_slug`, `payment_link_status`, `payment_received_at`) — pierwsze custom fields tej encji | Potwierdzone wprost przez użytkownika; dodatkowo custom fields nie wymagają migracji schematu przy iteracji na kształcie pól |
-| Q2 | Granulacja szablonów przy wizycie z wieloma usługami | **Jeden `CheckoutLinkTemplate` per usługa** (literalnie odpowiada brzmieniu briefu: "szablony... które będą odpowiadały usługom z cennika"), zidentyfikowany przez custom field `catalog_product_id` na szablonie. Dla wizyty z **jedną** usługą (zdecydowana większość) link powstaje wprost z jej szablonu. Dla wizyty z **wieloma** usługami używany jest jeden dodatkowy, współdzielony szablon brandingowy ("Polana — wizyta wieloskładnikowa", bez `catalog_product_id`), a lista pozycji (`priceListItems`, `pricingMode: 'price_list'`) jest budowana dynamicznie z usług tej konkretnej wizyty w momencie tworzenia linku | Spełnia dosłowne żądanie (szablon per usługa) bez wymyślania kombinatoryki szablonów na każdy możliwy zestaw usług |
+| Q2 | Granulacja szablonów przy wizycie z wieloma usługami | **Jeden `CheckoutLinkTemplate` per usługa**, zidentyfikowany przez custom field `catalog_product_id`. Dla jednej usługi link powstaje z jej szablonu. Dla wielu usług używany jest współdzielony szablon brandingowy, a link zawsze ma `pricingMode:'fixed'` i jedną kwotę obliczoną po stronie serwera jako dokładna suma aktualnych cen w groszach | Zainstalowany checkout traktuje `price_list` jako wybór jednej pozycji, więc nie reprezentuje koszyka wielu usług. Stała suma zachowuje jeden link/jedną płatność bez kombinatoryki szablonów |
 | Q3 | Co z linkiem przy `unconfirm`/reschedule, które czyszczą `confirmedAt`? | Jeśli `payment_received_at` jest ustawione (zapłacone) → `unconfirm` jest **blokowane** (409, komunikat "nie można cofnąć potwierdzenia opłaconej wizyty"). Jeśli link istnieje, ale nieopłacony → `unconfirm` ustawia istniejący `CheckoutLink.status = 'inactive'` (strona płatności pokazuje "link nieaktywny"); ponowne potwierdzenie generuje nowy link. Reschedule (zmiana terminu), który tylko ubocznie czyści `confirmedAt`, **nie** dezaktywuje linku — zmiana godziny wizyty nie unieważnia już opłaconej/wysłanej płatności za usługę | Chroni integralność rozliczeniową (nie da się "odpotwierdzić" opłaconej wizyty), a jednocześnie nie karze zwykłej zmiany terminu |
 | Q4 | Gdzie mieszka logika tworząca link? | **Rozszerzenie modułu `patient`**, ale jako **bezpośrednie, synchroniczne wywołanie w ramach komendy `patient.visits.confirm`** (nowy wewnętrzny krok `ensurePaymentLinkForVisit`, post-commit względem zapisu potwierdzenia), a NIE jako asynchroniczny subskrybent na `patient.visit.confirmed` | Wymaganie "operator od razu widzi link do skopiowania" wymaga, by link istniał w odpowiedzi HTTP tego samego żądania — fire-and-forget subskrybent eventu nie mógłby tego zagwarantować. Event `patient.visit.confirmed` jest nadal emitowany bez zmian, dla innych, faktycznie odłączonych konsumentów |
-| Q5 | Automatyczny e-mail: razem z potwierdzeniem czy osobny krok? | **Oba**: pole `sendPaymentLinkEmail?: boolean` w body `POST .../confirmation` (ścieżka główna, jedna akcja operatora) ORAZ niezależny endpoint `POST /api/patient/visits/[id]/payment-link/email` do ręcznego (re)wysłania w dowolnym momencie później | Brief mówi "wyświetlić do skopiowania LUB wysłać mailem" — to wybór operatora w danej chwili, nie tylko w momencie potwierdzenia; potrzebny też "resend", gdy pierwsza wysyłka się nie powiedzie |
-| Q6 | Relacja do PBOOK | **W pełni niezależna** — VPAY nie odwołuje się do kodu PBOOK; jedyny punkt styku to fakt, że obie specyfikacje operują na `patient:patient_visit` i `patient.visits.confirm`, więc PBOOK (gdy powstanie) będzie automatycznie korzystać z tego samego mechanizmu linku płatności bez dodatkowej pracy | Najmniejszy blast radius; unika projektowania pod niezatwierdzoną jeszcze specyfikację |
+| Q5 | Automatyczny e-mail: razem z potwierdzeniem czy osobny krok? | **Oba**, lecz każda intencja jest osobną trwałą operacją. Retry niepewnego transportu zachowuje `Idempotency-Key`; jawny terminalny 409 czyści go, więc kolejny klik tworzy nową operację intentional resend | Brief wymaga resend, ale wynik `ambiguous` nie może być automatycznie ponowiony, bo provider mógł już zaakceptować wiadomość |
+| Q6 | Relacja do PBOOK | **W pełni niezależna** — VPAY nie odwołuje się do kodu PBOOK; wspólny punkt to `patient:patient_visit` i addytywne rozszerzenie `patient.visits.confirm` | Obie zatwierdzone specyfikacje mogą być wdrażane osobnymi krokami bez zależności kodowej; publiczna rezerwacja nie inicjuje płatności |
 
 Domyślne, odwracalne decyzje: provider płatności = `gateway_stripe` (jedyny zainstalowany); waluta `PLN`; strony sukcesu/anulowania płatności używają domyślnych tekstów `checkout` z podmienionym brandingiem, bez dedykowanej treści medycznej; link nie wygasa automatycznie (`expiresAt = null`) w iteracji 1; limit wykorzystania linku (`maxCompletions`) = 1 (jedna wizyta = jedna płatność, ponowna próba po `failed`/`cancelled` używa tego samego linku, nie generuje nowego).
+
+## Users, Permissions, and Scope
+
+| Actor | Outcomes | Scope | Feature gate |
+|---|---|---|---|
+| Rejestracja | potwierdza wizytę, tworzy/kopiuje/wysyła/regeneruje link, widzi status | trusted session `tenantId` + `organizationId`; visit/template/link must match both | `patient.visits.manage` for mutations, `patient.visits.view` for display |
+| Pacjent/opiekun | otwiera istniejący `/pay/[slug]` i płaci | publiczny opaque slug; scope resolved by installed checkout, never accepted from request body | existing checkout public contract |
+| Subscriber | consumes `checkout.transaction.completed` and updates exactly one visit | event `tenantId` + `organizationId`; QueryEngine equality on `cf:payment_link_id` with `pageSize: 2`; exactly one live match required | system event context authorized by installed subscriber contract |
+
+Every staff API derives scope from authenticated context and fails closed on missing organization. No request may choose tenant/organization, and cross-module references remain scalar IDs/snapshots. Publiczny URL linku powstaje wyłącznie z zaufanej konfiguracji `APP_URL`; nigdy z `Host`, `Forwarded` ani innego nagłówka żądania.
+
+## Reuse and Ownership Map
+
+| Capability | Ownership | Seam | Compatibility rule |
+|---|---|---|---|
+| Template/link/pay page/gateway | reuse installed `checkout`/`payment_gateways` | `checkout.link.create`, installed `/pay/[slug]` | no installed-package edits; send validator-complete command input |
+| Polana template installation | app-owned `polana_bootstrap` | scoped `ensureCustomFieldDefinitions` + fixture-key upsert | additive custom fields; deterministic per-SKU seed |
+| Visit/link lifecycle, trwałe delivery i staff UI | app-owned `patient` | custom fields, `patient_visit_payment_email_deliveries`, guarded commands/routes, discovered worker | optional request/response additions only; preserve event payload; additive nullable claim column |
+| Completion feedback | app-owned `patient` subscriber | typed `checkout.transaction.completed` + scoped QueryEngine | no cross-module ORM relation and no unbounded scan |
 
 ## 📝 Proposed Solution
 
@@ -39,16 +74,17 @@ Domyślne, odwracalne decyzje: provider płatności = `gateway_stripe` (jedyny z
    - `gatewayProviderKey: 'stripe'`;
    - domyślnymi treściami e-maili (`startEmailSubject/Body` itd.) w tonie Polany;
    - custom fieldem `catalog_product_id` wskazującym usługę, której szablon dotyczy (nowy fieldset na encji `checkout:checkout_link_template`, analogiczny do istniejącego `CHECKOUT_LINK_CUSTOM_FIELDS`, dopisany przez `ensureCustomFieldDefinitions` z `source: 'polana_bootstrap'`).
-   Dodatkowo tworzony jest jeden szablon współdzielony ("Polana — wizyta wieloskładnikowa", bez `catalog_product_id`, `pricingMode: 'price_list'` z pustą listą pozycji uzupełnianą dynamicznie) na wypadek wizyt z więcej niż jedną usługą.
+   Dodatkowo tworzony jest jeden szablon współdzielony ("Polana — wizyta wieloskładnikowa", bez `catalog_product_id`). Fixture i każdy utworzony z niego link pozostają w `pricingMode:'fixed'`: fixture ma bezpieczny stan bazowy `fixedPriceAmount:1`, `fixedPriceCurrencyCode:'PLN'`, `status:'draft'`, a rzeczywisty link nadpisuje kwotę dokładną sumą aktualnych cen usług, liczoną całkowitoliczbowo w groszach. `price_list` jest zabroniony w tej ścieżce.
 2. **Tworzenie unikalnego linku przy potwierdzeniu wizyty.** Komenda `patient.visits.confirm` (`src/modules/patient/commands/visits.ts`) po swoim własnym atomowym zapisie (confirmedAt/confirmedByUserId) wywołuje nowy wewnętrzny krok `ensurePaymentLinkForVisit(visit, services, { sendEmail })`:
    - jeśli wizyta ma już aktywny (nie `inactive`) `payment_link_id` w custom fields → zwraca istniejący link (idempotentność, brak duplikatów przy wielokrotnym potwierdzaniu/retry);
-   - inaczej odczytuje usługi wizyty (`PatientVisitService`), odnajduje właściwy szablon (po `catalog_product_id` dla jednej usługi, albo szablon współdzielony + dynamiczne `priceListItems` dla wielu usług);
-   - woła `commandBus.execute('checkout.link.create', { templateId, overrides? })`, co generuje unikalny `slug` i zwraca pełny publiczny URL;
+   - inaczej odczytuje usługi wizyty, odnajduje szablon, rozwiązuje bieżącą cenę każdej usługi przez `catalogPricingService`, wymaga jednej waluty `PLN` i sumuje kwoty dziesiętnie w groszach;
+   - pod ograniczonym czasowo pessimistic lockiem wizyty wyszukuje maksymalnie dwa aktywne osierocone linki po indeksowanym `checkout:checkout_link.cf:patient_visit_id`; jeden adoptuje, dwa odrzuca jako naruszenie integralności, a dopiero zero pozwala utworzyć nowy;
+   - woła `commandBus.execute('checkout.link.create', input)` z `templateId` oraz validator-complete `name`, `pricingMode:'fixed'`, wyliczonym `fixedPriceAmount`, `fixedPriceCurrencyCode:'PLN'`, `gatewayProviderKey:'stripe'`, `maxCompletions:1`, stanem aktywnym i `cf_patient_visit_id`; nie zakłada, że sam `templateId` uzupełni walidację;
    - zapisuje `payment_link_id`, `payment_link_slug`, `payment_link_status: 'pending'` w custom fields `patient:patient_visit` przez `dataEngine.setCustomFields(...)`.
    Błąd tworzenia linku (np. brak skonfigurowanego gatewaya) **nie** cofa ani nie blokuje samego potwierdzenia wizyty — confirm kończy się sukcesem, a odpowiedź zawiera `paymentLink: null, paymentLinkError: <kod błędu>`; operator może ponowić przez endpoint ręczny (patrz API Contracts).
-3. **Prezentacja operatorowi.** Odpowiedź `POST /api/patient/visits/[id]/confirmation` rozszerzona o `paymentLink: { id, slug, url, status } | null` — UI rejestracji pokazuje przycisk "Kopiuj link" od razu po potwierdzeniu, bez dodatkowego zapytania.
-4. **Opcjonalny automatyczny e-mail.** Gdy `sendPaymentLinkEmail: true` w żądaniu potwierdzenia (lub przy ręcznym wywołaniu `POST .../payment-link/email` później), moduł `patient` wysyła e-mail przez `sendEmail()` (ten sam transport co `checkout`, rozwiązywany automatycznie przez `channel_resend`/`channel_ses`) z nowym szablonem React-email (`VisitPaymentLinkEmail.tsx`, branding Polany) na adres opiekuna pacjenta (odczytany przez istniejącą, autoryzowaną ścieżkę `patient`→`customers`, analogicznie do `PatientContactLink` używanego w PBOOK). Wysyłka jest fire-and-forget z logowaniem błędu — nieudana wysyłka nie cofa potwierdzenia ani nie usuwa linku.
-5. **Rozliczenie po opłaceniu.** Nowy, pierwszy subskrybent modułu `patient` (`subscribers/payment-link-completed.ts`) nasłuchuje `checkout.transaction.completed` (payload: `{transactionId, linkId, templateId, slug, status, paymentStatus, amount, currency, gatewayProvider, gatewayTransactionId, occurredAt, tenantId, organizationId}`), odnajduje wizytę, której custom field `payment_link_id === payload.linkId` (w ramach `tenantId`/`organizationId` z payloadu), i zapisuje `payment_received_at = payload.occurredAt`, `payment_link_status: 'completed'` przez `dataEngine.setCustomFields`. To pole jest celowo niezależne od `isSettled` (tak jak `isSettled` jest dziś niezależne od `status`/`confirmedAt`) — rejestracja nadal ręcznie decyduje o formalnym rozliczeniu, ale widzi wprost, że płatność internetowa wpłynęła.
+3. **Prezentacja operatorowi.** Odpowiedź `POST /api/patient/visits/[id]/confirmation` rozszerzona o `paymentLink: { id, slug, url, status } | null` — UI rejestracji pokazuje przycisk "Kopiuj link" od razu po potwierdzeniu. `url` jest składany wyłącznie z zaufanego skonfigurowanego originu aplikacji i opaque sluga, nigdy z request `Host`.
+4. **Opcjonalny automatyczny e-mail jako trwała operacja.** `patient` najpierw zapisuje scoped `PatientVisitPaymentEmailDelivery` w `pending`, a process-memoized producent tylko enqueue'uje scalar payload. Pojedynczy odkrywany worker atomowo przechodzi `pending → sending` wraz z `claimJobId = ctx.jobId`, wykonuje `sendEmail()` poza transakcją z konfigurowalnym limitem 30 s (`Promise.race`) i terminalizuje w `sent`, `failed` lub `ambiguous`. Własny restart/timeout/błąd o nieznanej akceptacji nie wysyła drugi raz; obcy job nie zatruwa claimu. `onJobAbandoned` idempotentnie ustawia `pending → failed` lub zgodne właścicielowi `sending → ambiguous`, nie nadpisując stanów terminalnych. Nieudana wysyłka nie cofa potwierdzenia ani nie usuwa linku.
+5. **Rozliczenie po opłaceniu.** Subscriber `patient/subscribers/payment-link-completed.ts` nasłuchuje `checkout.transaction.completed` i wykonuje bounded QueryEngine query w scope eventu: filtr `cf:payment_link_id = payload.linkId`, `pageSize:2`. Zero wyników to no-op, a dwa to błąd integralności bez mutacji. Dla jednego zapisuje `payment_received_at` i `payment_link_status:'completed'`. `completed` jest stanem absorbującym: późniejszy `processing`/`failed`/`cancelled` ani retry tworzenia nie może go obniżyć lub wyczyścić. Odwrotne `checkout:checkout_link.cf:patient_visit_id` służy wyłącznie adopcji osieroconego linku po częściowej awarii create→visit-write i nie jest relacją ORM.
 
 ## 📝 Architecture
 
@@ -84,7 +120,7 @@ POST /visits/[id]/confirmation  ────────▶ patient.visits.confi
 
 **Co się zmienia / co jest ponownie użyte:**
 - Ponownie użyte bez modyfikacji: cały stos `checkout` (encje, komendy, strona `/pay/[slug]`, `PayPage.tsx`, kolejka e-mail, `payment_gateways`, `gateway_stripe`). Zero forków zainstalowanego kodu.
-- Nowe, app-owned: krok bootstrapu szablonów w `polana_bootstrap`, custom fields na `checkout:checkout_link_template` i `patient:patient_visit`, rozszerzenie komendy `patient.visits.confirm` o `ensurePaymentLinkForVisit`, dwa nowe endpointy ręczne w `patient`, jeden nowy subskrybent w `patient`, jeden nowy szablon e-mail.
+- Nowe, app-owned: krok bootstrapu szablonów w `polana_bootstrap`, custom fields na `checkout:checkout_link_template`, `checkout:checkout_link` i `patient:patient_visit`, rozszerzenie komendy `patient.visits.confirm` o `ensurePaymentLinkForVisit`, dwa nowe endpointy ręczne w `patient`, jeden nowy subskrybent w `patient`, jeden nowy szablon e-mail.
 - Zgodność z `AGENTS.md`: cross-module wyłącznie przez `commandBus.execute('checkout.link.create', …)` (ID, nie ORM relacja) i przez event `checkout.transaction.completed` (typed event + subscriber) — nigdy bezpośredni import encji `checkout` do `patient` czy odwrotnie.
 
 ## 📝 Data Model
@@ -95,6 +131,12 @@ POST /visits/[id]/confirmation  ────────▶ patient.visits.confi
 |---|---|---|
 | `catalog_product_id` | text (scalar ID) | `catalog:catalog_product.id`, którego ten szablon dotyczy. `null`/nieobecne dla szablonu współdzielonego "wizyta wieloskładnikowa" |
 | `catalog_product_sku` | text (snapshot) | SKU usługi w momencie utworzenia szablonu — wyłącznie do czytelności w UI administracyjnym `checkout`, nigdy nie czytane programowo |
+
+### Nowy custom field na `checkout:checkout_link` (`source: 'patient'`)
+
+| Key | Typ | Opis |
+|---|---|---|
+| `patient_visit_id` | text (scalar ID, indexed/filterable, `formEditable:false`) | stabilny klucz odwrotny zapisany razem z `checkout.link.create`; służy tylko do scoped lookupu osieroconego aktywnego linku po częściowej awarii i nigdy nie jest relacją ORM |
 
 ### Nowe custom fields na `patient:patient_visit` (pierwsze custom fields tej encji, `source: 'patient'`)
 
@@ -107,13 +149,13 @@ POST /visits/[id]/confirmation  ────────▶ patient.visits.confi
 
 Wszystkie cztery pola: `formEditable: false` (operator nigdy nie wpisuje ich ręcznie — wyłącznie system).
 
-### Brak nowych tabel/encji
+### Trwała encja operacji e-mail
 
-Zgodnie z Q2/Q1 cała funkcjonalność mieści się w istniejących encjach `checkout` (bez zmian) plus custom fields na dwóch istniejących encjach — nie wprowadzamy nowej tabeli łączącej. Relacja wizyta↔link jest zawsze 1:1 (jedna aktywna płatność na wizytę; wiele usług jednej wizyty trafia do jednego linku z wieloma pozycjami, nie do wielu linków).
+`patient_visit_payment_email_deliveries` przechowuje `tenant_id`, `organization_id`, scalar `visit_id`, scalar `payment_link_id`, unikalny w scope `operation_key`, `status` (`pending|sending|sent|failed|ambiguous`), nullable `claimed_at`, nullable `claim_job_id`, terminalne timestampy/kod oraz audyt timestamps. Każdy intentional resend ma nowy `operation_key` i nowy wiersz; retry tego samego requestu odzyskuje ten sam wiersz. Relacja wizyta↔aktywny link pozostaje 1:1 w custom fields, ale historia intencji wysyłki jest 1:N i nie jest cross-module ORM relation.
 
 ### Migracje
 
-Brak migracji schematu bazy — custom fields nie wymagają `yarn db:generate`; definicje są rejestrowane przez `ensureCustomFieldDefinitions` przy starcie/instalacji (ten sam mechanizm co `polana_bootstrap`'s `PRODUCT_FIELDS` dziś).
+Schemat e-maila wymaga addytywnego utworzenia `patient_visit_payment_email_deliveries` oraz addytywnego follow-up nullable `claim_job_id`; custom fields nadal nie wymagają migracji. Generator i snapshot muszą pokazać wyłącznie te zmiany, a migracji nie wolno stosować w ramach implementacji.
 
 ## 📝 API Contracts
 
@@ -136,11 +178,11 @@ Response (dodane pole):
 
 ### Nowy: `POST /api/patient/visits/[id]/payment-link` (regeneracja/ponowienie)
 
-Tworzy link, jeśli nie istnieje lub istniejący jest `inactive`/`expired`; jeśli aktywny link już istnieje, zwraca go bez zmian (idempotentne). Wymaga, by wizyta była potwierdzona (`confirmedAt != null`) i miała co najmniej jedną usługę. ACL: `patient.visits.manage` (ten sam co confirm).
+Tworzy link, jeśli nie istnieje lub istniejący jest `inactive`/`expired`; jeśli aktywny link już istnieje, zwraca go bez zmian. Body zawiera `expectedUpdatedAt`; komenda blokuje rekord i przy wyścigu zwraca 409 zamiast tworzyć dwa linki. Wymaga potwierdzonej wizyty i co najmniej jednej usługi. ACL: `patient.visits.manage`; route ma per-method `metadata` i pełne `openApi` request/response/error schemas.
 
 ### Nowy: `POST /api/patient/visits/[id]/payment-link/email`
 
-Wysyła (lub wysyła ponownie) e-mail z istniejącym linkiem płatności do opiekuna pacjenta. 404, jeśli wizyta nie ma jeszcze linku. ACL: `patient.visits.manage`.
+Wysyła (lub wysyła ponownie) e-mail z istniejącym linkiem płatności do opiekuna pacjenta. Opcjonalny `Idempotency-Key` identyfikuje jedną trwałą operację: retry po nieznanym błędzie transportu używa tego samego klucza, a jawny terminalny 409 powoduje, że UI obraca klucz przed intentional resend. Operacje `failed`/`ambiguous` nie są automatycznie reenqueue'owane. 404, jeśli wizyta nie ma linku; 409, jeśli link jest nieaktywny/opłacony, wersja nieaktualna albo klucz wskazuje terminalną operację. ACL: `patient.visits.manage`; per-method `metadata` i `openApi` są obowiązkowe.
 
 ### Zmiana w `patient.visits.confirm` (komenda)
 
@@ -153,6 +195,18 @@ Input rozszerzony o opcjonalne `sendPaymentLinkEmail?: boolean`. Zwracany rezult
 - Stany: ładowanie (spinner na przycisku podczas tworzenia linku), błąd (czytelny komunikat zamiast surowego kodu błędu, zlokalizowany), brak usług na wizycie (przycisk "Wygeneruj link" wyłączony z tooltipem), konflikt 409 przy próbie `unconfirm` opłaconej wizyty (modal blokujący z wyjaśnieniem).
 - Strona `/pay/[slug]` sama w sobie nie wymaga nowego UI — to istniejący, ostylowany przez branding szablonu komponent `checkout`'a; zadaniem tej specyfikacji jest wyłącznie dobór wartości brandingowych (kolory/logo Polany) na szablonach. Jako konkretny punkt startowy proponuje się paletę już ustaloną i reużywaną we wszystkich dotychczasowych makietach Polany w tym repo (PAT/VIS/VCAL/PBOOK): `primaryColor:'#2A5C47'`, hover/`secondaryColor:'#1E4435'`, akcent/tło karty `'#EFF1C5'`, `themeMode:'light'` — do potwierdzenia/dostrojenia względem faktycznego logo i kolorów na żywej stronie `polanaprzygody.pl` przy implementacji.
 
+Closest installed references are the existing patient visit detail/action dialogs and installed checkout `/pay/[slug]`. The staff surface keeps the current `Page`/detail shell, shared API helpers, buttons/dialogs/status tokens and localized `patient.*` strings; raw `fetch`, raw forms and hard-coded status colors are prohibited. Loading disables only the active control, success is announced through `aria-live`, copy/email/regenerate preserve focus, 409 moves focus to the localized conflict alert, narrow screens stack actions, and light/dark/high-contrast/keyboard paths are included in browser evidence.
+
+## User Journeys
+
+### VPAY-J1 — Potwierdzenie i wysyłka
+
+Operator otwiera scoped detail wizyty, zaznacza opcjonalną wysyłkę, potwierdza z aktualnym `expectedUpdatedAt`, a odpowiedź pokazuje ten sam aktywny link przy retry. Awaria gatewaya pozostawia wizytę potwierdzoną i pokazuje bezpieczny kod do ponowienia; konflikt wersji niczego nie dubluje.
+
+### VPAY-J2 — Płatność i ochrona stanu
+
+Pacjent otwiera istniejący `/pay/[slug]`, płaci, a event aktualizuje dokładnie jedną wizytę w tym samym scope. Operator widzi completed; próba unconfirm zwraca 409. Event bez dopasowania jest no-op, a niejednoznaczne dopasowanie jest alarmem integralności bez mutacji.
+
 ### Makiety (do przetworzenia przez agenta implementującego)
 
 Źródło: `.ai/specs/assets/vpay-ui-mockups.html` (generator `.ai/specs/assets/render-vpay-mockups.mjs`, ten sam wzorzec co w specyfikacjach PAT/VIS/VCAL/PBOOK — `node .ai/specs/assets/render-vpay-mockups.mjs` renderuje poniższe PNG). W tym środowisku render nie mógł zostać wykonany (brak uprawnień root do doinstalowania zależności systemowych Playwrighta/Chromium w tym sandboksie) — HTML źródłowy jest gotowy i można go otworzyć bezpośrednio w przeglądarce albo dokończyć render w środowisku z odpowiednimi uprawnieniami; poniższe nazwy plików to docelowe ścieżki po uruchomieniu skryptu.
@@ -162,7 +216,7 @@ Input rozszerzony o opcjonalne `sendPaymentLinkEmail?: boolean`. Zwracany rezult
 | M1 | [Link utworzony, jedna usługa](assets/vpay-ui-01-link-utworzony-jedna-usluga.png) | zakładka Płatność po potwierdzeniu | Baner sukcesu, karta linku (szablon/adres/data utworzenia), przyciski Kopiuj/Wyślij mailem/Wygeneruj ponownie, checkbox przy formularzu potwierdzenia |
 | M2 | [Opłacona, blokada cofnięcia](assets/vpay-ui-02-oplacona-blokada-cofniecia.png) | zakładka Płatność, stan `completed` | Baner błędu `visit_already_paid`, przycisk "Cofnij potwierdzenie" wyłączony, dziennik płatności z wpisem `checkout.transaction.completed` |
 | M3 | [Strona /pay/[slug], jedna usługa](assets/vpay-ui-03-pay-page-jedna-usluga.png) | publiczna strona płatności | Branding Polany (hero, logo, kolory), pojedyncza pozycja `fixed`, przycisk płatności, stopka zaufania |
-| M4 | [Strona /pay/[slug], wiele usług + sukces](assets/vpay-ui-04-pay-page-wiele-uslug-i-sukces.png) | publiczna strona płatności | Rozbicie na pozycje `price_list` dla wizyty wieloskładnikowej oraz ekran po opłaceniu |
+| M4 | [Strona /pay/[slug], wiele usług + sukces](assets/vpay-ui-04-pay-page-wiele-uslug-i-sukces.png) | publiczna strona płatności | Jedna stała kwota będąca sumą usług wizyty oraz ekran po opłaceniu |
 | M5 | [Stany brzegowe](assets/vpay-ui-05-stany-brzegowe.png) | zakładka Płatność | Sześć stanów z sekcji Edge Cases: brak usług, gateway niekonfigurowany, link nieaktywny, błąd maila, płatność nieudana, wizyta anulowana po opłaceniu |
 
 ## 📝 Edge Cases & Failure Scenarios
@@ -176,23 +230,39 @@ Input rozszerzony o opcjonalne `sendPaymentLinkEmail?: boolean`. Zwracany rezult
 | `unconfirm` wizyty z `payment_received_at` ustawionym | Blokowane, 409 `visit_already_paid` — nie da się "odpotwierdzić" opłaconej wizyty bez wcześniejszej interwencji (np. zwrotu) poza zakresem tej specyfikacji |
 | Reschedule wizyty (zmiana `startsAt`/zasobu), który ubocznie czyści `confirmedAt` | Link **pozostaje aktywny** — zmiana terminu nie unieważnia opłaty za usługę; `confirmedAt` i tak trzeba będzie ustawić ponownie przez osobne potwierdzenie, które wykryje istniejący aktywny link i go nie zdubluje |
 | Pacjent płaci po tym, jak wizyta została anulowana (`status: cancelled`) | Poza blokadą — `checkout` nie wie nic o statusie wizyty. Subskrybent `payment-link-completed` i tak zapisuje `payment_received_at` (fakt wpłaty jest prawdziwy niezależnie od tego, czy usługa się odbędzie); rejestracja widzi to w UI i obsługuje zwrot ręcznie — wyraźnie poza zakresem (patrz Non-goals) |
-| Dwie usługi tej samej wizyty mają różne stawki VAT/promocje | Pozycje `priceListItems` szablonu wieloskładnikowego budowane są z aktualnych, już wyliczonych cen (`catalogPricingService`, uwzględniających `isPromotion`) w momencie tworzenia linku — snapshot, nie przeliczenie live przy płatności |
+| Dwie usługi tej samej wizyty mają różne stawki VAT/promocje | `catalogPricingService` rozwiązuje aktualną cenę każdej usługi, wszystkie muszą być w PLN, a serwer sumuje je dokładnie w groszach do jednego `fixedPriceAmount` — snapshot, nie przeliczenie live przy płatności |
+| `checkout.link.create` zakończył się, ale zapis custom fields wizyty nie | Następne wywołanie pod blokadą wyszukuje scoped `cf:patient_visit_id` z `pageSize:2`; jeden aktywny link adoptuje, dwa kończą się błędem integralności bez mutacji |
+| Skonfigurowany publiczny origin jest nieobecny/niepoprawny w produkcji | Nie wolno użyć `Host`; odpowiedź zawiera bezpieczny błąd konfiguracji, a link nie jest prezentowany ani wysyłany pod niezaufanym adresem |
+| Po `completed` dociera starszy status terminalny lub retry tworzenia | `completed` pozostaje absorbujące; `payment_received_at` i wskaźnik linku nie są cofane ani zastępowane |
 | Webhook/`checkout.transaction.completed` dociera, ale żadna wizyta nie ma pasującego `payment_link_id` (np. link użyty poza tym mechanizmem) | Subskrybent loguje i kończy bez błędu (nie każdy `CheckoutLink` musi pochodzić z wizyty) |
 
 ## 📝 Risks & Impact Review
 
 - **Blast radius**: zmiany ograniczone do modułu `patient` (nowe pola/komenda/endpointy/subskrybent) i `polana_bootstrap` (nowy krok bootstrapu + custom fields na encji `checkout`); zero zmian w zainstalowanych pakietach `checkout`/`payment_gateways`/`gateway_stripe`.
-- **Ryzyko techniczne do zweryfikowania przed Fazą 2**: odnalezienie wizyty po wartości custom field (`payment_link_id === linkId`) w subskrybencie wymaga odwrotnego wyszukiwania po custom field — trzeba zweryfikować, czy istniejący mechanizm zapytań po custom fields (używany dziś głównie do filtrów `DataTable`/`CrudForm`) udostępnia też programowe API do zapytań serwisowych spoza kontekstu UI; jeśli nie, alternatywą jest zapisanie `visitId` jako custom field również po stronie `checkout:checkout_link` (symetryczna referencja zwrotna) zamiast wyszukiwania.
+- **Odwrotne powiązanie**: subscriber szuka wizyty po `cf:payment_link_id` z `pageSize:2`; creation service szuka osieroconego linku po indeksowanym `checkout:checkout_link.cf:patient_visit_id` z `pageSize:2`. Każda ścieżka odrzuca niejednoznaczność i żadna nie używa relacji ORM.
 - **Zgodność/compatibility**: komenda `patient.visits.confirm` zyskuje nowe opcjonalne pole wejściowe i nowe pole w odpowiedzi — rozszerzenie addytywne, nie łamiące; event `patient.visit.confirmed` pozostaje bez zmian (frozen surface zachowana).
 - **Dane wrażliwe**: e-mail z linkiem płatności zawiera URL do zewnętrznej (ale wewnątrz-appowej) strony płatności — żadnych danych medycznych w treści maila, zgodnie z tym, jak `events.ts` modułu patient traktuje payloady.
 - **Rollback**: funkcja jest czysto addytywna — wyłączenie polega na niewywoływaniu `ensurePaymentLinkForVisit` (feature flag na poziomie modułu `patient`, do rozważenia w Fazie 1) bez utraty istniejącej funkcjonalności potwierdzania wizyt.
 
+## Integration Coverage
+
+| Test ID | Level/setup | Actions | Assertions | Requirements |
+|---|---|---|---|---|
+| VPAY-T01 | integration, fresh scoped install | run Polana seed twice, then in a second org | one valid branded template per eight SKU plus one valid shared template per scope; generic examples inactive; no duplicates/cross-scope IDs; shared fixture passes validator | R01 |
+| VPAY-T02 | integration, single-service visit | confirm twice/concurrently with validator-complete input | confirmation succeeds once; same active link returned; template ID plus required name/pricing/gateway fields sent; no duplicate | R02 |
+| VPAY-T03 | integration, multi-service visit | confirm with two priced services | one fixed link, decimal-safe sum in PLN, no `priceListItems`, validator-complete input | R02 |
+| VPAY-T04 | failure/security | missing gateway/template, other-org template/link, stale `expectedUpdatedAt` | confirm remains successful on checkout failure; cross-scope fails closed; conflict is 409 and no duplicate | R02/R03 |
+| VPAY-T05 | integration/email | confirm-send, enqueue retry, same-job restart, foreign duplicate, abandon `pending`/`sending`, provider timeout, unknown UI transport failure, terminal 409 i manual resend | producent nie startuje konsumenta; scoped claim zapisuje `claimJobId`; własny restart/timeout/abandon ⇒ terminalny ślad bez resend, obcy job ⇒ no-op; UI zachowuje klucz po nieznanym wyniku i obraca po terminalnym kodzie; intentional resend tworzy nowy wiersz | R03 |
+| VPAY-T06 | integration/event | emit completion with zero, one, then duplicate `cf:payment_link_id` matches | bounded scoped QueryEngine query; no-op / one update / integrity error with zero mutation | R04 |
+| VPAY-T07 | integration/lifecycle | unconfirm unpaid and paid visits, then reconfirm unpaid | unpaid link inactive then new slug; paid returns `visit_already_paid`; reschedule preserves link | R04 |
+| VPAY-T08 | browser | visit payment controls wide/narrow, light/dark, keyboard; installed pay page | loading/empty/error/conflict/success accessible states, focus/announcement/copy/email/regenerate and branding evidence | R01/R03/R04 |
+
 ## 📋 Phasing
 
-- **Faza 1 — Szablony i branding (bez integracji z wizytami).** Bootstrap `polana_bootstrap` tworzy `CheckoutLinkTemplate` per usługa + szablon wieloskładnikowy, z pełnym brandingiem Polany. Weryfikowalne samodzielnie: operator może ręcznie utworzyć `CheckoutLink` z dowolnego szablonu w panelu `checkout` i zobaczyć stronę `/pay/[slug]` wyglądającą jak polanaprzygody.pl — zero zmian w module `patient`.
-- **Faza 2 — Tworzenie linku przy potwierdzeniu wizyty.** Custom fields na `patient:patient_visit`, rozszerzenie `patient.visits.confirm` o `ensurePaymentLinkForVisit`, rozszerzenie API/response. Weryfikowalne: potwierdzenie wizyty z jedną usługą zwraca działający link płatności.
-- **Faza 3 — Wiele usług, e-mail, operacje ręczne.** Szablon wieloskładnikowy w akcji, checkbox "wyślij mailem", endpointy `payment-link`/`payment-link/email`.
-- **Faza 4 — Rozliczenie zwrotne.** Subskrybent `checkout.transaction.completed`, blokada `unconfirm` opłaconej wizyty, cache statusu.
+- **Faza 1 — Szablony i branding.** Depends on: none. Outcome/value: świeża instalacja ma komplet ważnych szablonów i działający ręczny link. Deliverables: custom fields i scoped, self-cleaning seed. Tests: VPAY-T01/T08 pay-page branding. Exit: drugi seed jest bez zmian, wszystkie fixtures przechodzą walidator, browser pokazuje markową stronę.
+- **Faza 2 — Link przy potwierdzeniu.** Depends on: Phase 1. Outcome/value: jedna usługa daje operatorowi link w odpowiedzi bez osłabienia confirm. Deliverables: visit fields, service, optional additive command/API output. Tests: VPAY-T02/T04. Exit: retry/concurrency zwracają jeden link, failure nie cofa confirm.
+- **Faza 3 — Wiele usług, trwały e-mail i staff UI.** Depends on: Phase 2. Outcome/value: wszystkie wspierane wizyty można wysłać bez automatycznego duplikatu po niepewnym wyniku. Deliverables: fixed sum, trwała encja/status, enqueue-only producer, discovered worker z `claimJobId`, timeout i abandonment, manual routes oraz rotacja klucza w UI. Tests: VPAY-T03/T05/T08. Exit: email/manual oraz restart/foreign-job/timeout/abandonment/intentional-resend zostawiają jednoznaczny ślad.
+- **Faza 4 — Rozliczenie zwrotne.** Depends on: Phase 3. Outcome/value: płatność ma jednoznaczny status na wizycie. Deliverables: bounded subscriber, paid guard, unpaid deactivation. Tests: VPAY-T06/T07. Exit: completion updates exactly one same-scope visit and paid unconfirm is blocked.
 
 ## 📋 Implementation Plan
 
@@ -200,26 +270,72 @@ Input rozszerzony o opcjonalne `sendPaymentLinkEmail?: boolean`. Zwracany rezult
 1. Dodać custom fields `catalog_product_id`/`catalog_product_sku` na `checkout:checkout_link_template` (`ensureCustomFieldDefinitions`, `source: 'polana_bootstrap'`). Test: definicje istnieją po uruchomieniu bootstrapu, idempotentne przy ponownym uruchomieniu.
 2. Zmapować branding na wartości `primaryColor`/`secondaryColor`/`backgroundColor`/`logoUrl`/`themeMode` — punkt startowy to paleta już ustalona w makietach Polany w tym repo (`#2A5C47`/`#1E4435`/`#EFF1C5`, patrz UI/UX i [M3](assets/vpay-ui-03-pay-page-jedna-usluga.png)/[M4](assets/vpay-ui-04-pay-page-wiele-uslug-i-sukces.png)), do zweryfikowania względem logo i kolorów na żywej stronie `polanaprzygody.pl`. Test: manualny przegląd strony `/pay/[slug]` dla jednego utworzonego ręcznie linku, porównanie z makietami M3/M4.
 3. Napisać `seedPolanaPaymentLinkTemplates` w `src/modules/polana_bootstrap/` (np. `payment-link-bootstrap.ts`), wywoływaną z `polana_bootstrap/setup.ts`'s `seedExamples` **po** `seedPolanaCatalog`: (a) dezaktywuje/usuwa trzy przykładowe szablony `checkout` ("Consulting Fee"/"Donation"/"Event Ticket" z `seedCheckoutExamples`), (b) dla każdej pozycji `POLANA_CATALOG_FIXTURES` tworzy/aktualizuje `CheckoutLinkTemplate` (status `active`, `pricingMode: 'fixed'`, kwota z `catalog`) + ustawia `catalog_product_id`. Idempotentny i self-cleaning jak `catalog-bootstrap.ts`. Test: uruchomienie dwa razy z rzędu nie tworzy duplikatów i nie przywraca przykładowych szablonów; usunięcie usługi z fixtures usuwa/dezaktywuje jej szablon.
-4. Utworzyć jeden szablon współdzielony "Polana — wizyta wieloskładnikowa" (`pricingMode: 'price_list'`, pusta lista startowa) w tym samym kroku. Test: w panelu `checkout` widoczne są wyłącznie szablony Polany (per usługa + wieloskładnikowy), bez "Consulting Fee"/"Donation"/"Event Ticket".
+4. Utworzyć jeden współdzielony szablon "Polana — wizyta wieloskładnikowa" w ważnym stanie bazowym (`fixed`, `1 PLN`, `draft`; nigdy bezpośrednio publikowany), ponieważ pusty `price_list` nie przechodzi walidatora. Test: fixture przechodzi walidator, a panel pokazuje wyłącznie szablony Polany.
 
 ### Faza 2 — Integracja z potwierdzeniem wizyty
-5. Dodać custom fields `payment_link_id/slug/status/payment_received_at` na `patient:patient_visit` (pierwszy `ensureCustomFieldDefinitions` w module `patient`, `source: 'patient'`). Test: definicje istnieją, `formEditable: false`.
-6. Zaimplementować `ensurePaymentLinkForVisit(visit, services, scope, { sendEmail })` w `src/modules/patient/commands/` (lub `lib/`): ścieżka dla jednej usługi — znajdź szablon po `catalog_product_id`, wywołaj `checkout.link.create`. Test jednostkowy: wizyta z jedną usługą → link utworzony, custom fields zapisane.
+5. Dodać custom fields `payment_link_id/slug/status/payment_received_at` na `patient:patient_visit` oraz indeksowane `patient_visit_id` na `checkout:checkout_link` (`ensureCustomFieldDefinitions`, `source:'patient'`). Test: definicje są idempotentne i techniczne pola mają `formEditable:false`.
+6. Zaimplementować `ensurePaymentLinkForVisit(...)`: pod bounded lockiem zastosować active-pointer reuse i bounded orphan adoption, znaleźć scoped szablon, rozwiązać ceny i wywołać `checkout.link.create` z validator-complete fixed input. URL budować tylko z configured origin. Test: pojedyncza usługa tworzy link; dwa retry/concurrent calls zwracają ten sam link.
 7. Wpiąć wywołanie do `patient.visits.confirm` post-commit; rozszerzyć input (`sendPaymentLinkEmail`) i response (`paymentLink`/`paymentLinkError`). Test: confirm zwraca `paymentLink` w odpowiedzi API; błąd tworzenia linku nie cofa potwierdzenia (confirm nadal `200`).
 8. Idempotentność: drugie potwierdzenie (lub retry) tej samej wizyty nie tworzy drugiego linku. Test: dwa kolejne wywołania `confirm` → ten sam `payment_link_id`.
 
 ### Faza 3 — Wiele usług, e-mail, operacje ręczne
-9. Ścieżka wielu usług: zbudować `priceListItems` z `PatientVisitService` + aktualnych cen katalogu, użyć szablonu współdzielonego. Test: wizyta z dwiema usługami → link z dwiema pozycjami cennika o poprawnych kwotach.
-10. Szablon e-mail `VisitPaymentLinkEmail.tsx` (branding Polany) + wysyłka przez `sendEmail()` gdy `sendPaymentLinkEmail: true`. Test: e-mail wysłany (w środowisku testowym — przechwycony transport) zawiera poprawny URL.
-11. Endpoint `POST /api/patient/visits/[id]/payment-link` (tworzenie/regeneracja) + `POST .../payment-link/email` (ręczna wysyłka). Test: regeneracja po `inactive` tworzy nowy `slug`; wysyłka na żądanie działa bez ponownego potwierdzania wizyty.
+9. Ścieżka wielu usług: rozwiązać aktualne ceny przez `catalogPricingService`, wymagać PLN i zsumować w groszach do jednego `fixedPriceAmount`; nigdy nie wysyłać `priceListItems`. Test: `0.10 + 0.20 + 199.70 = 200.00`, mixed/missing currency/price odrzucone przed checkout.
+10. Szablon `VisitPaymentLinkEmail.tsx` plus `PatientVisitPaymentEmailDelivery`, enqueue-only producer i pojedynczy odkrywany worker. Atomowy claim zapisuje `claimJobId`; provider ma 30 s deadline; restart/timeout/abandonment terminalizują bez resend zgodnie z właścicielem joba. Test: scoped transitiony, enqueue retry, same/foreign job, timeout i abandonment oraz poprawny URL.
+11. Endpoint `POST /api/patient/visits/[id]/payment-link` (tworzenie/regeneracja) + `POST .../payment-link/email` (ręczna wysyłka). UI zachowuje operation key po nieznanym błędzie transportu, a po jawnym terminalnym 409 obraca go, żeby kolejny klik był intentional resend. Test: unknown retry odzyskuje operację, terminal retry tworzy nową.
 12. UI: checkbox przy potwierdzeniu, sekcja "Płatność" w widoku wizyty (status, kopiuj, wyślij, wygeneruj ponownie) wg [M1](assets/vpay-ui-01-link-utworzony-jedna-usluga.png), stany ładowania/błędu/braku usług wg [M5](assets/vpay-ui-05-stany-brzegowe.png). Test: manualny przegląd w przeglądarce (golden path + brak usług + błąd gatewaya), porównanie z makietami M1/M5.
 
 ### Faza 4 — Rozliczenie zwrotne
-13. Spike: potwierdzić mechanizm programowego wyszukania rekordu po wartości custom field (`payment_link_id === linkId`) poza kontekstem `DataTable`; w razie braku — dodać symetryczny custom field `visit_id` po stronie `checkout:checkout_link`.
-14. Subskrybent `patient/subscribers/payment-link-completed.ts` na `checkout.transaction.completed`: odnajduje wizytę, ustawia `payment_received_at`/`payment_link_status`. Test: symulacja eventu → wizyta ma ustawione pole.
+13. Zaimplementować bounded scoped QueryEngine lookup subskrybenta: `cf:payment_link_id = linkId`, `pageSize:2`; zero = no-op, dwa = błąd integralności bez mutacji. `checkout:checkout_link.cf:patient_visit_id` pozostaje mechanizmem orphan recovery usługi tworzącej.
+14. Subskrybent `patient/subscribers/payment-link-completed.ts` monotonicznie ustawia `payment_received_at`/`payment_link_status:'completed'`; żaden późniejszy event nie obniża `completed`. Test: opóźniony status nie cofa stanu.
 15. Blokada `unconfirm` dla opłaconej wizyty (409 `visit_already_paid`, wg [M2](assets/vpay-ui-02-oplacona-blokada-cofniecia.png)) + dezaktywacja linku (`CheckoutLink.status = 'inactive'`) przy `unconfirm` nieopłaconej wizyty. Test: `unconfirm` opłaconej wizyty → 409; `unconfirm` nieopłaconej → link `inactive`, ponowne `confirm` → nowy `slug`.
 16. Pełny przebieg end-to-end (manualny lub E2E): potwierdzenie → link → płatność testowa w Stripe (tryb testowy) → webhook → `payment_received_at` ustawione → próba `unconfirm` zablokowana.
 
 ## 📝 Non-goals
 
 Publiczna rezerwacja wizyt i jakakolwiek płatność inicjowana spoza panelu `/backend` (zakres [PBOOK](2026-10-01-public-visit-booking-website.md), osobna, niezależna specyfikacja); wybór/dodanie nowego dostawcy płatności poza już zainstalowanym `gateway_stripe`; zwroty/refundy inicjowane z poziomu wizyty (obsługiwane ogólnie przez `payment_gateways`, nie w zakresie tej specyfikacji); faktury/dokumenty sprzedażowe (`sales`); wielowalutowość; automatyczne przypomnienia/ponowne wysyłki linku po terminie (`scheduler`) — do rozważenia w kolejnej iteracji; automatyczna zmiana statusu/`isSettled` wizyty na podstawie `payment_received_at` (rejestracja nadal rozlicza ręcznie — `payment_received_at` to tylko sygnał wspomagający).
+
+## Requirement Traceability
+
+| Requirement | Journey/surface | Contract | Phase | Tests | Acceptance |
+|---|---|---|---|---|---|
+| VPAY-R01 | installed templates, `/pay/[slug]` | template custom fields + deterministic seed | 1 | T01/T08 | VPAY-AC01 |
+| VPAY-R02 | J1, confirmation | additive confirm input/output + validator-complete `checkout.link.create` | 2 | T02/T03/T04 | VPAY-AC02 |
+| VPAY-R03 | J1, visit detail/actions | durable delivery schema + enqueue-only producer + claim/timeout/abandonment worker + intentional-resend UI | 3 | T04/T05/T08 | VPAY-AC03 |
+| VPAY-R04 | J2, completion/unconfirm | typed event + bounded QueryEngine lookup + guard | 4 | T06/T07 | VPAY-AC04 |
+
+## Rollout, Migration, and Rollback
+
+Rollout includes additive migrations for the delivery table and nullable `claim_job_id`; existing rows/clients remain valid because the ownership field is nullable. Setup still registers additive custom fields and deterministic fixtures. Rollout order is Phase 1 templates, Phase 2 confirmation, Phase 3 durable UI/email, then Phase 4 event feedback. Older API clients omit `sendPaymentLinkEmail` and ignore additive response fields unchanged; `patient.visit.confirmed` retains its exact event ID/payload. Rollback disables new producers/workers/routes/UI while retaining historical terminal delivery facts. Required validation is the repository broad gate plus `yarn test:integration:ephemeral`; no migration apply is performed.
+
+## Acceptance Criteria
+
+- [ ] **VPAY-AC01:** fresh install and rerun produce exactly eight valid fixed service templates plus one valid shared template per scope, with Polana branding and no active generic examples.
+- [ ] **VPAY-AC02:** single- and multi-service confirm send validator-complete input, return one idempotent active link under retry/concurrency, and preserve confirmed state when checkout fails.
+- [ ] **VPAY-AC03:** authorized staff can copy, email and intentionally resend through localized accessible controls; durable scoped operations have single-consumer enqueue, `claimJobId`, 30 s timeout and idempotent abandonment recovery, while unknown transport retry reuses the key and terminal conflict rotates it; other-scope, stale-version, inactive and missing-service states fail safely.
+- [ ] **VPAY-AC04:** completion updates exactly one same-scope visit through bounded `cf:payment_link_id` equality; paid unconfirm is 409 and unpaid unconfirm deactivates the link.
+- [ ] Browser evidence covers staff and pay surfaces at wide/narrow width, light/dark, success/error/conflict and keyboard/focus states; full configured validation and integration gates pass.
+
+## Final Compliance Report
+
+| Check | Status | Evidence / resolution |
+|---|---|---|
+| Applicable instructions, spec template and compatibility contract reviewed | pass | app `AGENTS.md`, spec-delivery/spec-writing, `BACKWARD_COMPATIBILITY.md` |
+| Data/API/event/UI contracts internally consistent | pass | VPAY-R01–R04 → AC01–AC04 → T01–T08 |
+| Scope/auth/concurrency are explicit and fail closed | pass | trusted context, exact ACL, `expectedUpdatedAt`, lock/idempotent reuse, scoped bounded reverse lookup |
+| Installed capability reused without package edits | pass | checkout command/pay page/gateway/event retained; app-owned extensions only |
+| Fresh install is operational without manual fixture work | pass | deterministic valid template seed, rerun and two-scope oracle |
+| Every phase has dependency, value, tests and observable exit | pass | Phases 1–4 above |
+| Compatibility protected | pass | optional request/response additions; frozen event unchanged; additive custom fields |
+
+**Verdict: Ready for implementation.**
+
+## Open Questions
+
+None blocking. The QueryEngine reverse lookup, validator-before-template behavior, valid shared-template seed shape and exported auth boundaries have been resolved in the contracts above.
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-10-01 | Initial design and resolved product decisions for templates, confirmation, email and settlement feedback |
+| 2026-10-01 | Implementation readiness review: added requirements, actor/scope rules, concurrency, tests/traceability/acceptance, validator-complete command input, valid shared seed, bounded QueryEngine lookup and compatibility matrix; status set to Ready for implementation |

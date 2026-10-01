@@ -1,0 +1,43 @@
+.pp-shell {
+  --pp-primary: #2a5c47;
+  --pp-primary-dark: #1e4435;
+  --pp-accent: #e8fc59;
+  --pp-tint: #eff1c5;
+  --pp-sage: #bcc7a1;
+  --primary: var(--pp-primary);
+  --primary-hover: var(--pp-primary-dark);
+  --primary-foreground: #ffffff;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--pp-accent) 32%, transparent), transparent 32rem),
+    var(--background);
+  color: var(--foreground);
+  font-family: Jost, var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.pp-hero {
+  background: linear-gradient(135deg, var(--pp-primary-dark), var(--pp-primary));
+}
+
+.pp-highlight {
+  background: var(--pp-accent);
+  color: var(--pp-primary-dark);
+}
+
+.pp-tint {
+  background: color-mix(in srgb, var(--pp-tint) 56%, var(--background));
+}
+
+.pp-focus:focus-visible {
+  outline: 3px solid var(--pp-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-shell *,
+  .pp-shell *::before,
+  .pp-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

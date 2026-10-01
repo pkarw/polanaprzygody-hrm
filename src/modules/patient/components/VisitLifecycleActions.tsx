@@ -12,6 +12,7 @@ import {
 } from '@open-mercato/ui/primitives/dialog'
 import { FormField } from '@open-mercato/ui/primitives/form-field'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
+import { CheckboxField } from '@open-mercato/ui/primitives/checkbox-field'
 import { readApiResultOrThrow } from '@open-mercato/ui/backend/utils/apiCall'
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
 import { showRecordConflict } from '@open-mercato/ui/backend/conflicts'
@@ -30,6 +31,8 @@ type VisitLifecycleResult = {
   isSettled: boolean
   settledAt: string | null
   updatedAt: string
+  paymentLinkError?: { code: string; message: string } | null
+  paymentLinkEmailError?: { code: string; message: string } | null
 }
 
 type ActionDialogState =
@@ -75,6 +78,7 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [announcement, setAnnouncement] = React.useState('')
+  const [sendPaymentLinkEmail, setSendPaymentLinkEmail] = React.useState(false)
   const openerRef = React.useRef<HTMLButtonElement | null>(null)
   const reasonRef = React.useRef<HTMLTextAreaElement | null>(null)
   const submittingRef = React.useRef(false)
@@ -90,7 +94,7 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
     setError(null)
     const requestPayload = { ...payload, expectedUpdatedAt: visit.updatedAt }
     try {
-      await runMutation({
+      const result = await runMutation({
         operation: () => readApiResultOrThrow<VisitLifecycleResult>(
           `/api/patient/visits/${encodeURIComponent(visit.id)}/${action}`,
           {
@@ -110,6 +114,10 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
         },
         mutationPayload: requestPayload,
       })
+      const paymentFailure = result?.paymentLinkEmailError ?? result?.paymentLinkError
+      if (paymentFailure) {
+        setError(t(`patient.visits.payment.errors.${paymentFailure.code}`, paymentFailure.message))
+      }
       setDialog({ mode: 'closed' })
       setReason('')
       setAnnouncement(successMessage)
@@ -140,6 +148,7 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
     setReason('')
     setReasonError(null)
     setError(null)
+    setSendPaymentLinkEmail(false)
     setDialog(next)
   }, [])
 
@@ -160,7 +169,10 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
     if (dialog.mode === 'confirmation') {
       await invoke(
         'confirmation',
-        { confirmed: dialog.confirmed },
+        {
+          confirmed: dialog.confirmed,
+          ...(dialog.confirmed && sendPaymentLinkEmail ? { sendPaymentLinkEmail: true } : {}),
+        },
         dialog.confirmed
           ? t('patient.visits.lifecycle.flash.confirmed')
           : t('patient.visits.lifecycle.flash.unconfirmed'),
@@ -192,7 +204,7 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
           ? t('patient.visits.lifecycle.flash.completed')
         : t('patient.visits.lifecycle.flash.closed'),
     )
-  }, [dialog, invoke, reason, t])
+  }, [dialog, invoke, reason, sendPaymentLinkEmail, t])
 
   const dialogNeedsReason = dialog.mode === 'settlement'
     ? !dialog.isSettled
@@ -456,11 +468,20 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
                   placeholder={t('patient.visits.lifecycle.reasonPlaceholder')}
                 />
               </FormField>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t('patient.visits.lifecycle.shortcutHint')}
-              </p>
-            )}
+            ) : null}
+            {dialog.mode === 'confirmation' && dialog.confirmed ? (
+              <CheckboxField
+                id="patient-visit-send-payment-link-email"
+                label={t('patient.visits.payment.sendOnConfirm')}
+                description={t('patient.visits.payment.sendOnConfirmHint')}
+                checked={sendPaymentLinkEmail}
+                disabled={isSubmitting}
+                onCheckedChange={(checked) => setSendPaymentLinkEmail(checked === true)}
+              />
+            ) : null}
+            <p className="text-sm text-muted-foreground">
+              {t('patient.visits.lifecycle.shortcutHint')}
+            </p>
           </div>
           <DialogFooter layout="equal">
             <Button

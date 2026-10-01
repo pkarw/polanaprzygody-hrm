@@ -130,12 +130,27 @@ describe('Polana resource bootstrap', () => {
     ))).toBe(true)
   })
 
+  it('fails closed when the required availability rule set is ambiguous', async () => {
+    const { dependencies, execute } = dependenciesFor({
+      ruleSets: [
+        { id: 'rule-set-1', name: 'Gabinety Polany Przygody 9:00–19:00' },
+        { id: 'rule-set-2', name: ' Gabinety Polany Przygody 9:00–19:00 ' },
+      ],
+    })
+
+    await expect(seedPolanaResources(dependencies, scope)).rejects.toThrow(
+      'ambiguous availability rule sets',
+    )
+    expect(execute.mock.calls.some(([id]) => id === 'planner.availability.weekly.replace')).toBe(false)
+  })
+
   it('writes the shared Białowieska address onto every room', () => {
     for (const fixture of POLANA_RESOURCES) {
       const values = buildResourceCustomFieldValues(fixture)
       expect(values.polana_room_address_street).toBe('ul. Białowieska 69B')
       expect(values.polana_room_address_postal_code).toBe('54-234')
       expect(values.polana_room_address_city).toBe('Wrocław')
+      expect(values.polana_resource_key).toBe(fixture.key)
       expect(POLANA_ROOM_ADDRESS.country).toBe('Polska')
       expect(Object.keys(values).every(isPolanaRoomFieldKey)).toBe(true)
     }

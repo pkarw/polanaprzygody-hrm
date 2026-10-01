@@ -19,6 +19,7 @@ describe('patient visit UI contracts', () => {
     const sources = [
       read('components', 'VisitForm.tsx'),
       read('components', 'VisitLifecycleActions.tsx'),
+      read('components', 'VisitPaymentSection.tsx'),
       read('components', 'VisitAvailabilityCheck.tsx'),
       read('components', 'VisitsCalendar.tsx'),
       read('components', 'VisitsTable.tsx'),
@@ -153,6 +154,30 @@ describe('patient visit UI contracts', () => {
     expect(actions).toContain('onCloseAutoFocus=')
     expect(actions).toContain('role="status" aria-live="polite"')
     expect(actions).toContain('data-confirmation-reset-warning')
+  })
+
+  it('renders scoped payment controls with semantic status, conflict, and keyboard states', () => {
+    const form = read('components', 'VisitForm.tsx')
+    const payment = read('components', 'VisitPaymentSection.tsx')
+    expect(form).toContain('<VisitPaymentSection')
+    expect(payment).toContain('readApiResultOrThrow<PaymentActionResult>')
+    expect(payment).toContain('expectedUpdatedAt: visit.updatedAt')
+    expect(payment).toContain('showRecordConflict({')
+    expect(payment).toContain('errorRef.current?.focus()')
+    expect(payment).toContain('navigator.clipboard.writeText(payment.url)')
+    expect(payment).toContain('role="status" aria-live="polite"')
+    expect(payment).toContain('<StatusBadge')
+    expect(payment).not.toMatch(/(?:bg|text)-(?:red|green|yellow|blue)-/)
+  })
+
+  it('renders read-only online-booking provenance behind visit view access', () => {
+    const form = read('components', 'VisitForm.tsx')
+    const provenance = read('components', 'OnlineBookingProvenance.tsx')
+    expect(form).toContain('<OnlineBookingProvenance')
+    expect(provenance).toContain("access.status !== 'ready' || !access.canView")
+    expect(provenance).toContain('data-online-booking-provenance')
+    expect(provenance).toContain('role="status" aria-live="polite"')
+    expect(provenance).not.toMatch(/(?:bg|text)-(?:red|green|yellow|blue)-/)
   })
 
   it('uses a strict patient sort allowlist and guards the visit projection', () => {

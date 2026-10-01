@@ -248,6 +248,15 @@ export const patientVisitServiceItemSchema = z.object({
   position: z.number().int().min(0),
 })
 
+export const patientVisitPaymentSchema = z.object({
+  linkId: z.string().uuid(),
+  slug: z.string(),
+  url: z.string().url().nullable(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled', 'expired', 'inactive']),
+  receivedAt: z.string().nullable(),
+  configurationError: z.boolean(),
+})
+
 export const patientVisitListItemSchema = z.object({
   id: z.string().uuid(),
   patientId: z.string().uuid(),
@@ -270,6 +279,7 @@ export const patientVisitListItemSchema = z.object({
   isSettled: z.boolean(),
   settledAt: z.string().nullable(),
   services: z.array(patientVisitServiceItemSchema),
+  payment: patientVisitPaymentSchema.nullable(),
   updatedAt: z.string(),
   /** Present only for an explicit `?id=` detail lookup. */
   description: z.string().nullable().optional(),
@@ -303,6 +313,25 @@ export const patientVisitLifecycleResultSchema = patientVisitVersionedResultSche
   confirmationApplicable: z.boolean(),
   isSettled: z.boolean(),
   settledAt: z.string().nullable(),
+})
+
+export const patientVisitPaymentLinkSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  url: z.string().url(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled', 'expired', 'inactive']),
+})
+
+export const patientVisitPaymentFailureSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+})
+
+export const patientVisitPaymentActionResultSchema = patientVisitLifecycleResultSchema.extend({
+  paymentLink: patientVisitPaymentLinkSchema.nullable(),
+  paymentLinkError: patientVisitPaymentFailureSchema.nullable(),
+  paymentLinkEmailQueued: z.boolean().optional(),
+  paymentLinkEmailError: patientVisitPaymentFailureSchema.nullable().optional(),
 })
 
 export const patientVisitDeletedResultSchema = patientVisitVersionedResultSchema.extend({
