@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<title>PBOOK — makiety publicznej strony rezerwacji</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Paleta przechwycona z https://polanaprzygody.pl/ 2026-10-01: theme-color meta + skompilowany CSS bundle. */
+    --pp-primary:#2A5C47;        /* theme-color, nagłówek/CTA */
+    --pp-primary-dark:#1E4435;   /* hover/aktywny */
+    --pp-accent:#E8FC59;         /* limonkowy akcent, badge/CTA secondary */
+    --pp-tint:#EFF1C5;           /* tło sekcji jasnych */
+    --pp-sage:#BCC7A1;           /* obramowania, karty */
+    --pp-border:#E5E7EB;
+    --pp-muted:#9CA3AF;
+    --pp-ink:#1F2A24;
+    --pp-white:#FFFFFF;
+    --pp-danger:#B3261E;
+    --pp-font:'Jost', ui-sans-serif, system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#f4f5ef;font-family:var(--pp-font);color:var(--pp-ink)}
+  section.screen{
+    width:1440px;background:var(--pp-white);margin:24px auto;border:1px solid var(--pp-border);
+    position:relative;overflow:hidden;
+  }
+  section.screen.narrow{width:360px}
+  .frame-label{
+    position:absolute;top:-28px;left:0;font-size:13px;color:#555;font-weight:500;
+  }
+  header.pp-header{
+    display:flex;align-items:center;justify-content:space-between;padding:18px 48px;
+    background:var(--pp-white);border-bottom:1px solid var(--pp-border);
+  }
+  .pp-logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:20px;color:var(--pp-primary)}
+  .pp-logo .mark{width:34px;height:34px;border-radius:50%;background:var(--pp-primary);color:var(--pp-accent);display:flex;align-items:center;justify-content:center;font-weight:700}
+  nav.pp-nav{display:flex;gap:28px;font-size:15px;color:var(--pp-ink)}
+  nav.pp-nav a{color:inherit;text-decoration:none;font-weight:500}
+  nav.pp-nav a.active{color:var(--pp-primary);border-bottom:2px solid var(--pp-primary);padding-bottom:4px}
+  .pp-cta{background:var(--pp-primary);color:var(--pp-white);padding:10px 20px;border-radius:999px;font-weight:600;font-size:14px;border:none}
+  .pp-cta.outline{background:transparent;border:1.5px solid var(--pp-primary);color:var(--pp-primary)}
+  .pp-cta.accent{background:var(--pp-accent);color:var(--pp-primary-dark)}
+  footer.pp-footer{background:var(--pp-primary-dark);color:#EAF1EC;padding:40px 48px;display:flex;gap:64px;font-size:14px}
+  footer.pp-footer h4{margin:0 0 10px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--pp-accent)}
+  footer.pp-footer a{color:#EAF1EC;text-decoration:none;display:block;margin-bottom:6px;opacity:.9}
+  .hero{padding:64px 48px;background:linear-gradient(135deg,var(--pp-tint),#fff);display:flex;gap:48px;align-items:center}
+  .hero h1{font-size:40px;font-weight:600;color:var(--pp-primary-dark);margin:0 0 16px;line-height:1.15}
+  .hero p{font-size:16px;color:#3a4a42;max-width:460px;margin:0 0 24px}
+  .hero .art{flex:1;height:220px;background:var(--pp-sage);border-radius:24px;opacity:.5}
+  .section-body{padding:40px 48px}
+  h2.section-title{font-size:26px;color:var(--pp-primary-dark);margin:0 0 6px;font-weight:600}
+  p.section-sub{color:#5b6b63;margin:0 0 28px;font-size:14px}
+  .cat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+  .svc-card{border:1px solid var(--pp-border);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:8px;background:#fff}
+  .svc-card .cat-tag{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--pp-primary);font-weight:600}
+  .svc-card h3{margin:2px 0 0;font-size:18px;color:var(--pp-ink)}
+  .svc-card .meta{font-size:13px;color:var(--pp-muted);display:flex;gap:10px}
+  .price-row{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+  .price-row .now{font-size:22px;font-weight:600;color:var(--pp-primary-dark)}
+  .price-row .was{font-size:14px;color:var(--pp-muted);text-decoration:line-through}
+  .badge-promo{background:var(--pp-accent);color:var(--pp-primary-dark);font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .svc-card .cta-row{margin-top:10px}
+  .btn-book{background:var(--pp-primary);color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:600;font-size:14px;cursor:pointer}
+  .wizard-steps{display:flex;gap:0;padding:0 48px;border-bottom:1px solid var(--pp-border)}
+  .wizard-steps .step{padding:16px 0;margin-right:32px;font-size:14px;color:var(--pp-muted);border-bottom:3px solid transparent;font-weight:500}
+  .wizard-steps .step.current{color:var(--pp-primary-dark);border-color:var(--pp-primary)}
+  .wizard-steps .step.done{color:var(--pp-primary)}
+  .therapist-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .therapist-card{border:1px solid var(--pp-border);border-radius:16px;padding:18px;text-align:center}
+  .therapist-card.selected{border-color:var(--pp-primary);box-shadow:0 0 0 2px var(--pp-primary) inset}
+  .avatar{width:72px;height:72px;border-radius:50%;background:var(--pp-sage);margin:0 auto 12px}
+  .therapist-card h4{margin:0 0 4px;font-size:15px}
+  .therapist-card .spec{font-size:12px;color:var(--pp-muted)}
+  .cal-layout{display:flex;gap:32px}
+  .cal-days{display:flex;gap:8px;flex:1}
+  .day-chip{flex:1;border:1px solid var(--pp-border);border-radius:12px;padding:12px 4px;text-align:center;font-size:13px}
+  .day-chip.selected{background:var(--pp-primary);color:#fff;border-color:var(--pp-primary)}
+  .day-chip .dow{display:block;font-size:11px;color:var(--pp-muted);margin-bottom:4px}
+  .day-chip.selected .dow{color:#cfe6da}
+  .slots{width:300px;display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto}
+  .slot-btn{border:1px solid var(--pp-primary);color:var(--pp-primary-dark);background:#fff;border-radius:10px;padding:10px;text-align:center;font-weight:600;font-size:14px;cursor:pointer}
+  .slot-btn.selected{background:var(--pp-primary);color:#fff}
+  .slot-btn[disabled]{opacity:.35;border-color:var(--pp-border);color:var(--pp-muted);cursor:not-allowed}
+  form.pp-form{display:flex;flex-direction:column;gap:16px;max-width:560px}
+  .form-row{display:flex;gap:16px}
+  .field{flex:1;display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:13px;font-weight:500;color:#3a4a42}
+  .field label .req{color:var(--pp-danger)}
+  .field input{border:1px solid var(--pp-border);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
+  .consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#3a4a42}
+  .consent input{margin-top:2px}
+  .consent a{color:var(--pp-primary);font-weight:600}
+  .alert{border-radius:12px;padding:14px 16px;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .alert.info{background:#EAF2EC;color:var(--pp-primary-dark);border:1px solid var(--pp-sage)}
+  .alert.warn{background:#FFF4E5;color:#7A4B00;border:1px solid #F3D9A4}
+  .alert.error{background:#FDEDEC;color:var(--pp-danger);border:1px solid #F3C4C0}
+  .thanks-box{text-align:center;padding:72px 48px}
+  .thanks-box .icon{width:72px;height:72px;border-radius:50%;background:var(--pp-accent);margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:32px}
+  .thanks-box h2{font-size:28px;color:var(--pp-primary-dark);margin:0 0 10px}
+  .thanks-box p{color:#4a584f;font-size:15px}
+  .state-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  .state-card{border:1px solid var(--pp-border);border-radius:14px;padding:18px}
+  .state-card h4{margin:0 0 10px;font-size:14px;color:var(--pp-primary-dark)}
+  .backend-panel{border:1px dashed var(--pp-sage);border-radius:12px;padding:16px;background:#F7F8F2;font-size:13px}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:var(--pp-tint);color:var(--pp-primary-dark);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px}
+  code.small{font-size:11px;background:#eee;padding:2px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+
+<!-- 01 — Layout publiczny (nagłówek/hero/stopka) -->
+<section class="screen" id="s01">
+  <div class="frame-label">01 — Layout publiczny: nagłówek, hero, stopka</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav">
+      <a>Usługi</a><a>Terapeuci</a><a class="active">Cennik</a><a>Poznaj nas</a><a>Kontakt</a>
+    </nav>
+    <button class="pp-cta">Umów się!</button>
+  </header>
+  <div class="hero">
+    <div>
+      <h1>Centrum Rozwoju Dziecka<br/>we Wrocławiu</h1>
+      <p>Logopedia, integracja sensoryczna, psycholog i TUS — umów wizytę online, bez telefonowania i czekania na kontakt.</p>
+      <button class="pp-cta accent">Zobacz cennik i umów wizytę</button>
+    </div>
+    <div class="art"></div>
+  </div>
+  <footer class="pp-footer">
+    <div>
+      <h4>Polana Przygody</h4>
+      <div>Centrum Rozwoju Dziecka</div>
+      <div style="margin-top:10px">info@polanaprzygody.pl</div>
+      <div>790 512 258</div>
+      <div style="margin-top:10px">@polanaprzygody</div>
+    </div>
+    <div>
+      <h4>Nawigacja</h4>
+      <a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Kontakt</a>
+    </div>
+    <div>
+      <h4>Godziny otwarcia</h4>
+      <div>Pon – Pt &nbsp; 9:00 – 20:00</div>
+      <div>Sobota &nbsp;&nbsp;&nbsp; 10:00 – 14:00</div>
+      <div>Niedziela &nbsp; Zamknięte</div>
+    </div>
+    <div>
+      <h4>Dokumenty</h4>
+      <a>Regulamin świadczenia usług</a>
+      <a>Polityka prywatności i regulamin serwisu</a>
+    </div>
+  </footer>
+</section>
+
+<!-- 02 — Cennik -->
+<section class="screen" id="s02">
+  <div class="frame-label">02 — /cennik: lista usług z katalogu, cena bazowa i promocyjna</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a class="active">Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+    <button class="pp-cta">Umów się!</button>
+  </header>
+  <div class="section-body">
+    <h2 class="section-title">Cennik</h2>
+    <p class="section-sub">Ceny i czas trwania pochodzą z katalogu usług. Rabat pokazuje się tylko, gdy jest aktywna cena promocyjna.</p>
+    <div class="cat-grid">
+      <div class="svc-card">
+        <span class="cat-tag">Diagnozy</span>
+        <h3>Diagnoza integracji sensorycznej</h3>
+        <div class="meta"><span>⏱ 90 min</span><span>4 spotkania</span></div>
+        <div class="price-row"><span class="now">750 zł</span></div>
+        <div class="cta-row"><button class="btn-book">Umów się</button></div>
+      </div>
+      <div class="svc-card">
+        <span class="cat-tag">Diagnozy</span>
+        <h3>Diagnoza logopedyczna</h3>
+        <div class="meta"><span>⏱ 60 min</span></div>
+        <div class="price-row"><span class="badge-promo">Promocja</span><span class="now">249 zł</span><span class="was">300 zł</span></div>
+        <div class="cta-row"><button class="btn-book">Umów się</button></div>
+      </div>
+      <div class="svc-card">
+        <span class="cat-tag">Terapie</span>
+        <h3>Terapia logopedyczna</h3>
+        <div class="meta"><span>⏱ 50 min</span></div>
+        <div class="price-row"><span class="now">200 zł</span></div>
+        <div class="cta-row"><button class="btn-book">Umów się</button></div>
+      </div>
+      <div class="svc-card">
+        <span class="cat-tag">Zajęcia grupowe</span>
+        <h3>Trening Umiejętności Społecznych (TUS)</h3>
+        <div class="meta"><span>⏱ 60 min</span><span>zajęcia grupowe</span></div>
+        <div class="price-row"><span class="now">120 zł</span></div>
+        <div class="cta-row"><button class="btn-book" disabled style="opacity:.4;cursor:not-allowed">Wkrótce online</button></div>
+      </div>
+    </div>
+    <p class="section-sub" style="margin-top:18px">Ostatnia karta: usługa bez przypisanego terapeuty/gabinetu w katalogu — przycisk „Umów się” jest wyłączony, zamiast prowadzić do ślepego kroku.</p>
+  </div>
+</section>
+
+<!-- 03 — Krok 1: wybór terapeuty -->
+<section class="screen" id="s03">
+  <div class="frame-label">03 — /umow-sie/[usluga]: krok 1, wybór terapeuty realizującego usługę</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+    <button class="pp-cta outline">← Wróć do cennika</button>
+  </header>
+  <div class="wizard-steps">
+    <div class="step current">1. Terapeuta</div>
+    <div class="step">2. Termin</div>
+    <div class="step">3. Twoje dane</div>
+  </div>
+  <div class="section-body">
+    <h2 class="section-title">Diagnoza logopedyczna · 60 min · 249 zł</h2>
+    <p class="section-sub">Wybierz terapeutę realizującego tę usługę.</p>
+    <div class="therapist-grid">
+      <div class="therapist-card selected"><div class="avatar"></div><h4>Anna Nowicka</h4><div class="spec">logopedia, SI</div></div>
+      <div class="therapist-card"><div class="avatar"></div><h4>Marta Kowalska</h4><div class="spec">logopedia</div></div>
+      <div class="therapist-card"><div class="avatar"></div><h4>Piotr Zieliński</h4><div class="spec">logopedia, TUS</div></div>
+      <div class="therapist-card"><div class="avatar"></div><h4>Ewa Sadowska</h4><div class="spec">psycholog</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 04 — Krok 2: kalendarz slotów -->
+<section class="screen" id="s04">
+  <div class="frame-label">04 — Krok 2: wolne terminy wybranego terapeuty (styl Cal.com/Calendly)</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+    <button class="pp-cta outline">← Zmień terapeutę</button>
+  </header>
+  <div class="wizard-steps">
+    <div class="step done">1. Terapeuta ✓ Anna Nowicka</div>
+    <div class="step current">2. Termin</div>
+    <div class="step">3. Twoje dane</div>
+  </div>
+  <div class="section-body">
+    <h2 class="section-title">Wybierz wolny termin</h2>
+    <p class="section-sub">Pokazane są tylko terminy, w których Anna Nowicka i gabinet są jednocześnie wolne na 60 minut.</p>
+    <div class="cal-layout">
+      <div class="cal-days">
+        <div class="day-chip"><span class="dow">PON</span>6 paź</div>
+        <div class="day-chip selected"><span class="dow">WT</span>7 paź</div>
+        <div class="day-chip"><span class="dow">ŚR</span>8 paź</div>
+        <div class="day-chip"><span class="dow">CZW</span>9 paź</div>
+        <div class="day-chip"><span class="dow">PT</span>10 paź</div>
+      </div>
+      <div class="slots">
+        <button class="slot-btn">09:00</button>
+        <button class="slot-btn selected">10:00</button>
+        <button class="slot-btn" disabled>11:00 — zajęte</button>
+        <button class="slot-btn">13:30</button>
+        <button class="slot-btn">15:00</button>
+        <button class="slot-btn" disabled>16:00 — nieobecność</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 05 — Krok 3: formularz -->
+<section class="screen" id="s05">
+  <div class="frame-label">05 — Krok 3: dane zamawiającego, pacjenta i zgody</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+    <button class="pp-cta outline">← Zmień termin</button>
+  </header>
+  <div class="wizard-steps">
+    <div class="step done">1. Terapeuta ✓</div>
+    <div class="step done">2. Termin ✓ wt 7 paź, 10:00</div>
+    <div class="step current">3. Twoje dane</div>
+  </div>
+  <div class="section-body">
+    <div class="alert info" style="margin-bottom:22px">Diagnoza logopedyczna · Anna Nowicka · wt 7 października, 10:00–11:00</div>
+    <form class="pp-form">
+      <h2 class="section-title" style="font-size:18px;margin-bottom:0">Osoba zgłaszająca</h2>
+      <div class="form-row">
+        <div class="field"><label>Imię <span class="req">*</span></label><input placeholder="Anna"/></div>
+        <div class="field"><label>Nazwisko <span class="req">*</span></label><input placeholder="Wiosenna"/></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Telefon <span class="req">*</span></label><input placeholder="600 000 000"/></div>
+        <div class="field"><label>E-mail</label><input placeholder="anna@example.com"/></div>
+      </div>
+      <h2 class="section-title" style="font-size:18px;margin-bottom:0;margin-top:8px">Dla kogo jest wizyta</h2>
+      <div class="form-row">
+        <div class="field"><label>Imię pacjenta <span class="req">*</span></label><input placeholder="Kamil"/></div>
+        <div class="field"><label>Nazwisko pacjenta <span class="req">*</span></label><input placeholder="Wiosenny"/></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Ulica i numer</label><input placeholder="Bajkowa 12/3"/></div>
+        <div class="field"><label>Miasto / kod pocztowy</label><input placeholder="Wrocław, 50-001"/></div>
+      </div>
+      <label class="consent"><input type="checkbox"/> Zapoznałam/em się i akceptuję <a>Regulamin świadczenia usług</a> Polany Przygody.</label>
+      <label class="consent"><input type="checkbox"/> Zapoznałam/em się i akceptuję <a>Politykę prywatności</a> Polany Przygody.</label>
+      <button class="pp-cta" style="align-self:flex-start;margin-top:4px">Wyślij zgłoszenie rezerwacji</button>
+    </form>
+  </div>
+</section>
+
+<!-- 06 — Podziękowanie -->
+<section class="screen" id="s06">
+  <div class="frame-label">06 — Strona podziękowania po wysłaniu zgłoszenia</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+  </header>
+  <div class="thanks-box">
+    <div class="icon">✓</div>
+    <h2>Dziękujemy za zgłoszenie!</h2>
+    <p>Twoja prośba o wizytę została zapisana. Na podany adres e-mail / numer telefonu wyślemy<br/>potwierdzenie, gdy rejestracja zatwierdzi termin — zwykle w ciągu 1 dnia roboczego.</p>
+    <button class="pp-cta" style="margin-top:20px">Wróć do strony głównej</button>
+  </div>
+</section>
+
+<!-- 07 — Degradacja: brak dostępności -->
+<section class="screen" id="s07">
+  <div class="frame-label">07 — Zdegradowana dostępność: rezerwacja online wstrzymana</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+  </header>
+  <div class="section-body">
+    <div class="alert warn">
+      Rezerwacja online jest tymczasowo niedostępna — nie możemy wiarygodnie sprawdzić wolnych terminów.
+      Zadzwoń pod <strong>790 512 258</strong> lub napisz na <strong>info@polanaprzygody.pl</strong>, a umówimy wizytę telefonicznie.
+    </div>
+    <p class="section-sub" style="margin-top:16px">Zasada: publiczny formularz nigdy nie zapisuje wizyty, gdy serwer nie potrafi na pewno potwierdzić wolnego slotu — w przeciwieństwie do panelu rejestracji, tu nikt nie oceni ostrzeżenia ręcznie.</p>
+  </div>
+</section>
+
+<!-- 08 — Slot zajęty w międzyczasie (konflikt 409) -->
+<section class="screen" id="s08">
+  <div class="frame-label">08 — Wybrany termin zajęty tuż przed wysłaniem (race condition)</div>
+  <header class="pp-header">
+    <div class="pp-logo"><span class="mark">PP</span> Polana Przygody</div>
+    <nav class="pp-nav"><a>Usługi</a><a>Terapeuci</a><a>Cennik</a><a>Poznaj nas</a><a>Kontakt</a></nav>
+  </header>
+  <div class="section-body">
+    <div class="alert error">
+      Ten termin został właśnie zarezerwowany przez kogoś innego. Wybierz inny — Twoje dane w formularzu zostały zachowane.
+    </div>
+    <div style="margin-top:20px" class="cal-layout">
+      <div class="slots" style="width:100%">
+        <button class="slot-btn" disabled>10:00 — już zajęty</button>
+        <button class="slot-btn">13:30</button>
+        <button class="slot-btn">15:00</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 09 — Zbiór stanów UI -->
+<section class="screen" id="s09">
+  <div class="frame-label">09 — Wymagane stany UI na każdej powierzchni publicznej</div>
+  <div class="section-body">
+    <h2 class="section-title">Stany UI</h2>
+    <div class="state-grid">
+      <div class="state-card"><h4>Wczytywanie</h4><div class="alert info">Szukamy wolnych terminów…</div></div>
+      <div class="state-card"><h4>Pusto</h4><div class="alert info">Ten terapeuta nie ma wolnych terminów w najbliższych 60 dniach. Wybierz innego terapeutę lub wróć później.</div></div>
+      <div class="state-card"><h4>Błąd walidacji</h4><div class="alert error">Podaj numer telefonu i zaakceptuj regulamin oraz politykę prywatności, aby wysłać zgłoszenie.</div></div>
+      <div class="state-card"><h4>Limit zapytań (429)</h4><div class="alert warn">Zbyt wiele prób z tego miejsca. Spróbuj ponownie za kilka minut albo zadzwoń: 790 512 258.</div></div>
+      <div class="state-card"><h4>Istniejący klient rozpoznany</h4><div class="alert info">Rozpoznaliśmy Twój e-mail/telefon — dane uzupełniliśmy automatycznie, możesz je poprawić.</div></div>
+      <div class="state-card"><h4>Duplikat zgłoszenia (ponowny submit)</h4><div class="alert info">To zgłoszenie zostało już wysłane — przekierowujemy do strony podziękowania.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 — 360 px -->
+<section class="screen narrow" id="s10">
+  <div class="frame-label">10 — Szerokość 360 px: cennik i krok formularza</div>
+  <header class="pp-header" style="padding:12px 16px;flex-wrap:wrap">
+    <div class="pp-logo" style="font-size:16px"><span class="mark" style="width:26px;height:26px;font-size:11px">PP</span> Polana Przygody</div>
+    <button class="pp-cta" style="padding:6px 12px;font-size:12px">Umów się!</button>
+  </header>
+  <div class="section-body" style="padding:16px">
+    <h2 class="section-title" style="font-size:18px">Cennik</h2>
+    <div class="svc-card" style="margin-bottom:14px">
+      <span class="cat-tag">Diagnozy</span>
+      <h3 style="font-size:15px">Diagnoza logopedyczna</h3>
+      <div class="meta"><span>⏱ 60 min</span></div>
+      <div class="price-row"><span class="badge-promo">Promocja</span><span class="now" style="font-size:18px">249 zł</span><span class="was">300 zł</span></div>
+      <div class="cta-row"><button class="btn-book" style="width:100%">Umów się</button></div>
+    </div>
+    <form class="pp-form" style="gap:10px">
+      <div class="field"><label>Imię i nazwisko pacjenta <span class="req">*</span></label><input placeholder="Kamil Wiosenny"/></div>
+      <label class="consent" style="font-size:12px"><input type="checkbox"/> Akceptuję <a>Regulamin</a> i <a>Politykę prywatności</a>.</label>
+      <button class="pp-cta" style="width:100%">Wyślij zgłoszenie</button>
+    </form>
+  </div>
+</section>
+
+<!-- 11 — Panel w backendzie: wizyta zarezerwowana online -->
+<section class="screen" id="s11">
+  <div class="frame-label">11 — Backend /backend/patient/visits/[id]: znacznik źródła rezerwacji online</div>
+  <div class="section-body">
+    <h2 class="section-title" style="font-size:20px">Wizyta — Kamil Wiosenny</h2>
+    <div class="backend-panel">
+      <span class="pill">🌐 Zarezerwowano online</span>
+      <div style="margin-top:10px">Zgłoszenie: 2026-10-01 18:42 · Zgody: Regulamin ✓, Polityka prywatności ✓ (zapisane z hashem treści)</div>
+      <div style="margin-top:4px">Zamawiający: Anna Wiosenna · 600 000 000 · dopasowano do istniejącego klienta <code class="small">CUST-00231</code></div>
+      <div style="margin-top:4px">Status: <strong>planned</strong> · Potwierdzenie: <strong>oczekuje</strong> — przycisk „Potwierdź” wysyła e-mail do zamawiającego.</div>
+    </div>
+  </div>
+</section>
+
+<script>
+  window.__SCREENS = [
+    { id: 's01', label: 'layout-publiczny-naglowek-hero-stopka' },
+    { id: 's02', label: 'cennik-lista-uslug-z-katalogu' },
+    { id: 's03', label: 'krok1-wybor-terapeuty' },
+    { id: 's04', label: 'krok2-kalendarz-wolnych-terminow' },
+    { id: 's05', label: 'krok3-formularz-dane-i-zgody' },
+    { id: 's06', label: 'strona-podziekowania' },
+    { id: 's07', label: 'degradacja-rezerwacja-wstrzymana' },
+    { id: 's08', label: 'slot-zajety-w-miedzyczasie-409' },
+    { id: 's09', label: 'zbior-stanow-ui' },
+    { id: 's10', label: 'szerokosc-360px' },
+    { id: 's11', label: 'backend-znacznik-rezerwacji-online' },
+  ]
+</script>
+</body>
+</html>
