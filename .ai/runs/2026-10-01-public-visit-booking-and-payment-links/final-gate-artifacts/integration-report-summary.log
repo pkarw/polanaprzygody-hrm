@@ -1,0 +1,7 @@
+Final integration report — 2026-10-01T18:28:00Z
+
+Environment: production build on 127.0.0.1:3212, backed by the newly initialized disposable PostgreSQL database mercato_final_gate_20261001.
+Command: yarn test:integration (with repository-established BASE_URL, DATABASE_URL, browser cache, and Chromium shared-library path).
+Outcome: PASS — 103 passed, 4 conditionally skipped, 0 failed; 107 total discovered tests.
+
+The native yarn test:integration:ephemeral wrapper was attempted first and stopped before test discovery because this host has no Docker CLI. The fallback did not reduce test scope: it ran the complete repository-native suite against a clean database initialized from the current branch.
