@@ -40,8 +40,8 @@ export type PublicBookingIdentityTransaction = {
     roleId: string
     scope: PublicBookingScope
   }): Promise<{ id: string } | null>
-  retireCredential(id: string): Promise<void>
-  retireApiKey(id: string): Promise<void>
+  retireCredential(id: string, scope?: PublicBookingScope): Promise<void>
+  retireApiKey(id: string, scope?: PublicBookingScope): Promise<void>
   createApiKey(input: {
     serviceUserId: string
     roleId: string
@@ -78,8 +78,8 @@ async function ensureInsideTransaction(
         })
       : null
     if (liveKey) return existing
-    await trx.retireCredential(existing.id)
-    await trx.retireApiKey(existing.apiKeyId)
+    await trx.retireCredential(existing.id, scope)
+    await trx.retireApiKey(existing.apiKeyId, scope)
   }
 
   const key = await trx.createApiKey({
@@ -172,15 +172,25 @@ export function createPublicBookingIdentityDependencies(
             if (!key || key.rolesJson?.length !== 1 || key.rolesJson[0] !== roleId) return null
             return { id: key.id }
           },
-          retireCredential: async (id) => {
-            const existing = await transactionEm.findOne(ServiceCredential, { id })
+          retireCredential: async (id, scope) => {
+            if (!scope?.tenantId || !scope.organizationId) return
+            const existing = await transactionEm.findOne(ServiceCredential, {
+              id,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+            } as FilterQuery<ServiceCredential>)
             if (!existing) return
             existing.deletedAt = new Date()
             existing.updatedAt = new Date()
             transactionEm.persist(existing)
           },
-          retireApiKey: async (id) => {
-            const existing = await transactionEm.findOne(ApiKey, { id })
+          retireApiKey: async (id, scope) => {
+            if (!scope?.tenantId || !scope.organizationId) return
+            const existing = await transactionEm.findOne(ApiKey, {
+              id,
+              tenantId: scope.tenantId,
+              organizationId: scope.organizationId,
+            } as FilterQuery<ApiKey>)
             if (!existing || existing.deletedAt) return
             existing.deletedAt = new Date()
             transactionEm.persist(existing)
