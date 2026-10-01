@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CrudForm, type CrudField, type CrudFieldOption, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
 import { createCrud, deleteCrud, fetchCrudList, updateCrud } from '@open-mercato/ui/backend/utils/crud'
+import { createCrudFormError } from '@open-mercato/ui/backend/utils/serverErrors'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { surfaceRecordConflict } from '@open-mercato/ui/backend/conflicts'
@@ -47,6 +48,36 @@ import {
   instantOffsetInTimeZone,
   toVisitLocalDateTime,
 } from '../lib/visitDateTime'
+import {
+  formatVisitConflictRejection,
+  readVisitConflictRejection,
+} from '../lib/visitLifecycleUi'
+
+/**
+ * Turns a 422 conflict rejection into a localized, itemized form error.
+ *
+ * The server re-evaluates conflicts under the slot lock, so a save can be refused even when the
+ * availability check came back clean — or, on the degraded path, never ran at all. Without this
+ * the operator sees the raw token (`visit_conflict_unacknowledged`): `raiseCrudError` puts it in
+ * `Error.message` and `CrudForm` renders it through `t(msg, msg)`, where it is not a key. The
+ * `conflicts` array riding on the same error is the only record of what actually clashed, and
+ * the spec requires it to be shown again.
+ */
+async function withVisitConflictErrors(
+  save: () => Promise<unknown>,
+  t: (key: string, fallback?: string) => string,
+): Promise<void> {
+  try {
+    await save()
+  } catch (error) {
+    const rejection = readVisitConflictRejection(error)
+    if (!rejection) throw error
+    throw createCrudFormError(formatVisitConflictRejection(rejection, t), undefined, {
+      status: 422,
+      details: rejection.conflicts,
+    })
+  }
+}
 
 const LIST_HREF = '/backend/patient/visits'
 const ENTITY_ID = extensionPoints.hosts.visitForm.entityId.replace('.', ':')
@@ -200,17 +231,31 @@ function useVisitFields(
     },
     {
       id: 'teamMemberId',
-      label: t('patient.visits.fields.teamMember'),
+      // `label: ''` plus a `FormField` wrapper, the same pattern as the date-time and
+      // description fields above. `CrudForm` renders a custom field's label as a bare
+      // `<label>` with no `htmlFor`, so the built-in label is not programmatically associated
+      // and a screen reader announces this required combobox as "combobox, blank" — on the
+      // field that decides whose calendar gets booked.
+      label: '',
       type: 'custom',
       required: true,
-      component: ({ value, setValue, disabled, values }) => (
-        <VisitTeamMemberField
-          value={typeof value === 'string' ? value : ''}
-          onChange={(next) => setValue(next)}
-          patientId={typeof values?.patientId === 'string' ? values.patientId : undefined}
+      rendersOwnError: true,
+      component: ({ value, setValue, error, disabled, values }) => (
+        <FormField
+          id="patient-visit-teamMemberId"
+          label={t('patient.visits.fields.teamMember')}
+          required
+          error={error}
           disabled={disabled}
-          historicalOption={referenceSeeds?.teamMember}
-        />
+        >
+          <VisitTeamMemberField
+            value={typeof value === 'string' ? value : ''}
+            onChange={(next) => setValue(next)}
+            patientId={typeof values?.patientId === 'string' ? values.patientId : undefined}
+            disabled={disabled}
+            historicalOption={referenceSeeds?.teamMember}
+          />
+        </FormField>
       ),
     },
     {
@@ -275,16 +320,23 @@ function useVisitFields(
     },
     {
       id: 'serviceProductIds',
-      label: t('patient.visits.services.label'),
+      label: '',
       type: 'custom',
       rendersOwnError: true,
-      component: ({ value, setValue, disabled }) => (
-        <VisitServicesField
-          value={Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []}
-          onChange={setValue}
+      component: ({ value, setValue, error, disabled }) => (
+        <FormField
+          id="patient-visit-serviceProductIds"
+          label={t('patient.visits.services.label')}
+          error={error}
           disabled={disabled}
-          seedServices={seedServices}
-        />
+        >
+          <VisitServicesField
+            value={Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []}
+            onChange={setValue}
+            disabled={disabled}
+            seedServices={seedServices}
+          />
+        </FormField>
       ),
     },
     accessibleDescriptionField({
@@ -365,7 +417,7 @@ export function VisitCreateForm({
       successRedirect={embedded ? undefined : `${LIST_HREF}?flash=${encodeURIComponent(t('patient.visits.flash.created'))}&type=success`}
       onSubmit={async (values) => {
         const schedule = buildSchedule(values, t)
-        await createCrud('patient/visits', {
+        await withVisitConflictErrors(() => createCrud('patient/visits', {
           patientId: values.patientId,
           teamMemberId: values.teamMemberId,
           resourceId: orNull(values.resourceId),
@@ -377,7 +429,7 @@ export function VisitCreateForm({
           ...(values.availabilityGate?.conflictOverride
             ? { conflictOverride: values.availabilityGate.conflictOverride }
             : {}),
-        })
+        }), t)
         if (embedded) flash(t('patient.visits.flash.created'), 'success')
         await onSaved?.()
       }}
@@ -594,7 +646,7 @@ export function VisitDetailForm({
       )}
       onSubmit={async (values) => {
         const schedule = buildSchedule(values, t)
-        await updateCrud('patient/visits', {
+        await withVisitConflictErrors(() => updateCrud('patient/visits', {
           id: record.id,
           expectedUpdatedAt: values.updatedAt ?? record.updatedAt,
           teamMemberId: values.teamMemberId,
@@ -606,7 +658,7 @@ export function VisitDetailForm({
           ...(values.availabilityGate?.conflictOverride
             ? { conflictOverride: values.availabilityGate.conflictOverride }
             : {}),
-        })
+        }), t)
         if (embedded) flash(t('patient.visits.flash.updated'), 'success')
         await onSaved?.()
       }}

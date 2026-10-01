@@ -375,6 +375,7 @@
   "patient.visits.conflicts.reason": "Override reason",
   "patient.visits.conflicts.reasonRequired": "Enter a reason for this scheduling exception.",
   "patient.visits.conflicts.shortcutHint": "Press Ctrl+Enter or Command+Enter to confirm. Press Escape to close.",
+  "patient.visits.conflicts.staleHint": "Review the warnings above and confirm them again, or choose another time.",
   "patient.visits.conflicts.title": "Availability check",
   "patient.visits.conflicts.unknown": "The visit can still be saved, but availability was not verified. Double-booking checks remain active when possible.",
   "patient.visits.conflicts.unknownTitle": "Availability check unavailable",

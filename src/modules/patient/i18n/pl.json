@@ -375,6 +375,7 @@
   "patient.visits.conflicts.reason": "Powód nadpisania",
   "patient.visits.conflicts.reasonRequired": "Podaj powód tego wyjątku w grafiku.",
   "patient.visits.conflicts.shortcutHint": "Naciśnij Ctrl+Enter lub Command+Enter, aby potwierdzić. Escape zamyka dialog.",
+  "patient.visits.conflicts.staleHint": "Przejrzyj powyższe ostrzeżenia i potwierdź je ponownie albo wybierz inny termin.",
   "patient.visits.conflicts.title": "Sprawdzenie dostępności",
   "patient.visits.conflicts.unknown": "Wizytę nadal można zapisać, ale dostępność nie została zweryfikowana. Kontrola podwójnej rezerwacji działa, gdy jest dostępna.",
   "patient.visits.conflicts.unknownTitle": "Sprawdzenie dostępności jest niedostępne",

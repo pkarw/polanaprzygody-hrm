@@ -96,6 +96,12 @@ export function VisitAvailabilityCheck({
     const startsAtLocal = stringValue(values, 'startsAtLocal')
     const timeZone = stringValue(values, 'timeZone')
     if (!teamMemberId || !startsAtLocal || !timeZone || disabled) return null
+    // Gate on `canManage`, not just `disabled`: `CrudForm` never derives a custom field's
+    // `disabled` from `readOnly` (that is an overlay plus focus capture), so on a read-only
+    // detail page this would otherwise fire a probe requiring `patient.visits.manage` — a 403
+    // per page view, shown to the operator as "availability unavailable, the visit can still be
+    // saved", which is the opposite of true for someone who cannot save at all.
+    if (access.status === 'ready' && !access.canManage) return null
     try {
       const schedule = buildVisitSchedule({
         startsAtLocal,
@@ -118,7 +124,7 @@ export function VisitAvailabilityCheck({
     } catch {
       return null
     }
-  }, [disabled, excludeVisitId, t, values])
+  }, [access.canManage, access.status, disabled, excludeVisitId, t, values])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedUrl(probeUrl), 300)
