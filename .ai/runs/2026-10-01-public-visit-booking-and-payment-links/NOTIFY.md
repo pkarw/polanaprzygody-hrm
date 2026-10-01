@@ -95,3 +95,10 @@
 - Step 6.6 fixed both final review findings: exact checkout gateway configuration mapping and the declared typed payment-completion event.
 - Focused regression tests passed 16/16. The complete configured gate then passed with 57 Jest suites / 495 tests, and the restarted production runtime passed the full Playwright suite with 104 passes, 4 declared skips, and fresh screenshots.
 - Decision: rerun the clean review on the exact `1045d5e` implementation before entering read-only auto-QA.
+
+## 2026-10-01T22:14:03Z — final gate, review, and UI QA passed
+
+- Steps 6.7–6.11 close the final review findings: Warsaw UI/server alignment, indexed scoped customer matching and backfill, example-template reconciliation, and exact missing-gateway integration behavior.
+- Full configured gate passed at `5149785`: generate, typecheck, lint, design-system (398 files), Jest (58 suites / 504 tests), and production build.
+- Final no-retry browser suite passed with 104 tests, 4 declared conditional skips, and 0 failures. Clean `--no-examples` and standard installations both proved operational app-owned seeds.
+- Independent auto-review returned APPROVE with no findings. UI QA returned PASS; three screenshots and the scenario report were published inline at https://github.com/pkarw/polanaprzygody-hrm/pull/13#issuecomment-5941703476.

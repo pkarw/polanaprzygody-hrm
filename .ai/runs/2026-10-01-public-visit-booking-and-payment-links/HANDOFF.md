@@ -1,34 +1,33 @@
 # Handoff — 2026-10-01-public-visit-booking-and-payment-links
 
-**Last updated:** 2026-10-01T21:12:13Z
+**Last updated:** 2026-10-01T22:14:03Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
 **PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
-**Current phase/step:** Auto-review fixes and full re-gate passed; clean re-review and UI QA are next
-**Last implementation commit:** `1045d5e` — `fix(patient): preserve payment completion contracts`
+**Current phase/step:** Complete — final gate, independent auto-review, and browser QA passed
+**Last implementation commit:** `5149785` — `test(booking): verify missing gateway fails closed`
 
 ## What just happened
 
-- Every planned Step 1.1–6.6 is complete and pushed.
-- Review fixes harden streamed-body bounds, exact tenant/organization credential retirement, Warsaw/DST windows, payment-state serialization, durable e-mail recovery, and supported installation defaults.
-- A second clean `mercato init --no-examples` run created eight service products, nine branded checkout templates, four therapists, exact booking mappings, and the checkout/visit custom-field definitions needed by runtime link creation.
-- Real Chromium passed booking contention and idempotent replay, staff confirmation, branded fixed-price link creation, public pay-page rendering, durable e-mail enqueue/replay, and unpaid-link deactivation.
-- Focused validation is green: 42 Jest tests, TypeScript, ESLint, and the fresh-install Playwright journey.
-- The complete post-review re-gate is green: generate, typecheck, lint, design-system, 57 Jest suites / 495 tests, production build, and 104 passing integration/browser cases with 4 declared conditional skips.
+- Every planned Step 1.1–6.11 is complete and pushed.
+- Review fixes harden streamed-body bounds, exact tenant/organization credential retirement, Warsaw/DST windows, payment-state serialization, durable e-mail recovery, indexed customer matching, and supported installation defaults.
+- Clean `--no-examples` and standard installations proved all Polana templates, mappings, custom fields, identities, and credentials are seeded idempotently; checkout example templates are reconciled inactive after example seeding.
+- The full configured gate is green: generate, typecheck, lint, design-system, 58 Jest suites / 504 tests, and production build.
+- The final no-retry Chromium suite is green: 104 passed, 4 declared conditional skips, 0 failed. Mobile booking, authenticated visit controls, configured payment-page rendering, and fail-closed missing-gateway behavior are documented on PR #13.
+- Independent final auto-review at `5149785` returned APPROVE with no findings.
 
 ## Next concrete action
 
-- Complete the clean re-review, then run `om-auto-qa-pr 13 --self-qa-signoff` and merge once GitHub checks are green.
-- When the review, UI QA, and required GitHub checks are green, mark PR #13 ready and merge it into the configured base branch.
+- Mark PR #13 ready and merge it into the configured `main` branch; no implementation work remains.
 
 ## Blockers / open questions
 
-- No product blocker. Docker is unavailable, so the native Testcontainers wrapper cannot provision its own environment; use the equivalent run-owned PostgreSQL 17 environment and record that limitation.
+- None. Docker is unavailable, so the native Testcontainers wrapper could not provision its own environment; the complete repository suite passed against an equivalent run-owned PostgreSQL 17 environment.
 
 ## Environment caveats
 
-- The final-gate production server is on `127.0.0.1:3215` and uses disposable database `pbook_final_gate2` in PostgreSQL on port 55439.
-- Staged Chromium libraries are provided through `LD_LIBRARY_PATH`; keep that setting for the final QA pass.
-- Stop the server and `/tmp/pbook-checkpoint1.qczDQk/postgres` cluster after the PR is merged.
+- The final-gate production server is on `127.0.0.1:3215` and uses a disposable database in PostgreSQL on port 55439.
+- Staged Chromium libraries were provided through `LD_LIBRARY_PATH`.
+- Stop the run-owned server and `/tmp/pbook-final.UHd1Fb/postgres` cluster after the PR is merged.
 
 ## Worktree
 

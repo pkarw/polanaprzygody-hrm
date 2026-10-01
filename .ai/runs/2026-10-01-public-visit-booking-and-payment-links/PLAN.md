@@ -36,11 +36,11 @@
 | 6 | 6.4-review-fix | Harden durable email recovery and traceability | dispatch:capable | done | f888688 |
 | 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | dd4b5d4 |
 | 6 | 6.6-review-fix | Preserve gateway errors and declared payment-completion events | inline | done | 1045d5e |
-| 6 | 6.7-review-fix | Align the public UI and server Warsaw booking window | inline | done | this commit |
-| 6 | 6.8-review-fix | Index scoped customer identities for public booking | inline | done | this commit |
-| 6 | 6.9-review-fix | Backfill customer identities after fresh-install operational fixtures | inline | done | this commit |
-| 6 | 6.10-review-fix | Reconcile checkout examples after operational template seeding | inline | done | this commit |
-| 6 | 6.11-review-fix | Align fresh-install integration with fail-closed gateway contract | inline | done | this commit |
+| 6 | 6.7-review-fix | Align the public UI and server Warsaw booking window | inline | done | 823f9aa |
+| 6 | 6.8-review-fix | Index scoped customer identities for public booking | inline | done | aa8734a |
+| 6 | 6.9-review-fix | Backfill customer identities after fresh-install operational fixtures | inline | done | 05ee10f |
+| 6 | 6.10-review-fix | Reconcile checkout examples after operational template seeding | inline | done | e52802f |
+| 6 | 6.11-review-fix | Align fresh-install integration with fail-closed gateway contract | inline | done | 5149785 |
 
 ## Goal
 
