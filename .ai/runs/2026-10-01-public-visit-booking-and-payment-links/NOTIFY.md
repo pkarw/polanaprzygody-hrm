@@ -47,3 +47,15 @@
 - Verification: generate, 52 focused public-booking/bootstrap tests, typecheck, lint, production build, reviewed two-table migration/snapshot, and isolated fresh-install seed read-back all passed.
 - Decision: materialize encryption maps before secret storage; provision the exact six-feature principal through installed public seams; commit API key and encrypted credential atomically with race recovery.
 - UI evidence skipped: this phase changed only persistence/setup contracts; Phase 3 owns the first rendered public surface and screenshots.
+
+## 2026-10-01T16:56:30Z — Step 4.1 contract review delegated
+
+- `/root/submit_contract_review`: read-only inspection of exact customer, patient, visit, intake, origin, limiter, idempotency, compensation, and test seams for Step 4.1.
+- Scope is read-only and disjoint from checkpoint files and the main session's implementation; parallelism remains within the cap.
+
+## 2026-10-01T17:04:11Z — checkpoint 3 passed
+
+- Steps: 3.1–3.3 (`ca990de..2c0890f`).
+- Verification: generate, 11 focused public-auth/discovery/pricing/wizard tests, typecheck, lint, design-system check, and production build all passed.
+- UI evidence: production runtime and real Chromium passed at wide and mobile viewports; home, live-pricing rendering, therapist selection, available-day focus, slot selection, and success feedback were captured.
+- Test-data decision: pricing/availability fixtures were intercepted at the public HTTP boundary because the repository prohibits applying the new migration only for screenshot data; real API behavior remains covered by focused tests and Phase 5 integration tests.
