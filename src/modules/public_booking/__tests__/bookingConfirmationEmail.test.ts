@@ -4,6 +4,7 @@ import { describe, expect, it, jest } from '@jest/globals'
 import BookingConfirmedEmail from '../emails/BookingConfirmedEmail'
 import {
   processBookingConfirmationDelivery,
+  recoverAbandonedBookingConfirmation,
   type BookingConfirmationDeliveryDependencies,
 } from '../lib/bookingConfirmationEmailDelivery'
 
@@ -16,23 +17,30 @@ const renderedDelivery = {
   room: 'Gabinet logopedy',
 }
 
-function harness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' | null) {
+function harness(
+  initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' | null,
+  claimJobId: string | null = initial === 'sending' ? 'job-owner' : null,
+  jobId = 'job-owner',
+) {
   let status = initial
+  let owner = claimJobId
   const trace: string[] = []
   const logTerminal = jest.fn()
   const send = jest.fn(async () => { trace.push('provider') })
   const deps: BookingConfirmationDeliveryDependencies = {
-    readStatus: async () => status,
+    jobId,
+    readState: async () => status ? { status, claimJobId: owner } : null,
     loadDelivery: async () => ({ ok: true, delivery: renderedDelivery }),
-    claimSending: async () => {
+    claimSending: async (nextJobId) => {
       trace.push('claim:committed')
       if (status !== 'pending') return false
       status = 'sending'
+      owner = nextJobId
       return true
     },
-    markSent: async () => {
+    markSent: async (expectedJobId) => {
       trace.push('sent:committed')
-      if (status !== 'sending') return false
+      if (status !== 'sending' || owner !== expectedJobId) return false
       status = 'sent'
       return true
     },
@@ -40,7 +48,8 @@ function harness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous
       status = 'failed'
       return true
     },
-    markAmbiguous: async () => {
+    markAmbiguous: async (expectedJobId) => {
+      if (status !== 'sending' || owner !== expectedJobId) return false
       status = 'ambiguous'
       trace.push('ambiguous:committed')
       return true
@@ -48,7 +57,7 @@ function harness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous
     send,
     logTerminal,
   }
-  return { deps, trace, send, logTerminal, status: () => status }
+  return { deps, trace, send, logTerminal, status: () => status, owner: () => owner }
 }
 
 describe('public booking confirmation email', () => {
@@ -77,10 +86,15 @@ describe('public booking confirmation email', () => {
   it('uses a process-memoized module queue and persists pending before enqueue', () => {
     const queue = readFileSync(path.join(__dirname, '..', 'lib', 'bookingConfirmationEmailQueue.ts'), 'utf8')
     const subscriber = readFileSync(path.join(__dirname, '..', 'subscribers', 'visit-confirmed-email.ts'), 'utf8')
+    const producer = readFileSync(path.join(__dirname, '..', 'lib', 'bookingConfirmationEmail.ts'), 'utf8')
     expect(queue).toContain('createModuleQueue<BookingConfirmationEmailJob>')
     expect(queue).toContain('deliveryId: string')
     expect(queue).not.toContain('recipient:')
     expect(queue).not.toContain('requesterName:')
+    expect(producer).not.toContain('.process(')
+    expect(producer).not.toContain("../workers/send-email.worker")
+    expect(readFileSync(path.join(__dirname, '..', 'workers', 'send-email.worker.ts'), 'utf8'))
+      .toContain('onJobAbandoned: handleAbandonedBookingConfirmationJob')
     expect(subscriber.indexOf("confirmationEmailDeliveryStatus = 'pending'"))
       .toBeLessThan(subscriber.indexOf('await dispatchBookingConfirmationEmailJob'))
   })
@@ -95,6 +109,15 @@ describe('public booking confirmation email', () => {
     expect(crashed.send).not.toHaveBeenCalled()
     expect(crashed.status()).toBe('ambiguous')
     expect(crashed.logTerminal).toHaveBeenCalledWith('ambiguous', 'retry_after_sending_claim')
+  })
+
+  it('does not poison an active claim when a foreign duplicate job observes it', async () => {
+    const foreign = harness('sending', 'job-owner', 'job-duplicate')
+    await processBookingConfirmationDelivery(foreign.deps)
+    expect(foreign.send).not.toHaveBeenCalled()
+    expect(foreign.status()).toBe('sending')
+    expect(foreign.owner()).toBe('job-owner')
+    expect(foreign.logTerminal).not.toHaveBeenCalled()
   })
 
   it('commits the sending claim before provider I/O and finalizes afterward', async () => {
@@ -124,12 +147,73 @@ describe('public booking confirmation email', () => {
     expect(JSON.stringify(provider.logTerminal.mock.calls)).not.toContain('provider detail')
   })
 
+  it('bounds provider I/O and makes timeout terminal ambiguous', async () => {
+    const timedOut = harness('pending')
+    timedOut.deps.providerTimeoutMs = 1
+    timedOut.deps.send = () => new Promise<void>(() => undefined)
+    await processBookingConfirmationDelivery(timedOut.deps)
+    expect(timedOut.status()).toBe('ambiguous')
+    expect(timedOut.logTerminal).toHaveBeenCalledWith(
+      'ambiguous',
+      'provider_timeout',
+      'EmailProviderTimeoutError',
+    )
+  })
+
+  it('recovers abandonment from pending or the matching sending owner only', async () => {
+    const run = async (
+      initial: 'pending' | 'sending' | 'sent',
+      owner: string | null,
+      abandonedJobId: string | null,
+    ) => {
+      let status: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' = initial
+      const deps = {
+        markPendingFailed: async () => {
+          if (status !== 'pending') return false
+          status = 'failed'
+          return true
+        },
+        markOwnedSendingAmbiguous: async (jobId: string) => {
+          if (status !== 'sending' || owner !== jobId) return false
+          status = 'ambiguous'
+          return true
+        },
+        logTerminal: jest.fn(),
+      }
+      await recoverAbandonedBookingConfirmation(abandonedJobId, deps)
+      await recoverAbandonedBookingConfirmation(abandonedJobId, deps)
+      return status
+    }
+
+    expect(await run('pending', null, 'job-1')).toBe('failed')
+    expect(await run('sending', 'job-1', 'job-1')).toBe('ambiguous')
+    expect(await run('sending', 'job-owner', 'job-foreign')).toBe('sending')
+    expect(await run('sent', 'job-1', 'job-1')).toBe('sent')
+  })
+
   it('scopes every operation-state read and transition by delivery, tenant and organization', () => {
     const worker = readFileSync(path.join(__dirname, '..', 'workers', 'send-email.worker.ts'), 'utf8')
     expect(worker).toContain('id: payload.deliveryId')
     expect(worker).toContain('tenantId: payload.tenantId')
     expect(worker).toContain('organizationId: payload.organizationId')
+    expect(worker).toContain('confirmationEmailClaimJobId: expectedClaimJobId')
+    expect(worker).toContain('confirmationEmailClaimJobId: nextClaimJobId')
     expect(worker).not.toContain('pg_advisory_xact_lock')
+  })
+
+  it('keeps the ownership column additive and the approved spec traceable', () => {
+    const migration = readFileSync(path.join(
+      __dirname, '..', 'migrations', 'Migration20261001194830_public_booking.ts',
+    ), 'utf8')
+    const spec = readFileSync(path.join(
+      __dirname, '..', '..', '..', '..', '.ai', 'specs', '2026-10-01-public-visit-booking-website.md',
+    ), 'utf8')
+    expect(migration).toContain('add "confirmation_email_claim_job_id" text null')
+    expect(migration).not.toContain('alter column')
+    expect(spec).toContain('process-memoized `createModuleQueue`')
+    expect(spec).toContain('claimJobId')
+    expect(spec).toContain('onJobAbandoned')
+    expect(spec).toContain('provider timeout')
   })
 
   it('logs a scope-safe terminal diagnostic when the scoped operation is absent', async () => {

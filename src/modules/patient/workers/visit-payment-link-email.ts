@@ -1,5 +1,5 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
-import type { JobContext, QueuedJob, WorkerMeta } from '@open-mercato/queue'
+import type { AbandonedJobInfo, JobContext, QueuedJob, WorkerMeta } from '@open-mercato/queue'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { loadCustomFieldValues } from '@open-mercato/shared/lib/crud/custom-fields'
 import { sendEmail } from '@open-mercato/shared/lib/email/send'
@@ -22,7 +22,9 @@ import {
 } from '../lib/visitPaymentEmailQueue'
 import {
   processVisitPaymentEmailDelivery,
+  recoverAbandonedVisitPaymentEmail,
   type VisitPaymentEmailDelivery,
+  type VisitPaymentEmailDeliveryState,
   type VisitPaymentEmailLoadResult,
 } from '../lib/visitPaymentEmailDelivery'
 import { PATIENT_VISIT_ENTITY_ID } from '../lib/visitPaymentFields'
@@ -31,6 +33,7 @@ export const metadata: WorkerMeta = {
   queue: VISIT_PAYMENT_EMAIL_QUEUE,
   id: 'patient:visit-payment-link-email',
   concurrency: 5,
+  onJobAbandoned: handleAbandonedVisitPaymentEmailJob,
 }
 
 const logger = createLogger('patient.visit_payment_email.worker')
@@ -155,18 +158,23 @@ async function transitionVisitPaymentEmailDelivery(
   from: PatientVisitPaymentEmailDeliveryStatus,
   to: PatientVisitPaymentEmailDeliveryStatus,
   code?: string,
+  expectedClaimJobId?: string | null,
+  nextClaimJobId?: string,
 ): Promise<boolean> {
   const em = rootEm.fork()
   await em.begin()
   try {
     const now = new Date()
-    const changed = await em.nativeUpdate(PatientVisitPaymentEmailDelivery, {
+    const where = {
       id: payload.deliveryId,
       tenantId: payload.tenantId,
       organizationId: payload.organizationId,
       status: from,
-    } as FilterQuery<PatientVisitPaymentEmailDelivery>, {
+      ...(expectedClaimJobId !== undefined ? { claimJobId: expectedClaimJobId } : {}),
+    } as FilterQuery<PatientVisitPaymentEmailDelivery>
+    const changed = await em.nativeUpdate(PatientVisitPaymentEmailDelivery, where, {
       status: to,
+      ...(nextClaimJobId !== undefined ? { claimJobId: nextClaimJobId } : {}),
       claimedAt: to === 'sending' ? now : undefined,
       sentAt: to === 'sent' ? now : undefined,
       failedAt: to === 'failed' || to === 'ambiguous' ? now : undefined,
@@ -181,16 +189,16 @@ async function transitionVisitPaymentEmailDelivery(
   }
 }
 
-async function readDeliveryStatus(
+async function readDeliveryState(
   em: EntityManager,
   payload: VisitPaymentEmailJob,
-): Promise<PatientVisitPaymentEmailDeliveryStatus | null> {
+): Promise<VisitPaymentEmailDeliveryState | null> {
   const delivery = await em.findOne(PatientVisitPaymentEmailDelivery, {
     id: payload.deliveryId,
     tenantId: payload.tenantId,
     organizationId: payload.organizationId,
-  } as FilterQuery<PatientVisitPaymentEmailDelivery>, { fields: ['status'] })
-  return delivery?.status ?? null
+  } as FilterQuery<PatientVisitPaymentEmailDelivery>, { fields: ['status', 'claimJobId'] })
+  return delivery ? { status: delivery.status, claimJobId: delivery.claimJobId ?? null } : null
 }
 
 async function sendVisitPaymentEmail(delivery: VisitPaymentEmailDelivery, payload: VisitPaymentEmailJob): Promise<void> {
@@ -217,19 +225,26 @@ async function sendVisitPaymentEmail(delivery: VisitPaymentEmailDelivery, payloa
 
 export default async function handleVisitPaymentEmailJob(
   job: QueuedJob<VisitPaymentEmailJob>,
-  _ctx: JobContext,
+  ctx: JobContext,
 ): Promise<void> {
   const container = await createRequestContainer()
   const rootEm = container.resolve('em') as EntityManager
   const queryEngine = container.resolve('queryEngine') as QueryEngine
   const payload = job.payload
   await processVisitPaymentEmailDelivery({
-    readStatus: () => readDeliveryStatus(rootEm.fork(), payload),
+    jobId: ctx.jobId,
+    readState: () => readDeliveryState(rootEm.fork(), payload),
     loadDelivery: () => loadVisitPaymentEmailDelivery(payload, rootEm.fork(), queryEngine),
-    claimSending: () => transitionVisitPaymentEmailDelivery(rootEm, payload, 'pending', 'sending'),
-    markSent: () => transitionVisitPaymentEmailDelivery(rootEm, payload, 'sending', 'sent'),
+    claimSending: (jobId) => transitionVisitPaymentEmailDelivery(
+      rootEm, payload, 'pending', 'sending', undefined, null, jobId,
+    ),
+    markSent: (jobId) => transitionVisitPaymentEmailDelivery(
+      rootEm, payload, 'sending', 'sent', undefined, jobId,
+    ),
     markFailed: (code) => transitionVisitPaymentEmailDelivery(rootEm, payload, 'pending', 'failed', code),
-    markAmbiguous: (code) => transitionVisitPaymentEmailDelivery(rootEm, payload, 'sending', 'ambiguous', code),
+    markAmbiguous: (jobId, code) => transitionVisitPaymentEmailDelivery(
+      rootEm, payload, 'sending', 'ambiguous', code, jobId,
+    ),
     send: (delivery) => sendVisitPaymentEmail(delivery, payload),
     logTerminal: (status, code, errorName) => {
       logger.error('Visit-payment-email delivery reached a terminal state', {
@@ -239,6 +254,42 @@ export default async function handleVisitPaymentEmailJob(
         status,
         code,
         ...(errorName ? { errorName } : {}),
+      })
+    },
+  })
+}
+
+function isVisitPaymentEmailJob(payload: unknown): payload is VisitPaymentEmailJob {
+  if (!payload || typeof payload !== 'object') return false
+  const candidate = payload as Record<string, unknown>
+  return typeof candidate.deliveryId === 'string'
+    && typeof candidate.tenantId === 'string'
+    && typeof candidate.organizationId === 'string'
+}
+
+export async function handleAbandonedVisitPaymentEmailJob(
+  rawPayload: unknown,
+  info: AbandonedJobInfo,
+): Promise<void> {
+  if (!isVisitPaymentEmailJob(rawPayload)) return
+  const payload = rawPayload
+  const container = await createRequestContainer()
+  const rootEm = container.resolve('em') as EntityManager
+  await recoverAbandonedVisitPaymentEmail(info.jobId, {
+    markPendingFailed: (code) => transitionVisitPaymentEmailDelivery(
+      rootEm, payload, 'pending', 'failed', code,
+    ),
+    markOwnedSendingAmbiguous: (jobId, code) => transitionVisitPaymentEmailDelivery(
+      rootEm, payload, 'sending', 'ambiguous', code, jobId,
+    ),
+    logTerminal: (status, code) => {
+      logger.error('Visit-payment-email delivery recovered from an abandoned queue job', {
+        deliveryId: payload.deliveryId,
+        tenantId: payload.tenantId,
+        organizationId: payload.organizationId,
+        jobId: info.jobId,
+        status,
+        code,
       })
     },
   })

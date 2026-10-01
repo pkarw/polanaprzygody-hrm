@@ -47,6 +47,7 @@ export class BookingIntake {
     | 'requesterEmailSnapshot'
     | 'confirmationEmailDeliveryStatus'
     | 'confirmationEmailClaimedAt'
+    | 'confirmationEmailClaimJobId'
     | 'confirmationEmailSentAt'
     | 'confirmationEmailFailedAt'
     | 'confirmationEmailFailureCode'
@@ -104,6 +105,10 @@ export class BookingIntake {
 
   @Property({ name: 'confirmation_email_claimed_at', type: Date, nullable: true })
   confirmationEmailClaimedAt?: Date | null
+
+  /** Queue job that owns the provider call after the committed sending claim. */
+  @Property({ name: 'confirmation_email_claim_job_id', type: 'text', nullable: true })
+  confirmationEmailClaimJobId?: string | null
 
   /** Set only after the provider call returns successfully. */
   @Property({ name: 'confirmation_email_sent_at', type: Date, nullable: true })

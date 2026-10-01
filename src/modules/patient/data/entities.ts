@@ -1046,6 +1046,7 @@ export class PatientVisitPaymentEmailDelivery {
   [OptionalProps]?:
     | 'status'
     | 'claimedAt'
+    | 'claimJobId'
     | 'sentAt'
     | 'failedAt'
     | 'failureCode'
@@ -1077,6 +1078,10 @@ export class PatientVisitPaymentEmailDelivery {
 
   @Property({ name: 'claimed_at', type: Date, nullable: true })
   claimedAt?: Date | null
+
+  /** Queue job that owns the provider call after the committed sending claim. */
+  @Property({ name: 'claim_job_id', type: 'text', nullable: true })
+  claimJobId?: string | null
 
   @Property({ name: 'sent_at', type: Date, nullable: true })
   sentAt?: Date | null

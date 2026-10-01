@@ -6,7 +6,6 @@ import { conflict } from '@open-mercato/shared/lib/crud/errors'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
 import { createLogger } from '@open-mercato/shared/lib/logger'
 import { PatientVisitPaymentEmailDelivery } from '../data/entities'
-import handleVisitPaymentEmailJob from '../workers/visit-payment-link-email'
 import { requirePatientScope } from './commandSupport'
 import type { VisitPaymentLink } from './visitPaymentLinkService'
 import {
@@ -17,7 +16,6 @@ import { dispatchDurablePaymentEmailOperation } from './visitPaymentEmailOperati
 import { assertPaymentLinkCanBeEmailed } from './visitPaymentEmailPolicy'
 
 const logger = createLogger('patient.visit_payment_email.dispatch')
-const LOCAL_WORKER_PROMISE_KEY = '__patientVisitPaymentEmailLocalWorker__' as const
 
 export type VisitPaymentLinkEmailService = {
   enqueueForVisit(
@@ -28,30 +26,9 @@ export type VisitPaymentLinkEmailService = {
   ): Promise<void>
 }
 
-async function ensureLocalWorkerStarted(): Promise<void> {
-  if (process.env.QUEUE_STRATEGY === 'async') return
-  const globalStore = globalThis as typeof globalThis & {
-    [LOCAL_WORKER_PROMISE_KEY]?: Promise<void>
-  }
-  if (!globalStore[LOCAL_WORKER_PROMISE_KEY]) {
-    globalStore[LOCAL_WORKER_PROMISE_KEY] = getVisitPaymentEmailQueue()
-      .process(handleVisitPaymentEmailJob)
-      .then(() => undefined)
-      .catch((error) => {
-        delete globalStore[LOCAL_WORKER_PROMISE_KEY]
-        logger.error('Failed to start local visit-payment-email worker', {
-          errorName: error instanceof Error ? error.name : 'unknown',
-        })
-        throw error
-      })
-  }
-  await globalStore[LOCAL_WORKER_PROMISE_KEY]
-}
-
 async function dispatchVisitPaymentEmailJob(payload: VisitPaymentEmailJob): Promise<void> {
   try {
     await getVisitPaymentEmailQueue().enqueue(payload)
-    await ensureLocalWorkerStarted()
   } catch (error) {
     // `pending` was committed first, so the caller can retry with the same key.
     logger.error('Failed to enqueue visit-payment-email delivery', {
@@ -98,6 +75,7 @@ async function findOrCreateDelivery(
       paymentLinkId: input.paymentLinkId,
       operationKey: input.operationKey,
       status: 'pending',
+      claimJobId: null,
       claimedAt: null,
       sentAt: null,
       failedAt: null,

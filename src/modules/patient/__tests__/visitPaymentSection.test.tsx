@@ -90,6 +90,56 @@ describe('VisitPaymentSection', () => {
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 
+  it('retains the operation key after an unknown transport failure', async () => {
+    apiCall
+      .mockRejectedValueOnce(new TypeError('network connection lost'))
+      .mockResolvedValueOnce({
+        ok: true,
+        updatedAt: visit.updatedAt,
+        paymentLink: null,
+        paymentLinkError: null,
+        paymentLinkEmailQueued: true,
+        paymentLinkEmailError: null,
+      })
+    render(<VisitPaymentSection visit={visit} access={access} onSaved={() => undefined} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' }))
+    await waitFor(() => expect(apiCall).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' }))
+    await waitFor(() => expect(apiCall).toHaveBeenCalledTimes(2))
+
+    const first = apiCall.mock.calls[0]?.[1] as RequestInit
+    const second = apiCall.mock.calls[1]?.[1] as RequestInit
+    expect((second.headers as Record<string, string>)['idempotency-key'])
+      .toBe((first.headers as Record<string, string>)['idempotency-key'])
+  })
+
+  it('rotates the operation key after an explicit terminal conflict', async () => {
+    apiCall
+      .mockRejectedValueOnce({ status: 409, code: 'payment_email_ambiguous' })
+      .mockResolvedValueOnce({
+        ok: true,
+        updatedAt: visit.updatedAt,
+        paymentLink: null,
+        paymentLinkError: null,
+        paymentLinkEmailQueued: true,
+        paymentLinkEmailError: null,
+      })
+    render(<VisitPaymentSection visit={visit} access={access} onSaved={() => undefined} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' }))
+    await waitFor(() => expect(apiCall).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'patient.visits.payment.sendEmail' }))
+    await waitFor(() => expect(apiCall).toHaveBeenCalledTimes(2))
+
+    const first = apiCall.mock.calls[0]?.[1] as RequestInit
+    const second = apiCall.mock.calls[1]?.[1] as RequestInit
+    expect((second.headers as Record<string, string>)['idempotency-key'])
+      .not.toBe((first.headers as Record<string, string>)['idempotency-key'])
+  })
+
   it('renders an empty state and disables generation when the visit has no services', () => {
     render(
       <VisitPaymentSection

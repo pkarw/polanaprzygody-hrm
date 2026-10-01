@@ -2341,6 +2341,23 @@
       "name": "patient_visit_payment_email_deliveries",
       "schema": "public",
       "columns": {
+        "claim_job_id": {
+          "name": "claim_job_id",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "claimed_at": {
           "name": "claimed_at",
           "type": "timestamptz(6)",

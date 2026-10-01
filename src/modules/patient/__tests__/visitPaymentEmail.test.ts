@@ -10,6 +10,7 @@ import {
 import { assertPaymentLinkCanBeEmailed } from '../lib/visitPaymentEmailPolicy'
 import {
   processVisitPaymentEmailDelivery,
+  recoverAbandonedVisitPaymentEmail,
   type VisitPaymentEmailDeliveryDependencies,
 } from '../lib/visitPaymentEmailDelivery'
 
@@ -25,23 +26,30 @@ const renderedDelivery = {
   paymentUrl: link.url,
 }
 
-function workerHarness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' | null) {
+function workerHarness(
+  initial: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' | null,
+  claimJobId: string | null = initial === 'sending' ? 'job-owner' : null,
+  jobId = 'job-owner',
+) {
   let status = initial
+  let owner = claimJobId
   const trace: string[] = []
   const logTerminal = jest.fn()
   const send = jest.fn(async () => { trace.push('provider') })
   const deps: VisitPaymentEmailDeliveryDependencies = {
-    readStatus: async () => status,
+    jobId,
+    readState: async () => status ? { status, claimJobId: owner } : null,
     loadDelivery: async () => ({ ok: true, delivery: renderedDelivery }),
-    claimSending: async () => {
+    claimSending: async (nextJobId) => {
       trace.push('claim:committed')
       if (status !== 'pending') return false
       status = 'sending'
+      owner = nextJobId
       return true
     },
-    markSent: async () => {
+    markSent: async (expectedJobId) => {
       trace.push('sent:committed')
-      if (status !== 'sending') return false
+      if (status !== 'sending' || owner !== expectedJobId) return false
       status = 'sent'
       return true
     },
@@ -49,7 +57,8 @@ function workerHarness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'amb
       status = 'failed'
       return true
     },
-    markAmbiguous: async () => {
+    markAmbiguous: async (expectedJobId) => {
+      if (status !== 'sending' || owner !== expectedJobId) return false
       trace.push('ambiguous:committed')
       status = 'ambiguous'
       return true
@@ -57,7 +66,7 @@ function workerHarness(initial: 'pending' | 'sending' | 'sent' | 'failed' | 'amb
     send,
     logTerminal,
   }
-  return { deps, trace, send, logTerminal, status: () => status }
+  return { deps, trace, send, logTerminal, status: () => status, owner: () => owner }
 }
 
 describe('visit payment email', () => {
@@ -97,17 +106,21 @@ describe('visit payment email', () => {
 
   it('uses a process-memoized module queue with a scalar stable operation id', () => {
     const queue = readFileSync(path.join(__dirname, '..', 'lib', 'visitPaymentEmailQueue.ts'), 'utf8')
+    const producer = readFileSync(path.join(__dirname, '..', 'lib', 'visitPaymentEmail.ts'), 'utf8')
     const worker = readFileSync(path.join(__dirname, '..', 'workers', 'visit-payment-link-email.ts'), 'utf8')
     expect(queue).toContain('createModuleQueue<VisitPaymentEmailJob>')
     expect(queue).toContain('deliveryId: string')
     expect(queue).not.toContain('paymentUrl:')
     expect(queue).not.toContain('recipient:')
+    expect(producer).not.toContain('.process(')
+    expect(producer).not.toContain("../workers/visit-payment-link-email")
     expect(worker).toContain('loadCustomFieldValues({')
     expect(worker).toContain("'customers:customer_entity'")
     expect(worker).toContain("'checkout:checkout_link'")
+    expect(worker).toContain('onJobAbandoned: handleAbandonedVisitPaymentEmailJob')
   })
 
-  it('suppresses duplicates and terminalizes crash recovery without a second provider call', async () => {
+  it('suppresses terminal duplicates and terminalizes a same-job restart without sending', async () => {
     const duplicate = workerHarness('sent')
     await processVisitPaymentEmailDelivery(duplicate.deps)
     expect(duplicate.send).not.toHaveBeenCalled()
@@ -117,6 +130,15 @@ describe('visit payment email', () => {
     expect(crashed.send).not.toHaveBeenCalled()
     expect(crashed.status()).toBe('ambiguous')
     expect(crashed.logTerminal).toHaveBeenCalledWith('ambiguous', 'retry_after_sending_claim')
+  })
+
+  it('leaves an in-flight claim untouched when a different job sees it', async () => {
+    const foreign = workerHarness('sending', 'job-owner', 'job-duplicate')
+    await processVisitPaymentEmailDelivery(foreign.deps)
+    expect(foreign.send).not.toHaveBeenCalled()
+    expect(foreign.status()).toBe('sending')
+    expect(foreign.owner()).toBe('job-owner')
+    expect(foreign.logTerminal).not.toHaveBeenCalled()
   })
 
   it('commits the sending claim before provider I/O and terminalizes provider uncertainty', async () => {
@@ -143,6 +165,51 @@ describe('visit payment email', () => {
     expect(missing.status()).toBe('failed')
     expect(missing.send).not.toHaveBeenCalled()
     expect(missing.logTerminal).toHaveBeenCalledWith('failed', 'recipient_missing')
+  })
+
+  it('bounds provider I/O and makes timeout terminal ambiguous', async () => {
+    const timedOut = workerHarness('pending')
+    timedOut.deps.providerTimeoutMs = 1
+    timedOut.deps.send = () => new Promise<void>(() => undefined)
+    await processVisitPaymentEmailDelivery(timedOut.deps)
+    expect(timedOut.status()).toBe('ambiguous')
+    expect(timedOut.logTerminal).toHaveBeenCalledWith(
+      'ambiguous',
+      'provider_timeout',
+      'EmailProviderTimeoutError',
+    )
+  })
+
+  it('recovers abandoned jobs idempotently without overwriting foreign or terminal state', async () => {
+    const run = async (
+      initial: 'pending' | 'sending' | 'sent',
+      owner: string | null,
+      abandonedJobId: string | null,
+    ) => {
+      let status: 'pending' | 'sending' | 'sent' | 'failed' | 'ambiguous' = initial
+      const logTerminal = jest.fn()
+      const deps = {
+        markPendingFailed: async () => {
+          if (status !== 'pending') return false
+          status = 'failed'
+          return true
+        },
+        markOwnedSendingAmbiguous: async (jobId: string) => {
+          if (status !== 'sending' || owner !== jobId) return false
+          status = 'ambiguous'
+          return true
+        },
+        logTerminal,
+      }
+      await recoverAbandonedVisitPaymentEmail(abandonedJobId, deps)
+      await recoverAbandonedVisitPaymentEmail(abandonedJobId, deps)
+      return { status, logTerminal }
+    }
+
+    expect((await run('pending', null, 'job-1')).status).toBe('failed')
+    expect((await run('sending', 'job-1', 'job-1')).status).toBe('ambiguous')
+    expect((await run('sending', 'job-owner', 'job-foreign')).status).toBe('sending')
+    expect((await run('sent', 'job-1', 'job-1')).status).toBe('sent')
   })
 
   it('keeps pending recoverable after enqueue failure, isolates scope, and allows intentional resend', async () => {
@@ -207,6 +274,23 @@ describe('visit payment email', () => {
     expect(worker).toContain('id: payload.deliveryId')
     expect(worker).toContain('tenantId: payload.tenantId')
     expect(worker).toContain('organizationId: payload.organizationId')
+    expect(worker).toContain('claimJobId: expectedClaimJobId')
+    expect(worker).toContain('claimJobId: nextClaimJobId')
+  })
+
+  it('keeps the ownership column additive and the approved spec traceable', () => {
+    const migration = readFileSync(path.join(
+      __dirname, '..', 'migrations', 'Migration20261001194830_patient.ts',
+    ), 'utf8')
+    const spec = readFileSync(path.join(
+      __dirname, '..', '..', '..', '..', '.ai', 'specs', '2026-10-01-visit-payment-links.md',
+    ), 'utf8')
+    expect(migration).toContain('add "claim_job_id" text null')
+    expect(migration).not.toContain('alter column')
+    expect(spec).toContain('enqueue-only producer')
+    expect(spec).toContain('claimJobId')
+    expect(spec).toContain('onJobAbandoned')
+    expect(spec).toContain('intentional resend')
   })
 
   it('logs a scope-safe terminal diagnostic when the scoped operation is absent', async () => {

@@ -1,5 +1,5 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
-import type { JobContext, QueuedJob, WorkerMeta } from '@open-mercato/queue'
+import type { AbandonedJobInfo, JobContext, QueuedJob, WorkerMeta } from '@open-mercato/queue'
 import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
 import { sendEmail } from '@open-mercato/shared/lib/email/send'
 import { findOneWithDecryption } from '@open-mercato/shared/lib/encryption/find'
@@ -18,7 +18,9 @@ import {
 } from '../lib/bookingConfirmationEmailQueue'
 import {
   processBookingConfirmationDelivery,
+  recoverAbandonedBookingConfirmation,
   type BookingConfirmationDelivery,
+  type BookingConfirmationDeliveryState,
   type BookingDeliveryLoadResult,
 } from '../lib/bookingConfirmationEmailDelivery'
 
@@ -26,6 +28,7 @@ export const metadata: WorkerMeta = {
   queue: PUBLIC_BOOKING_EMAIL_QUEUE,
   id: 'public_booking:send-confirmation-email',
   concurrency: 5,
+  onJobAbandoned: handleAbandonedBookingConfirmationJob,
 }
 
 const logger = createLogger('public_booking.confirmation_email.worker')
@@ -107,19 +110,26 @@ async function transitionBookingDelivery(
   from: BookingConfirmationEmailDeliveryStatus,
   to: BookingConfirmationEmailDeliveryStatus,
   code?: string,
+  expectedClaimJobId?: string | null,
+  nextClaimJobId?: string,
 ): Promise<boolean> {
   const em = rootEm.fork()
   await em.begin()
   try {
     const now = new Date()
-    const changed = await em.nativeUpdate(BookingIntake, {
+    const where = {
       id: payload.deliveryId,
       tenantId: payload.tenantId,
       organizationId: payload.organizationId,
       deletedAt: null,
       confirmationEmailDeliveryStatus: from,
-    } as FilterQuery<BookingIntake>, {
+      ...(expectedClaimJobId !== undefined
+        ? { confirmationEmailClaimJobId: expectedClaimJobId }
+        : {}),
+    } as FilterQuery<BookingIntake>
+    const changed = await em.nativeUpdate(BookingIntake, where, {
       confirmationEmailDeliveryStatus: to,
+      ...(nextClaimJobId !== undefined ? { confirmationEmailClaimJobId: nextClaimJobId } : {}),
       confirmationEmailClaimedAt: to === 'sending' ? now : undefined,
       confirmationEmailSentAt: to === 'sent' ? now : undefined,
       confirmationEmailFailedAt: to === 'failed' || to === 'ambiguous' ? now : undefined,
@@ -134,17 +144,24 @@ async function transitionBookingDelivery(
   }
 }
 
-async function readBookingDeliveryStatus(
+async function readBookingDeliveryState(
   em: EntityManager,
   payload: BookingConfirmationEmailJob,
-): Promise<BookingConfirmationEmailDeliveryStatus | null> {
+): Promise<BookingConfirmationDeliveryState | null> {
   const intake = await em.findOne(BookingIntake, {
     id: payload.deliveryId,
     tenantId: payload.tenantId,
     organizationId: payload.organizationId,
     deletedAt: null,
-  } as FilterQuery<BookingIntake>, { fields: ['confirmationEmailDeliveryStatus'] })
-  return intake?.confirmationEmailDeliveryStatus ?? null
+  } as FilterQuery<BookingIntake>, {
+    fields: ['confirmationEmailDeliveryStatus', 'confirmationEmailClaimJobId'],
+  })
+  return intake?.confirmationEmailDeliveryStatus
+    ? {
+        status: intake.confirmationEmailDeliveryStatus,
+        claimJobId: intake.confirmationEmailClaimJobId ?? null,
+      }
+    : null
 }
 
 async function sendBookingConfirmationEmail(
@@ -183,19 +200,26 @@ async function sendBookingConfirmationEmail(
 
 export default async function handleBookingConfirmationEmailJob(
   job: QueuedJob<BookingConfirmationEmailJob>,
-  _ctx: JobContext,
+  ctx: JobContext,
 ): Promise<void> {
   const container = await createRequestContainer()
   const rootEm = container.resolve('em') as EntityManager
   const queryEngine = container.resolve('queryEngine') as QueryEngine
   const payload = job.payload
   await processBookingConfirmationDelivery({
-    readStatus: () => readBookingDeliveryStatus(rootEm.fork(), payload),
+    jobId: ctx.jobId,
+    readState: () => readBookingDeliveryState(rootEm.fork(), payload),
     loadDelivery: () => loadBookingConfirmationDelivery(payload, rootEm.fork(), queryEngine),
-    claimSending: () => transitionBookingDelivery(rootEm, payload, 'pending', 'sending'),
-    markSent: () => transitionBookingDelivery(rootEm, payload, 'sending', 'sent'),
+    claimSending: (jobId) => transitionBookingDelivery(
+      rootEm, payload, 'pending', 'sending', undefined, null, jobId,
+    ),
+    markSent: (jobId) => transitionBookingDelivery(
+      rootEm, payload, 'sending', 'sent', undefined, jobId,
+    ),
     markFailed: (code) => transitionBookingDelivery(rootEm, payload, 'pending', 'failed', code),
-    markAmbiguous: (code) => transitionBookingDelivery(rootEm, payload, 'sending', 'ambiguous', code),
+    markAmbiguous: (jobId, code) => transitionBookingDelivery(
+      rootEm, payload, 'sending', 'ambiguous', code, jobId,
+    ),
     send: (delivery) => sendBookingConfirmationEmail(delivery, payload),
     logTerminal: (status, code, errorName) => {
       logger.error('Confirmation-email delivery reached a terminal state', {
@@ -205,6 +229,42 @@ export default async function handleBookingConfirmationEmailJob(
         status,
         code,
         ...(errorName ? { errorName } : {}),
+      })
+    },
+  })
+}
+
+function isBookingConfirmationEmailJob(payload: unknown): payload is BookingConfirmationEmailJob {
+  if (!payload || typeof payload !== 'object') return false
+  const candidate = payload as Record<string, unknown>
+  return typeof candidate.deliveryId === 'string'
+    && typeof candidate.tenantId === 'string'
+    && typeof candidate.organizationId === 'string'
+}
+
+export async function handleAbandonedBookingConfirmationJob(
+  rawPayload: unknown,
+  info: AbandonedJobInfo,
+): Promise<void> {
+  if (!isBookingConfirmationEmailJob(rawPayload)) return
+  const payload = rawPayload
+  const container = await createRequestContainer()
+  const rootEm = container.resolve('em') as EntityManager
+  await recoverAbandonedBookingConfirmation(info.jobId, {
+    markPendingFailed: (code) => transitionBookingDelivery(
+      rootEm, payload, 'pending', 'failed', code,
+    ),
+    markOwnedSendingAmbiguous: (jobId, code) => transitionBookingDelivery(
+      rootEm, payload, 'sending', 'ambiguous', code, jobId,
+    ),
+    logTerminal: (status, code) => {
+      logger.error('Confirmation-email delivery recovered from an abandoned queue job', {
+        deliveryId: payload.deliveryId,
+        tenantId: payload.tenantId,
+        organizationId: payload.organizationId,
+        jobId: info.jobId,
+        status,
+        code,
       })
     },
   })

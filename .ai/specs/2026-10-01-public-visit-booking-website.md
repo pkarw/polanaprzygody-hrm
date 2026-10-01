@@ -51,7 +51,7 @@ Polana Przygody prowadzi publiczną stronę marketingową (`polanaprzygody.pl`) 
 | PBOOK-R04 | Przepływ „Umów się”: wybór terapeuty realizującego usługę → wybór wolnego terminu uwzględniającego terapeutę, czas trwania i (automatycznie) gabinet |
 | PBOOK-R05 | Formularz zgłoszenia (zamawiający, pacjent, zgody) zapisujący wizytę bez duplikowania klienta/pacjenta |
 | PBOOK-R06 | Strona podziękowania po wysłaniu zgłoszenia |
-| PBOOK-R07 | E-mail z potwierdzeniem (data, godzina, gabinet) wysyłany po potwierdzeniu wizyty przez rejestrację |
+| PBOOK-R07 | E-mail z potwierdzeniem wysyłany jako trwała, scoped operacja `pending → sending → sent/failed/ambiguous`, odporna na restart, porzucenie joba i duplikaty |
 | PBOOK-R08 | Publiczny zapis odporny na nadużycia i wyścigi: rate-limit, idempotencja, fail-closed przy niepewnej dostępności, brak przecieku danych innych pacjentów |
 
 ## Non-goals
@@ -65,7 +65,7 @@ Cztery warstwy w nowym, app-owned module `src/modules/public_booking/`, każda z
 1. **Rozszerzenie katalogu** — trzy nowe definicje custom fields na `catalog:catalog_product`: `booking_duration_minutes` (integer), `booking_team_member_ids` (relation, multi → `staff:staff_team_member`) i `booking_resource_ids` (relation, multi → `resources:resources_resource`). Oba pola relacyjne deklarują jawny `optionsUrl` do `/api/entities/relations/options?entityId=<encoded entity id>`, więc istniejący `CrudForm` obsługuje je bez własnego renderera. Instalacja idempotentnie wpisuje wartości wszystkich ośmiu usług z jawnej mapy SKU poniżej; personel może później je edytować.
 2. **Publiczne strony** (`frontend/*`, `requireAuth: false`, wzorzec `checkout/frontend/pay/[slug]`): wspólny layout z nagłówkiem/stopką/paletą Polany, `/cennik` czytająca ceny przez `catalogPricingService`, `/umow-sie/[productId]` — trzykrokowy wizard (terapeuta → termin → dane), `/umow-sie/dziekujemy`.
 3. **Zapis** — jeden publiczny endpoint zapisu orkiestrujący dopasowanie/utworzenie klienta i pacjenta, ponowną walidację dostępności, utworzenie wizyty oraz audyt zgód. Wszystkie wywołania cross-module idą przez `commandBus.execute`, z `ctx.auth` z eksportowanego `resolveAuthFromRequestDetailed` dla wewnętrznego requestu `x-api-key`. Zero ORM relacji między modułami.
-4. **E-mail potwierdzający** — nowy subskrybent na już istniejące zdarzenie `patient.visit.confirmed`, wzorowany na `checkout`owym `session-started-email.ts` + worker + szablon React-email, wysyłający przez `sendEmail()`/`channel_resend`/`channel_ses`, ale tylko gdy dla `visitId` istnieje rekord `booking_intake` (czyli wizyta pochodzi z publicznego zgłoszenia — staffowe wizyty się nie zmieniają).
+4. **E-mail potwierdzający** — subskrybent zapisuje `pending` i wyłącznie enqueue'uje przez process-memoized `createModuleQueue`; odkrywany worker jest jedynym konsumentem. Atomowy claim zapisuje `sending` razem z `claimJobId`, provider działa poza transakcją z limitem 30 s, a operacja kończy w `sent`, `failed` lub terminalnym `ambiguous`. Dotyczy tylko wizyt z `booking_intake`; wizyty staffowe się nie zmieniają.
 
 ### Design Decisions and Alternatives
 
@@ -92,7 +92,7 @@ Cztery warstwy w nowym, app-owned module `src/modules/public_booking/`, każda z
 | Dopasowanie klienta | Istniejący `customers:customer_entity` (`kind='person'`) z tym samym znormalizowanym e-mailem **lub** telefonem w tym samym tenant/org | `customers_entities` (odczyt skalarny) | Brak dopasowania ⇒ `customers.people.create`; dopasowanie po tylko jednym z dwóch kanałów nie scala dwóch różnych, już istniejących klientów — tylko decyduje, czy tworzyć nowego |
 | Dopasowanie pacjenta | Dla dopasowanego klienta: istniejący `patient:patient` połączony przez `PatientContactLink.customerEntityId`, o tym samym znormalizowanym imieniu i nazwisku (case/diakrytyki-insensitive) | `patient_contact_links` + `patient_patients` | Brak dopasowania ⇒ nowy `patient.patients.create` z `contacts:[{customerEntityId, isContact:true, isPayer:true, isPrimaryContact:true}]`. **Dopasowanie niejednoznaczne** (więcej niż jeden pacjent tego klienta ma to samo znormalizowane imię i nazwisko — rodzeństwo/bliźnięta) ⇒ system **nigdy nie zgaduje**: traktuje to jak brak dopasowania i tworzy nowego pacjenta. Ryzykiem jest wtedy ewentualny duplikat karty, nie zapis wizyty do złej, cudzej kartoteki klinicznej — asymetria świadoma i pożądana |
 | Zgłoszenie publiczne | `public_booking:booking_intake` — audyt jednego zapisu: kto zgłosił, jakie zgody, do jakiej wizyty | `public_booking_intakes` | Jeden na wizytę (`unique visit_id`); brak wpływu na stan samej wizyty |
-| Wysłanie e-maila potwierdzającego | Reakcja na `patient.visit.confirmed`, tylko gdy istnieje `booking_intake.visit_id = event.id` | subskrybent `public_booking` | Wizyty utworzone w `/backend` (bez intake) nigdy nie wywołują tego e-maila |
+| Wysłanie e-maila potwierdzającego | Reakcja na `patient.visit.confirmed`, tylko gdy istnieje `booking_intake.visit_id = event.id`; `claimJobId` wiąże send z jednym jobem | subskrybent + odkrywany worker `public_booking` | Własny restart terminalizuje `sending` jako `ambiguous` bez send; obcy duplikat robi no-op; wizyty bez intake nie wysyłają maila |
 
 **Reguły:**
 
@@ -271,7 +271,11 @@ Rejestrowane przez `ensureCustomFieldDefinitions(...)` w `public_booking/setup.t
 | `client_idempotency_key` | text, required, unique per scope | Wartość nagłówka `Idempotency-Key` |
 | `request_payload_hash` | text(64), required | SHA-256 kanonicznego requestu; ten sam klucz + inny hash ⇒ 409, bez deszyfrowania PII |
 | `submitted_at` | timestamptz, required | Serwer |
-| `confirmation_email_sent_at` | timestamptz, nullable | Trwały marker idempotencji e-maila potwierdzającego; ustawiany dopiero po sukcesie wysyłki |
+| `confirmation_email_delivery_status` | text, nullable | `pending`, `sending`, `sent`, `failed` lub `ambiguous`; terminalnych stanów worker nie nadpisuje |
+| `confirmation_email_claimed_at` | timestamptz, nullable | Czas atomowego przejścia `pending → sending` |
+| `confirmation_email_claim_job_id` | text, nullable | ID joba będącego właścicielem provider call; zapisywane atomowo z `sending` |
+| `confirmation_email_sent_at` | timestamptz, nullable | Ustawiany dopiero po sukcesie providera |
+| `confirmation_email_failed_at` / `confirmation_email_failure_code` | timestamptz/text, nullable | Terminalny, bezpieczny kod `failed`/`ambiguous`; bez PII i tekstu providera |
 | pola wspólne | `tenant_id`, `organization_id`, `id`, `created_at`, `updated_at`, `deleted_at` | Standard |
 
 Brak cross-module FK/kaskad. Zapisywana przez nową, małą komendę `public_booking.intake.record` (patrz API), żeby mieć pojedynczy, testowalny punkt zapisu z własną idempotencją — nie bezpośredni `em.persist` z route'a.
@@ -306,7 +310,7 @@ Harden POST wzorem `checkout/api/pay/[slug]/submit/route.ts`: walidacja Origin/H
 
 Nowe: `public_booking.intake.submitted` (`{id,visitId,tenantId,organizationId,createdAt}`, bez PII) po sukcesie całej orkiestracji. Konsumowane (nie emitowane): `patient.visit.confirmed` (istniejące, z `patient`).
 
-Nowy subskrybent `public_booking/subscribers/visit-confirmed-email.ts`: na `patient.visit.confirmed`, odczytuje `BookingIntake` po `visitId`; brak rekordu ⇒ no-op (wizyta staffowa). Gdy jest, wzywa `dispatchBookingEmailJob({ visitId, tenantId, organizationId })` → kolejka `public-booking-email` (`createQueue`, wzorem `checkout`) → worker `workers/send-email.worker.ts` ładuje wizytę (data/godzina/gabinet, odczyt skalarny `patient:patient_visit`) i `BookingIntake` (adres e-mail zamawiającego), renderuje `emails/BookingConfirmedEmail.tsx` (React-email, wzorem `PaymentStartEmail.tsx`), wywołuje `sendEmail({ to, subject, react: BookingConfirmedEmail({...}), tenantId, organizationId })`. Brak treści klinicznej w mailu — tylko usługa, data, godzina, nazwa gabinetu, adres placówki.
+Nowy subskrybent `public_booking/subscribers/visit-confirmed-email.ts` zapisuje/odtwarza `pending`; producent tylko wywołuje process-memoized `createModuleQueue(...).enqueue`. `workers/send-email.worker.ts` jest jedynym konsumentem: `pending → sending` atomowo zapisuje `ctx.jobId`, a `sendEmail` wykonuje poza transakcją przez `Promise.race` z konfigurowalnym domyślnym limitem 30 s. Timeout/błąd o nieznanym wyniku kończy się `ambiguous` bez retry. Restart tego samego joba widzący własne `sending` ustawia `ambiguous` bez drugiego send; inny job widzący cudzy claim robi no-op. `metadata.onJobAbandoned` idempotentnie zmienia `pending → failed`, a `sending → ambiguous` wyłącznie dla zgodnego `claimJobId`; nie nadpisuje terminalnego ani obcego stanu. Brak treści klinicznej w mailu.
 
 Brak jobs/schedulerów poza tą jedną kolejką e-mail. Efekty indeksu/cache po commit, zgodnie ze standardem.
 
@@ -337,7 +341,7 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 | PBOOK-T06 | POST requests: dwa równoległe żądania na ten sam slot | Jeden sukces, drugi 409, brak podwójnej rezerwacji gabinetu/terapeuty | R04/R08 |
 | PBOOK-T07 | POST requests: ten sam `Idempotency-Key` dwa razy (ten sam payload / inny payload) | Ten sam wynik / 409 | R08 |
 | PBOOK-T08 | POST requests: rate limit przekroczony; limiter niedostępny | 429 / 503, zero zapisu | R08 |
-| PBOOK-T09 | `patient.visit.confirmed` z i bez `BookingIntake` | E-mail wysłany tylko gdy intake istnieje, poprawna treść (data/godzina/gabinet) | R07 |
+| PBOOK-T09 | `patient.visit.confirmed` z/bez intake; enqueue retry; ten sam/obcy job; abandon `pending`/`sending`; provider timeout; dwa scope | Producent nie startuje konsumenta; claim jest scoped; własny restart/timeout/abandon po claimie ⇒ `ambiguous` bez resend, obcy job ⇒ no-op, abandon przed claimem ⇒ `failed`, terminalne stany bez zmian | R07 |
 | PBOOK-T10 | Zły/brak klucz API (np. wiersz `service_credential` usunięty) | Cała publiczna powierzchnia zwraca stan niedostępności, zero zapisu z domyślnym/pierwszym tenantem | R08 |
 | PBOOK-T12 | `public_booking/setup.ts` wywołany dwukrotnie w tym samym scope; wywołany w dwóch różnych scope | Jedno konto serwisowe/rola/klucz/`service_credential` per scope, nigdy duplikat; brak wycieku sekretu między scope | R08 |
 | PBOOK-T11 | Panel backendowy na wizycie z i bez intake | Znacznik widoczny/niewidoczny, gated `patient.visits.view` | R07 |
@@ -371,9 +375,9 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 
 - **Depends on:** PBOOK-3.
 - **Outcome:** Potwierdzenie wizyty w `/backend` wysyła e-mail; rejestracja widzi źródło zgłoszenia.
-- **Steps:** 1) Subskrybent + kolejka + worker + szablon React-email. 2) Panel „Zarezerwowano online” w `/backend/patient/visits/[id]` (bezpośrednia, drobna edycja własnego kodu `patient`, nie UMES — moduł jest nasz). 3) Makieta 11.
+- **Steps:** 1) Trwały stan delivery w `BookingIntake`, producent enqueue-only, pojedynczy odkrywany worker, atomowy claim z `claimJobId`, 30 s timeout i idempotentny `onJobAbandoned`, plus szablon React-email. 2) Panel „Zarezerwowano online” w `/backend/patient/visits/[id]`. 3) Makieta 11.
 - **Validation:** Pełna bramka; PBOOK-T09/T11.
-- **Exit:** Potwierdzenie wizyty z publicznego zgłoszenia realnie dostarcza e-mail z datą/godziną/gabinetem; wizyty staffowe bez zmian.
+- **Exit:** Potwierdzenie wizyty z publicznego zgłoszenia dostarcza najwyżej jeden e-mail na trwałą operację; restart, porzucenie, timeout i duplikat zostawiają terminalny ślad bez automatycznego resend; wizyty staffowe bez zmian.
 
 ## Requirement Traceability
 
@@ -385,12 +389,12 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 | PBOOK-R04 | J1/J3/J4/J5 | GET therapists/availability | 2 | T02/T03 | AC-04 |
 | PBOOK-R05 | J1/J2 | POST requests | 3 | T04/T05 | AC-05 |
 | PBOOK-R06 | J1 | strona podziękowania | 3 | manualne UI | AC-06 |
-| PBOOK-R07 | — | subskrybent/worker | 4 | T09 | AC-07 |
+| PBOOK-R07 | — | trwałe pola delivery + enqueue-only producer + worker claim/timeout/abandonment | 4 | T09 | AC-07 |
 | PBOOK-R08 | J4/J6 | rate-limit/idempotencja/klucz API | 3 | T06/T07/T08/T10/T12 | AC-08 |
 
 ## Rollout, Migration, and Rollback
 
-Migracja ograniczona do dwóch nowych tabel (`public_booking_intakes`, `public_booking_service_credentials`) i custom-field definicji na `catalog_product` (brak nowych kolumn na istniejących tabelach `patient`/`customers`/`catalog`). `yarn db:generate`, przegląd SQL/snapshotu, zgoda przed `apply` — zgodnie z AGENTS.md. Przed PBOOK-3: `public_booking/setup.ts` samo-prowizjonuje konto serwisowe, rolę i klucz API przy pierwszym uruchomieniu (zero ręcznego kroku operatora, zero `.env`) — wymaga tylko wgrania drobnej, addytywnej poprawki `requireActorUserId` w `src/modules/patient/lib/commandSupport.ts` (decyzja B). Brak poprawki = publiczny zapis odpada na insercie (uuid), wykryte przez PBOOK-T04 przed wdrożeniem; sam setup jest idempotentny, więc wielokrotny `yarn generate`/restart nie tworzy drugiego konta/klucza.
+Migracje pozostają addytywne: dwie nowe tabele (`public_booking_intakes`, `public_booking_service_credentials`), nullable pola trwałego delivery na `public_booking_intakes` (w tym follow-up `confirmation_email_claim_job_id`) i custom-field definicje na `catalog_product`; brak nowych kolumn na tabelach `patient`/`customers`/`catalog`. `yarn db:generate`, przegląd SQL/snapshotu, zgoda przed `apply` — zgodnie z AGENTS.md. Przed PBOOK-3: `public_booking/setup.ts` samo-prowizjonuje konto serwisowe, rolę i klucz API przy pierwszym uruchomieniu (zero ręcznego kroku operatora, zero `.env`) — wymaga tylko wgrania drobnej, addytywnej poprawki `requireActorUserId` w `src/modules/patient/lib/commandSupport.ts` (decyzja B). Brak poprawki = publiczny zapis odpada na insercie (uuid), wykryte przez PBOOK-T04 przed wdrożeniem; sam setup jest idempotentny, więc wielokrotny `yarn generate`/restart nie tworzy drugiego konta/klucza.
 
 Rollback: usunąć wiersz `service_credential` albo konto serwisowe i unieważnić cache auth (bez jawnej invalidacji odcięcie nastąpi po TTL, do około 30 s), opcjonalnie wyłączyć moduł `public_booking` w `src/modules.ts`. Istniejące wizyty zostają w `patient`; tabele i addytywne definicje custom fields mogą pozostać bez wpływu na starsze ścieżki.
 
@@ -414,7 +418,7 @@ Rollback: usunąć wiersz `service_credential` albo konto serwisowe i unieważni
 - [ ] **AC-04:** slot-picker pokazuje wyłącznie terminy wolne jednocześnie dla terapeuty i co najmniej jednego gabinetu usługi, z zerem ostrzeżeń pokazywanych publicznie.
 - [ ] **AC-05:** zgłoszenie tworzy wizytę bez duplikowania istniejącego klienta/pacjenta w żadnym z trzech scenariuszy dopasowania.
 - [ ] **AC-06:** po wysłaniu zgłoszenia użytkownik widzi stronę podziękowania z informacją o mailu.
-- [ ] **AC-07:** potwierdzenie wizyty w `/backend` wywołuje realny e-mail z datą/godziną/gabinetem, tylko dla wizyt z publicznego zgłoszenia.
+- [ ] **AC-07:** potwierdzenie wizyty z intake zapisuje trwałą operację i wysyła najwyżej raz przez pojedynczego odkrywanego workera; `claimJobId`, 30 s timeout i `onJobAbandoned` dają terminalny scoped ślad bez resend po niepewnym wyniku, a wizyta bez intake nie wysyła e-maila.
 - [ ] **AC-08:** rate-limit, idempotencja, samo-prowizjonowanie klucza API i brak/nieprawidłowy klucz działają zgodnie z PBOOK-T06–T08/T10/T12; zero zapisu przy ich naruszeniu.
 
 ## Final Compliance Report
