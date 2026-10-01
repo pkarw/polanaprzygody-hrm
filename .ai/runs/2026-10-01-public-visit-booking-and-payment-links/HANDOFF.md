@@ -1,23 +1,23 @@
 # Handoff — 2026-10-01-public-visit-booking-and-payment-links
 
-**Last updated:** 2026-10-01T20:36:32Z
+**Last updated:** 2026-10-01T21:12:13Z
 **Branch:** `feat/public-visit-booking-and-payment-links`
 **PR:** https://github.com/pkarw/polanaprzygody-hrm/pull/13
-**Current phase/step:** Final gate passed; clean automated review is next
-**Last implementation commit:** `dd4b5d4` — `test(booking): prove fresh-install payment journey`
+**Current phase/step:** Auto-review fixes and full re-gate passed; clean re-review and UI QA are next
+**Last implementation commit:** `1045d5e` — `fix(patient): preserve payment completion contracts`
 
 ## What just happened
 
-- Every planned Step 1.1–6.5 is complete and pushed locally.
+- Every planned Step 1.1–6.6 is complete and pushed.
 - Review fixes harden streamed-body bounds, exact tenant/organization credential retirement, Warsaw/DST windows, payment-state serialization, durable e-mail recovery, and supported installation defaults.
 - A second clean `mercato init --no-examples` run created eight service products, nine branded checkout templates, four therapists, exact booking mappings, and the checkout/visit custom-field definitions needed by runtime link creation.
 - Real Chromium passed booking contention and idempotent replay, staff confirmation, branded fixed-price link creation, public pay-page rendering, durable e-mail enqueue/replay, and unpaid-link deactivation.
 - Focused validation is green: 42 Jest tests, TypeScript, ESLint, and the fresh-install Playwright journey.
-- The complete final gate is green: generate, typecheck, lint, design-system, 56 Jest suites / 493 tests, production build, and 104 passing integration/browser cases with 4 declared conditional skips.
+- The complete post-review re-gate is green: generate, typecheck, lint, design-system, 57 Jest suites / 495 tests, production build, and 104 passing integration/browser cases with 4 declared conditional skips.
 
 ## Next concrete action
 
-- Run `om-auto-review-pr 13 --autofix`, apply/re-gate any findings, then run `om-auto-qa-pr 13 --self-qa-signoff` and merge once GitHub checks are green.
+- Complete the clean re-review, then run `om-auto-qa-pr 13 --self-qa-signoff` and merge once GitHub checks are green.
 - When the review, UI QA, and required GitHub checks are green, mark PR #13 ready and merge it into the configured base branch.
 
 ## Blockers / open questions

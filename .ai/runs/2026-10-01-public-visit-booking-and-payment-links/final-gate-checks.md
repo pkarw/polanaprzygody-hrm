@@ -1,7 +1,7 @@
 # Final gate verification
 
 **Recorded:** 2026-10-01T20:53:51Z
-**Implementation head:** `dd4b5d4` (checkpoint docs: `f32ca2a`)
+**Implementation head:** `1045d5e` (checkpoint docs: `f32ca2a`)
 **Outcome:** PASS
 
 ## Full validation gate
@@ -53,3 +53,11 @@ The commands ran in the configured order as one chain: `yarn generate && yarn ty
 ## Style compliance residual findings
 
 - None. The configured `yarn ds:check` pass is green; no auto-fix Step or residual design-system exception is required.
+
+## Auto-review fix re-gate
+
+- Step `6.6-review-fix` preserves the installed checkout gateway error as `gateway_not_configured` and emits only the declared typed `patient.visit.updated` event after a changed payment-completion write.
+- Focused regression result: 3 suites / 16 tests passed, including confirmation isolation and changed-versus-redelivered subscriber behavior.
+- Full configured validation reran on `1045d5e`: generation found 444 API paths; typecheck passed; lint reported 0 errors and the same 8 pre-existing warnings; design-system checked 394 files; Jest passed 57 suites / 495 tests; production build passed.
+- The production server was restarted from that build against `pbook_final_gate2`. The full repository-native Playwright suite passed again with **104 passed, 4 declared skips, 0 failed** across 108 cases.
+- Fresh screenshots from the rerun cover the public mobile success flow, authenticated payment/provenance controls, and the real seeded branded `/pay/<slug>` page. Browser console/page errors remained zero.

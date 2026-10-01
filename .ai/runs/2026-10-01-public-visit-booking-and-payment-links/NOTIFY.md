@@ -89,3 +89,9 @@
 - Full configured validation passed in order: generate, typecheck, lint (0 errors), design-system (394 files), Jest (56 suites / 493 tests), and production build.
 - A third empty database completed `mercato init --no-examples`; the full native Playwright suite then passed with 104 tests and 4 declared conditional skips across 108 cases.
 - Environment note: the Testcontainers wrapper cannot start without Docker. The isolated PostgreSQL fallback ran the same repository suite; the first fallback attempt exposed and corrected a mismatched runner `DATABASE_URL`, after which all direct-SQL and HTTP checks shared the same database.
+
+## 2026-10-01T21:12:13Z — auto-review fixes re-gated
+
+- Step 6.6 fixed both final review findings: exact checkout gateway configuration mapping and the declared typed payment-completion event.
+- Focused regression tests passed 16/16. The complete configured gate then passed with 57 Jest suites / 495 tests, and the restarted production runtime passed the full Playwright suite with 104 passes, 4 declared skips, and fresh screenshots.
+- Decision: rerun the clean review on the exact `1045d5e` implementation before entering read-only auto-QA.
