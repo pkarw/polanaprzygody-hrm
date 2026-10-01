@@ -13,6 +13,7 @@ import {
   createBookingBootstrapDependencies,
   seedPolanaBookingDefaults,
 } from './booking-bootstrap'
+import { backfillCustomerIdentityProjections } from '../public_booking/lib/customerIdentityProjection'
 
 export const setup: ModuleSetupConfig = {
   // These records are the operational baseline for public booking and visit
@@ -25,6 +26,10 @@ export const setup: ModuleSetupConfig = {
     }
     await seedPolanaOrganization(ctx.em, ctx.container, scope)
     await seedPolanaCustomers(createCustomerBootstrapDependencies(ctx.em, ctx.container), scope)
+    // public_booking defaults run before this app-owned bootstrap on a fresh install,
+    // so reconcile the customer identities immediately after their operational
+    // fixtures exist. The customer event subscriber remains the ongoing path.
+    await backfillCustomerIdentityProjections(ctx.em, scope)
     await seedPolanaCatalog(createCatalogBootstrapDependencies(ctx.em, ctx.container), scope)
     await seedPolanaPaymentLinkTemplates(createPaymentLinkBootstrapDependencies(ctx.em, ctx.container), scope)
     const resources = await seedPolanaResources(createResourceBootstrapDependencies(ctx.em, ctx.container), scope)

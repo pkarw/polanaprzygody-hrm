@@ -12,6 +12,7 @@ import { createResourceBootstrapDependencies, seedPolanaResources } from '../res
 import { seedPolanaTherapists } from '../lib/staffBootstrap'
 import { createBookingBootstrapDependencies, seedPolanaBookingDefaults } from '../booking-bootstrap'
 import { setup } from '../setup'
+import { backfillCustomerIdentityProjections } from '../../public_booking/lib/customerIdentityProjection'
 
 jest.mock('../organization-bootstrap', () => ({ seedPolanaOrganization: jest.fn() }))
 jest.mock('../customer-bootstrap', () => ({
@@ -35,6 +36,9 @@ jest.mock('../booking-bootstrap', () => ({
   createBookingBootstrapDependencies: jest.fn(),
   seedPolanaBookingDefaults: jest.fn(),
 }))
+jest.mock('../../public_booking/lib/customerIdentityProjection', () => ({
+  backfillCustomerIdentityProjections: jest.fn(),
+}))
 
 const scope = {
   tenantId: '00000000-0000-4000-8000-000000000001',
@@ -48,6 +52,7 @@ const mockPaymentTemplates = jest.mocked(seedPolanaPaymentLinkTemplates)
 const mockResources = jest.mocked(seedPolanaResources)
 const mockTherapists = jest.mocked(seedPolanaTherapists)
 const mockBooking = jest.mocked(seedPolanaBookingDefaults)
+const mockCustomerIdentities = jest.mocked(backfillCustomerIdentityProjections)
 
 function resourceSummary(availabilityRuleSetId: string | null) {
   return {
@@ -87,6 +92,7 @@ describe('Polana operational setup', () => {
     jest.mocked(createBookingBootstrapDependencies).mockReturnValue({} as never)
     mockOrganization.mockImplementation(async () => { order.push('organization'); return {} as never })
     mockCustomers.mockImplementation(async () => { order.push('customers'); return {} as never })
+    mockCustomerIdentities.mockImplementation(async () => { order.push('customer-identities') })
     mockCatalog.mockImplementation(async () => { order.push('catalog'); return {} as never })
     mockPaymentTemplates.mockImplementation(async () => { order.push('payment-templates'); return {} as never })
     mockResources.mockImplementation(async () => {
@@ -105,6 +111,7 @@ describe('Polana operational setup', () => {
     expect(order).toEqual([
       'organization',
       'customers',
+      'customer-identities',
       'catalog',
       'payment-templates',
       'resources',
@@ -128,6 +135,7 @@ describe('Polana operational setup', () => {
 
     expect(mockOrganization).toHaveBeenCalledTimes(2)
     expect(mockCustomers).toHaveBeenCalledTimes(2)
+    expect(mockCustomerIdentities).toHaveBeenCalledTimes(2)
     expect(mockCatalog).toHaveBeenCalledTimes(2)
     expect(mockPaymentTemplates).toHaveBeenCalledTimes(2)
     expect(mockResources).toHaveBeenCalledTimes(2)

@@ -300,7 +300,7 @@ Tworzona i czytana wyłącznie przez `public_booking/setup.ts` i `public_booking
 | `email_hash`, `phone_hash` | text, nullable | Keyed lookup hash związany z tenant/org i kanałem; nigdy plaintext |
 | pola wspólne | `tenant_id`, `organization_id`, `id`, `created_at`, `updated_at` | Każdy odczyt i zapis wymaga obu elementów scope |
 
-Setup wykonuje bounded, stronicowany backfill wszystkich istniejących osób w scope. Trwały subscriber `customers.person.*` uzgadnia create/update/delete, a ścieżka publiczna uzgadnia nowo utworzonego klienta przed kolejnym krokiem orkiestracji. Runtime najpierw odpytuje scoped indeks, a następnie odszyfrowuje i porównuje wyłącznie ograniczony zbiór kandydatów; stale/missing rekord nie jest dopasowaniem, wieloznaczność kończy się 503.
+Setup wykonuje bounded, stronicowany backfill wszystkich istniejących osób w scope. Ponieważ modułowe `public_booking.seedDefaults` poprzedza app-owned fixture’y Polany, `polana_bootstrap.seedDefaults` ponawia backfill bezpośrednio po zasianiu klientów — świeża instalacja `--no-examples` kończy więc z kompletną projekcją. Trwały subscriber `customers.person.*` uzgadnia create/update/delete, a ścieżka publiczna uzgadnia nowo utworzonego klienta przed kolejnym krokiem orkiestracji. Runtime najpierw odpytuje scoped indeks, a następnie odszyfrowuje i porównuje wyłącznie ograniczony zbiór kandydatów; stale/missing rekord nie jest dopasowaniem, wieloznaczność kończy się 503.
 
 ## API, Command, and Error Contracts
 
