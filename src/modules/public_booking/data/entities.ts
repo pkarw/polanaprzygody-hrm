@@ -1,5 +1,5 @@
 import { OptionalProps } from '@mikro-orm/core'
-import { Check, Entity, Index, PrimaryKey, Property } from '@mikro-orm/decorators/legacy'
+import { Check, Entity, Index, PrimaryKey, Property, Unique } from '@mikro-orm/decorators/legacy'
 
 export type BookingConfirmationEmailDeliveryStatus =
   | 'pending'
@@ -174,4 +174,53 @@ export class ServiceCredential {
 
   @Property({ name: 'deleted_at', type: Date, nullable: true })
   deletedAt?: Date | null
+}
+
+/**
+ * Scope-bound lookup projection for encrypted customer contact identities.
+ *
+ * The customers module remains the source of truth. This app-owned table stores
+ * only keyed lookup digests and a scalar customer id so public booking can find
+ * one candidate without decrypting an entire tenant's customer list.
+ */
+@Entity({ tableName: 'public_booking_customer_identities' })
+@Unique({
+  name: 'public_booking_customer_identities_scope_customer_uq',
+  properties: ['tenantId', 'organizationId', 'customerEntityId'],
+})
+@Index({
+  name: 'public_booking_customer_identities_scope_email_idx',
+  properties: ['tenantId', 'organizationId', 'emailHash'],
+})
+@Index({
+  name: 'public_booking_customer_identities_scope_phone_idx',
+  properties: ['tenantId', 'organizationId', 'phoneHash'],
+})
+export class CustomerIdentityProjection {
+  [OptionalProps]?: 'emailHash' | 'phoneHash' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  /** Scalar id owned by customers; deliberately not an ORM relation. */
+  @Property({ name: 'customer_entity_id', type: 'uuid' })
+  customerEntityId!: string
+
+  @Property({ name: 'email_hash', type: 'text', nullable: true })
+  emailHash?: string | null
+
+  @Property({ name: 'phone_hash', type: 'text', nullable: true })
+  phoneHash?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
 }

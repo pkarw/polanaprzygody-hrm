@@ -6,6 +6,7 @@ import {
   PUBLIC_BOOKING_PRODUCT_FIELDS,
   PUBLIC_BOOKING_PRODUCT_FIELDSET,
 } from './lib/catalogBookingFields'
+import { backfillCustomerIdentityProjections } from './lib/customerIdentityProjection'
 import { provisionPublicBookingServiceIdentity } from './lib/serviceCredential'
 
 export const setup: ModuleSetupConfig = {
@@ -52,6 +53,7 @@ export const setup: ModuleSetupConfig = {
       source: 'public_booking',
     }], scope)
     await em.flush()
+    await backfillCustomerIdentityProjections(em, scope)
     await provisionPublicBookingServiceIdentity({ em, container, scope })
   },
 }

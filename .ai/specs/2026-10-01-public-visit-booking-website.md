@@ -89,7 +89,7 @@ Cztery warstwy w nowym, app-owned module `src/modules/public_booking/`, każda z
 | Cena publiczna | Rozwiązana przez `catalogPricingService.resolvePriceMany` dla kontekstu bez klienta/kanału; jeśli wybrana cena ma `priceKind.isPromotion=true`, dodatkowo pokazuje się cena `kind='regular'` jako przekreślona „była” | `catalog_product_prices` + `catalog_price_kinds` | Brak aktywnej ceny ⇒ usługa niepokazywana na cenniku (nie `0 zł`) |
 | Wolny slot | Przedział `[start, start+duration)` w strefie placówki, w którym terapeuta ma zero konfliktów VCAL (żadnej wagi — blokującej, ostrzegawczej ani informacyjnej) **i** istnieje ≥1 aktywny gabinet z `booking_resource_ids` usługi bez konfliktu w tym samym przedziale | `patientAvailabilityService` (VCAL) + `catalog_product.booking_resource_ids` | Brak takiego gabinetu ⇒ slot niepokazywany, nawet jeśli terapeuta jest wolny |
 | Auto-wybór gabinetu | Pierwszy (po `position`/id) wolny, aktywny gabinet z listy usługi dla wybranego slotu; nigdy pokazywany pacjentowi, widoczny tylko w mailu i w panelu rejestracji | Serwer, w momencie zapisu | Brak wolnego gabinetu ⇒ slot nie był pokazany; wyścig na zapisie ⇒ 409, patrz Edge Cases |
-| Dopasowanie klienta | Istniejący `customers:customer_entity` (`kind='person'`) z tym samym znormalizowanym e-mailem **lub** telefonem w tym samym tenant/org | `customers_entities` (odczyt skalarny) | Brak dopasowania ⇒ `customers.people.create`; dopasowanie po tylko jednym z dwóch kanałów nie scala dwóch różnych, już istniejących klientów — tylko decyduje, czy tworzyć nowego |
+| Dopasowanie klienta | Istniejący `customers:customer_entity` (`kind='person'`) z tym samym znormalizowanym e-mailem **lub** telefonem w tym samym tenant/org | scoped `public_booking_customer_identities` (keyed HMAC) + końcowa weryfikacja odszyfrowanego `customer_entity` | Brak dopasowania ⇒ `customers.people.create`; więcej niż jeden aktywny match ⇒ fail closed (503), bez zgadywania. Projekcja jest backfillowana przy setupie, aktualizowana przez trwały `customers.person.*` subscriber i natychmiast po utworzeniu klienta przez publiczny flow; liczba niepowiązanych klientów nie ogranicza rezerwacji |
 | Dopasowanie pacjenta | Dla dopasowanego klienta: istniejący `patient:patient` połączony przez `PatientContactLink.customerEntityId`, o tym samym znormalizowanym imieniu i nazwisku (case/diakrytyki-insensitive) | `patient_contact_links` + `patient_patients` | Brak dopasowania ⇒ nowy `patient.patients.create` z `contacts:[{customerEntityId, isContact:true, isPayer:true, isPrimaryContact:true}]`. **Dopasowanie niejednoznaczne** (więcej niż jeden pacjent tego klienta ma to samo znormalizowane imię i nazwisko — rodzeństwo/bliźnięta) ⇒ system **nigdy nie zgaduje**: traktuje to jak brak dopasowania i tworzy nowego pacjenta. Ryzykiem jest wtedy ewentualny duplikat karty, nie zapis wizyty do złej, cudzej kartoteki klinicznej — asymetria świadoma i pożądana |
 | Zgłoszenie publiczne | `public_booking:booking_intake` — audyt jednego zapisu: kto zgłosił, jakie zgody, do jakiej wizyty | `public_booking_intakes` | Jeden na wizytę (`unique visit_id`); brak wpływu na stan samej wizyty |
 | Wysłanie e-maila potwierdzającego | Reakcja na `patient.visit.confirmed`, tylko gdy istnieje `booking_intake.visit_id = event.id`; `claimJobId` wiąże send z jednym jobem | subskrybent + odkrywany worker `public_booking` | Własny restart terminalizuje `sending` jako `ambiguous` bez send; obcy duplikat robi no-op; wizyty bez intake nie wysyłają maila |
@@ -123,7 +123,7 @@ Cztery warstwy w nowym, app-owned module `src/modules/public_booking/`, każda z
 | Czas trwania, terapeuci, gabinety usługi | extend (UMES custom fields) | `catalog` | `ensureCustomFieldDefinitions` na `catalog:catalog_product`, `kind:'integer'`/`kind:'relation'` | Ten sam szew co `polana_bootstrap`; brak nowej tabeli |
 | Terapeuci (profil publiczny) | reuse | `staff` | Odczyt skalarny `staff_team_member` + już przechwycone pola bio/foto z `polana_bootstrap` (REQ-001A) | Dane terapeutów już istnieją |
 | Dostępność terapeuty i gabinetu | reuse | `patient` (VCAL) + `planner`/`resources` pod spodem | `patientAvailabilityService` (DI token), rozwiązywany przez `container.resolve` z nowego modułu | Jeden silnik konfliktów dla panelu i dla publicznej strony — zero rozjazdu |
-| Dopasowanie/utworzenie klienta | extend (nowa logika) + reuse (zapis) | `customers` | Odczyt skalarny `customer_entities` (nowa normalizacja e-mail/telefon, wzorem `check-phone/route.ts`) + `commandBus.execute('customers.people.create', …)` | Brak istniejącego find-or-create do reużycia; zapis nadal przez oficjalną komendę. `personCreateSchema` nie ma pola idempotencji (zweryfikowane: brak `clientRequestId`) — retry-bezpieczeństwo tego kroku pochodzi wyłącznie z odczytu-przed-zapisem (dedup), nie z komendy |
+| Dopasowanie/utworzenie klienta | extend (nowa logika) + reuse (zapis) | `public_booking` + `customers` | Scope-bound keyed-HMAC projection → bounded decrypt-and-verify kandydatów + `commandBus.execute('customers.people.create', …)` | Nie skanuje/decryptuje całego tenantowego zbioru. `personCreateSchema` nie ma pola idempotencji, więc retry-bezpieczeństwo pochodzi z advisory lock + projekcji utrzymywanej po create i przez `customers.person.*` |
 | Dopasowanie/utworzenie pacjenta + powiązanie z klientem | extend (nowa logika) + reuse (zapis) | `patient` | Odczyt `patient_contact_links`/`patient_patients` + `commandBus.execute('patient.patients.create', { contacts:[...] })` | `contacts[]` już atomowo tworzy `PatientContactLink` w tej samej transakcji (PAT „Opiekunowie przy zakładaniu karty”) |
 | Utworzenie wizyty | reuse | `patient` (VIS) | `commandBus.execute('patient.visits.create', …)` z `ctx.auth` z klucza API | Zero duplikacji modelu wizyty; wszystkie reguły VIS/VCAL działają bez zmian |
 | Potwierdzenie i zdarzenie | reuse | `patient` (VIS) | Istniejąca akcja `confirm`, istniejące zdarzenie `patient.visit.confirmed` | Zero zmian w `patient` |
@@ -225,7 +225,7 @@ Makiety (dokument projektowy, nie implementacja — wygląd docelowy powstaje z 
 
 ## Data Models
 
-Nowa encja w `public_booking`; brak zmian schematu w `patient`/`customers`. Trzy nowe definicje custom fields na `catalog:catalog_product` (wartości, nie kolumny).
+Trzy nowe encje w `public_booking`; brak zmian schematu w `patient`/`customers`. Trzy nowe definicje custom fields na `catalog:catalog_product` (wartości, nie kolumny).
 
 ```mermaid
 erDiagram
@@ -233,6 +233,7 @@ erDiagram
   PatientVisit ||--|| BookingIntake : audyt_zgloszenia
   CustomerEntity ||--o{ BookingIntake : zamawiajacy
   Patient ||--o{ BookingIntake : pacjent
+  CustomerEntity ||--o| CustomerIdentityProjection : scalar_customer_id
 ```
 
 ### Custom fields na `catalog:catalog_product`
@@ -291,6 +292,16 @@ Brak cross-module FK/kaskad. Zapisywana przez nową, małą komendę `public_boo
 
 Tworzona i czytana wyłącznie przez `public_booking/setup.ts` i `public_booking/lib/serviceCredential.ts`. Setup najpierw rejestruje i materializuje mapę szyfrowania dla każdego istniejącego tenanta, dopiero potem zapisuje sekret. Żaden route/UI nie wystawia sekretu. Usunięcie credentialu/konta odcina zapis po wygaśnięciu cache auth (maksymalnie około 30 s), chyba że operacja administracyjna wywoła invalidację.
 
+### `CustomerIdentityProjection` — `public_booking_customer_identities`
+
+| Pole | Typ / null | Reguła |
+|---|---|---|
+| `customer_entity_id` | uuid, required | Scalar `customers:customer_entity`, bez relacji ORM; unique razem ze scope |
+| `email_hash`, `phone_hash` | text, nullable | Keyed lookup hash związany z tenant/org i kanałem; nigdy plaintext |
+| pola wspólne | `tenant_id`, `organization_id`, `id`, `created_at`, `updated_at` | Każdy odczyt i zapis wymaga obu elementów scope |
+
+Setup wykonuje bounded, stronicowany backfill wszystkich istniejących osób w scope. Trwały subscriber `customers.person.*` uzgadnia create/update/delete, a ścieżka publiczna uzgadnia nowo utworzonego klienta przed kolejnym krokiem orkiestracji. Runtime najpierw odpytuje scoped indeks, a następnie odszyfrowuje i porównuje wyłącznie ograniczony zbiór kandydatów; stale/missing rekord nie jest dopasowaniem, wieloznaczność kończy się 503.
+
 ## API, Command, and Error Contracts
 
 Wszystkie trasy pod `src/modules/public_booking/api/public/**`, `requireAuth: false`, per-method `metadata`+`openApi`.
@@ -308,7 +319,7 @@ Harden POST wzorem `checkout/api/pay/[slug]/submit/route.ts`: walidacja Origin/H
 
 ## Events, Jobs, Notifications, and Cross-Module Flows
 
-Nowe: `public_booking.intake.submitted` (`{id,visitId,tenantId,organizationId,createdAt}`, bez PII) po sukcesie całej orkiestracji. Konsumowane (nie emitowane): `patient.visit.confirmed` (istniejące, z `patient`).
+Nowe: `public_booking.intake.submitted` (`{id,visitId,tenantId,organizationId,createdAt}`, bez PII) po sukcesie całej orkiestracji. Konsumowane (nie emitowane): `patient.visit.confirmed` (istniejące, z `patient`) oraz `customers.person.*` do trwałego utrzymania scoped identity projection po commitowanych create/update/delete.
 
 Nowy subskrybent `public_booking/subscribers/visit-confirmed-email.ts` zapisuje/odtwarza `pending`; producent tylko wywołuje process-memoized `createModuleQueue(...).enqueue`. `workers/send-email.worker.ts` jest jedynym konsumentem: `pending → sending` atomowo zapisuje `ctx.jobId`, a `sendEmail` wykonuje poza transakcją przez `Promise.race` z konfigurowalnym domyślnym limitem 30 s. Timeout/błąd o nieznanym wyniku kończy się `ambiguous` bez retry. Restart tego samego joba widzący własne `sending` ustawia `ambiguous` bez drugiego send; inny job widzący cudzy claim robi no-op. `metadata.onJobAbandoned` idempotentnie zmienia `pending → failed`, a `sending → ambiguous` wyłącznie dla zgodnego `claimJobId`; nie nadpisuje terminalnego ani obcego stanu. Brak treści klinicznej w mailu.
 
@@ -336,7 +347,7 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 | PBOOK-T01 | GET services z usługami kompletnymi/niekompletnymi/z i bez promocji | Tylko kompletne usługi, poprawna cena bazowa/promocyjna | R02/R03 |
 | PBOOK-T02 | GET therapists dla usługi z aktywnymi/nieaktywnymi terapeutami | Tylko aktywni, poprawne pola publiczne | R03/R04 |
 | PBOOK-T03 | GET availability: terapeuta z grafikiem/bez grafiku/z urlopem/z zajętym gabinetem/wszystkie gabinety usługi zajęte | Zero-konfliktowe sloty, brak fałszywie wolnych; `degraded:true` gdy planner wyłączony | R04/R08 |
-| PBOOK-T04 | POST requests: nowy klient+pacjent; istniejący klient+nowy pacjent; istniejący klient+istniejący pacjent (to samo imię/nazwisko) | Brak duplikatów `customer_entity`/`patient`; poprawny `PatientContactLink` | R05 |
+| PBOOK-T04 | POST requests: nowy klient+pacjent; istniejący klient+nowy pacjent; istniejący klient+istniejący pacjent; 600 niepowiązanych klientów; dwa scope; update/delete tożsamości; niejednoznaczny match | Brak duplikatów `customer_entity`/`patient`; poprawny `PatientContactLink`; bounded lookup działa ponad 500 rekordów, nie przecieka scope, aktualizuje/usuwa projekcję i fail-closed przy wieloznaczności | R05 |
 | PBOOK-T05 | POST requests: brak zgody, brak telefonu, brak pól pacjenta | 400, zero zapisu częściowego | R05 |
 | PBOOK-T06 | POST requests: dwa równoległe żądania na ten sam slot | Jeden sukces, drugi 409, brak podwójnej rezerwacji gabinetu/terapeuty | R04/R08 |
 | PBOOK-T07 | POST requests: ten sam `Idempotency-Key` dwa razy (ten sam payload / inny payload) | Ten sam wynik / 409 | R08 |
@@ -367,7 +378,7 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 
 - **Depends on:** PBOOK-2. Klucz API nie jest zewnętrzną zależnością — ta faza sama go prowizjonuje (decyzja B).
 - **Outcome:** Formularz zapisuje wizytę bez duplikatów, z pełnym hardeningiem.
-- **Steps:** 1) Dopasowanie klienta/pacjenta + `BookingIntake`/`ServiceCredential` encje, mapy szyfrowania i komenda `intake.record`. 2) Idempotentne prowizjonowanie konta/roli/klucza po materializacji map szyfrowania; poprawka `requireActorUserId`; UUIDv5; POST route z `resolveAuthFromRequestDetailed`, rate-limit/Idempotency-Key/Origin-Host. 3) Krok 3 wizarda + podziękowanie.
+- **Steps:** 1) Dopasowanie klienta przez scoped identity projection (setup backfill + `customers.person.*` subscriber + bounded decrypt-and-verify), dopasowanie pacjenta oraz `BookingIntake`/`ServiceCredential` encje, mapy szyfrowania i komenda `intake.record`. 2) Idempotentne prowizjonowanie konta/roli/klucza po materializacji map szyfrowania; poprawka `requireActorUserId`; UUIDv5; POST route z `resolveAuthFromRequestDetailed`, rate-limit/Idempotency-Key/Origin-Host. 3) Krok 3 wizarda + podziękowanie.
 - **Validation:** Pełna bramka; `yarn test:integration:ephemeral` PBOOK-T04–T08/T10.
 - **Exit:** Publiczne zgłoszenie tworzy realny `patient_visit`, bez duplikatu klienta/pacjenta, odporne na wyścig i nadużycie.
 
@@ -394,7 +405,7 @@ Docelowe samowystarczalne pliki `src/modules/public_booking/__integration__/PBOO
 
 ## Rollout, Migration, and Rollback
 
-Migracje pozostają addytywne: dwie nowe tabele (`public_booking_intakes`, `public_booking_service_credentials`), nullable pola trwałego delivery na `public_booking_intakes` (w tym follow-up `confirmation_email_claim_job_id`) i custom-field definicje na `catalog_product`; brak nowych kolumn na tabelach `patient`/`customers`/`catalog`. `yarn db:generate`, przegląd SQL/snapshotu, zgoda przed `apply` — zgodnie z AGENTS.md. Przed PBOOK-3: `public_booking/setup.ts` samo-prowizjonuje konto serwisowe, rolę i klucz API przy pierwszym uruchomieniu (zero ręcznego kroku operatora, zero `.env`) — wymaga tylko wgrania drobnej, addytywnej poprawki `requireActorUserId` w `src/modules/patient/lib/commandSupport.ts` (decyzja B). Brak poprawki = publiczny zapis odpada na insercie (uuid), wykryte przez PBOOK-T04 przed wdrożeniem; sam setup jest idempotentny, więc wielokrotny `yarn generate`/restart nie tworzy drugiego konta/klucza.
+Migracje pozostają addytywne: trzy nowe tabele (`public_booking_intakes`, `public_booking_service_credentials`, `public_booking_customer_identities`), nullable pola trwałego delivery na `public_booking_intakes` (w tym follow-up `confirmation_email_claim_job_id`) i custom-field definicje na `catalog_product`; brak nowych kolumn na tabelach `patient`/`customers`/`catalog`. `yarn db:generate`, przegląd SQL/snapshotu, zgoda przed `apply` — zgodnie z AGENTS.md. Setup stronicuje backfill identity projection i można go bezpiecznie ponawiać; potem subscriber utrzymuje ją z commitowanych eventów klienta. Przed PBOOK-3: `public_booking/setup.ts` samo-prowizjonuje konto serwisowe, rolę i klucz API przy pierwszym uruchomieniu (zero ręcznego kroku operatora, zero `.env`) — wymaga tylko wgrania drobnej, addytywnej poprawki `requireActorUserId` w `src/modules/patient/lib/commandSupport.ts` (decyzja B). Brak poprawki = publiczny zapis odpada na insercie (uuid), wykryte przez PBOOK-T04 przed wdrożeniem; sam setup jest idempotentny, więc wielokrotny `yarn generate`/restart nie tworzy drugiego konta/klucza.
 
 Rollback: usunąć wiersz `service_credential` albo konto serwisowe i unieważnić cache auth (bez jawnej invalidacji odcięcie nastąpi po TTL, do około 30 s), opcjonalnie wyłączyć moduł `public_booking` w `src/modules.ts`. Istniejące wizyty zostają w `patient`; tabele i addytywne definicje custom fields mogą pozostać bez wpływu na starsze ścieżki.
 
@@ -449,3 +460,4 @@ Brak blokujących pytań. Decyzje A i B zostały zatwierdzone 2026-10-01; symbol
 | 2026-10-01 | Bramka implementacyjna: dodano jawną mapę seedów wszystkich ośmiu SKU, relacyjne `optionsUrl`, eksportowaną ścieżkę auth, materializację map szyfrowania, semantykę cache/revocation i końcową macierz zgodności |
 | 2026-10-01 | Implementacja PBOOK-3: zaszyfrowany dowód zgód jest serializowany do `text` (ciphertext nie jest JSON-em); dodano jawny hash payloadu dla semantyki 409 i trwały marker idempotencji e-maila potwierdzającego |
 | 2026-10-01 | Implementacja prowizjonowania: doprecyzowano publiczne seamy `provisionExecutionPrincipal` + `createApiKey`, transakcyjne tworzenie klucza/credentialu, per-scope materializację map i bezpieczny retry równoległego setupu |
+| 2026-10-01 | Auto-review implementacji: zastąpiono limitowany pełny decrypt-scan klientów scope-bound keyed-HMAC projection, dodano setup backfill, trwałe utrzymanie `customers.person.*`, create-time reconciliation oraz oracles dla >500 rekordów, dwóch scope i niejednoznaczności |

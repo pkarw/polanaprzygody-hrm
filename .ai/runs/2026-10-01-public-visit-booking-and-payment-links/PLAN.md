@@ -37,6 +37,7 @@
 | 6 | 6.5 | Prove real fresh-database booking and payment journeys | inline | done | dd4b5d4 |
 | 6 | 6.6-review-fix | Preserve gateway errors and declared payment-completion events | inline | done | 1045d5e |
 | 6 | 6.7-review-fix | Align the public UI and server Warsaw booking window | inline | done | this commit |
+| 6 | 6.8-review-fix | Index scoped customer identities for public booking | inline | done | this commit |
 
 ## Goal
 

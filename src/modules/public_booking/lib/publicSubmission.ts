@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { AwilixContainer } from 'awilix'
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
-import { CustomerEntity } from '@open-mercato/core/modules/customers/data/entities'
 import type { CommandBus, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { CrudHttpError, isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { runRouteMutationGuards } from '@open-mercato/shared/lib/crud/route-mutation-guard'
@@ -22,12 +21,15 @@ import { patientCreateSchema, patientVisitCreateSchema } from '../../patient/dat
 import { resolvePublicBookingRequestContext, type PublicBookingAuth } from './publicAuth'
 import { publicBookingZonedInstant, resolvePublicBookingSlot } from './publicDiscovery'
 import type { PublicBookingScope } from './commandSupport'
+import {
+  findCustomerByProjectedIdentity,
+  reconcileCustomerIdentityProjection,
+} from './customerIdentityProjection'
 
 const logger = createLogger('public_booking').child({ component: 'submission' })
 const PUBLIC_BOOKING_UUID_NAMESPACE = 'b963d887-2da8-5b87-942a-f0b79bc94d7d'
 const TERMS_URL = 'https://polanaprzygody.pl/regulamin-swiadczenia-uslug'
 const PRIVACY_URL = 'https://polanaprzygody.pl/polityka-prywatnosci'
-const CUSTOMER_CANDIDATE_LIMIT = 501
 const MAX_REQUEST_BYTES = 32 * 1024
 const REQUIRED_SERVICE_FEATURES = [
   'customers.people.manage',
@@ -314,35 +316,6 @@ async function runGuard(
   return { payload: { ...payload, ...(guard.modifiedPayload ?? {}) }, success: guard }
 }
 
-async function matchCustomer(
-  em: EntityManager,
-  scope: PublicBookingScope,
-  requester: PublicBookingRequest['requester'],
-): Promise<string | null> {
-  const candidates = await findWithDecryption(em, CustomerEntity, {
-    tenantId: scope.tenantId,
-    organizationId: scope.organizationId,
-    kind: 'person',
-    isActive: true,
-    deletedAt: null,
-    $or: [{ primaryEmail: { $ne: null } }, { primaryPhone: { $ne: null } }],
-  } as FilterQuery<CustomerEntity>, {
-    orderBy: { createdAt: 'desc', id: 'asc' },
-    limit: CUSTOMER_CANDIDATE_LIMIT,
-    fields: ['id', 'primaryEmail', 'primaryPhone', 'tenantId', 'organizationId'],
-  }, scope)
-  if (candidates.length >= CUSTOMER_CANDIDATE_LIMIT) {
-    throw new CrudHttpError(503, { error: 'Public booking is temporarily unavailable' })
-  }
-  const email = normalizedEmail(requester.email)
-  const phone = normalizedPhone(requester.phone)
-  const matches = new Set(candidates.filter((candidate) => (
-    (email !== null && normalizedEmail(candidate.primaryEmail ?? undefined) === email)
-    || (phone.length > 0 && normalizedPhone(candidate.primaryPhone) === phone)
-  )).map((candidate) => candidate.id))
-  return matches.size === 1 ? [...matches][0]! : null
-}
-
 async function matchPatient(
   em: EntityManager,
   scope: PublicBookingScope,
@@ -467,7 +440,7 @@ export async function submitPublicBookingRequest(
           now,
         })
 
-        let customerEntityId = await matchCustomer(ctx.em.fork(), ctx.scope, input.requester)
+        let customerEntityId = await findCustomerByProjectedIdentity(ctx.em.fork(), ctx.scope, input.requester)
         if (!customerEntityId) {
           const customerInput = {
             tenantId: ctx.scope.tenantId,
@@ -486,6 +459,7 @@ export async function submitPublicBookingRequest(
           afterSuccess.push(guarded.success)
           createdIds.push(customerEntityId)
           if (created.logEntry?.undoToken) undoTokens.push(created.logEntry.undoToken)
+          await reconcileCustomerIdentityProjection(ctx.em.fork(), ctx.scope, customerEntityId)
         }
 
         let patientId = await matchPatient(ctx.em.fork(), ctx.scope, customerEntityId, input.patient)
