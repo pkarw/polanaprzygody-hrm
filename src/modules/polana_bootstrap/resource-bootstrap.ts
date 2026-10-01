@@ -17,7 +17,7 @@ import { CustomFieldEntityConfig } from '@open-mercato/core/modules/entities/dat
 import { ensureCustomFieldDefinitions } from '@open-mercato/core/modules/entities/lib/field-definitions'
 import { CommandBus, type CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
-import { E } from '#generated/entities.ids.generated'
+import { E } from '@/.mercato/generated/entities.ids.generated'
 import type { BootstrapScope } from './customer-bootstrap'
 import {
   LEGACY_RESOURCE_NAMES,

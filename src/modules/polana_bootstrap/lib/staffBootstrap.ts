@@ -12,7 +12,7 @@ import { CustomFieldEntityConfig, CustomFieldValue } from '@open-mercato/core/mo
 import { ensureCustomFieldDefinitions } from '@open-mercato/core/modules/entities/lib/field-definitions'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import type { CustomFieldDefinition } from '@open-mercato/shared/modules/entities'
-import { E } from '#generated/entities.ids.generated'
+import { E } from '@/.mercato/generated/entities.ids.generated'
 import {
   POLANA_THERAPIST_TEAM,
   POLANA_THERAPISTS,
