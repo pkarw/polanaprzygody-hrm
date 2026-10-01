@@ -75,6 +75,12 @@ type ProductOptionItem = {
   sku?: unknown
   is_active?: unknown
   isActive?: unknown
+  primary_currency_code?: unknown
+  pricing?: {
+    unit_price_net?: unknown
+    unit_price_gross?: unknown
+    currency_code?: unknown
+  } | null
 }
 
 /** Reads whichever casing the host route used, so a response-shape change is not silent. */
@@ -182,15 +188,49 @@ export async function resolveResourceLabel(id: string): Promise<string> {
   return (item && toNamedOption(item.id, item.name)?.label) || '—'
 }
 
-export async function loadProductOptions(query?: string): Promise<CrudFieldOption[]> {
+/** Parses a price field that the catalog API may serialize as a number or a decimal string. */
+function readPriceAmount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+/**
+ * The resolved selling price for a catalog product, as the products list route attaches it
+ * (`item.pricing`, resolved via `catalogPricingService`). Gross is preferred — it is what the
+ * patient is actually charged — falling back to net for a price row with no tax applied, and
+ * to the product's own currency when pricing could not be resolved for the current context.
+ */
+function readProductPrice(item: ProductOptionItem): { amount: number | null; currency: string | null } {
+  const pricing = item.pricing ?? null
+  const amount = readPriceAmount(pricing?.unit_price_gross) ?? readPriceAmount(pricing?.unit_price_net)
+  const currency = (typeof pricing?.currency_code === 'string' && pricing.currency_code)
+    || (typeof item.primary_currency_code === 'string' ? item.primary_currency_code : null)
+  return { amount, currency: currency || null }
+}
+
+export type ProductServiceOption = CrudFieldOption & {
+  priceAmount: number | null
+  priceCurrency: string | null
+}
+
+export async function loadProductOptions(query?: string): Promise<ProductServiceOption[]> {
   const params = new URLSearchParams({ page: '1', pageSize: String(OPTION_PAGE_SIZE), isActive: 'true' })
   if (query?.trim()) params.set('search', query.trim())
   const data = await readApiResultOrThrow<ListResponse<ProductOptionItem>>(
     `/api/catalog/products?${params.toString()}`,
   )
   return (data.items ?? [])
-    .map((item) => toNamedOption(item.id, item.title, item.sku))
-    .filter((item): item is CrudFieldOption => item !== null)
+    .map((item) => {
+      const option = toNamedOption(item.id, item.title, item.sku)
+      if (!option) return null
+      const { amount, currency } = readProductPrice(item)
+      return { ...option, priceAmount: amount, priceCurrency: currency }
+    })
+    .filter((item): item is ProductServiceOption => item !== null)
 }
 
 export async function resolveProductLabel(id: string): Promise<string> {

@@ -4,7 +4,8 @@ import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { EmptyState } from '@open-mercato/ui/primitives/empty-state'
 import { ComboboxInput, type ComboboxOption } from '@open-mercato/ui/backend/inputs/ComboboxInput'
-import { useT } from '@open-mercato/shared/lib/i18n/context'
+import { formatCurrency } from '@open-mercato/ui/utils/format'
+import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
 import {
   loadProductOptions,
   resolveProductLabel,
@@ -24,6 +25,7 @@ export function VisitServicesField({
   seedServices?: VisitServiceSeed[]
 }) {
   const t = useT()
+  const locale = useLocale()
   const [candidate, setCandidate] = React.useState('')
   const seedOptions = React.useMemo<ComboboxOption[]>(
     () => seedServices.map((service) => ({
@@ -39,6 +41,17 @@ export function VisitServicesField({
     () => Object.fromEntries(seedServices.map((service) => [service.productId, service.isAvailable])),
     [seedServices],
   )
+
+  // Formats each option's price in the viewer's locale, so the search dropdown shows what the
+  // service costs instead of just its name and SKU.
+  const loadServiceSuggestions = React.useCallback(async (query?: string): Promise<ComboboxOption[]> => {
+    const options = await loadProductOptions(query)
+    return options.map((option) => ({
+      value: option.value,
+      label: option.label,
+      description: formatCurrency(option.priceAmount, option.priceCurrency, locale) ?? undefined,
+    }))
+  }, [locale])
 
   const addCandidate = React.useCallback(() => {
     if (!candidate || value.includes(candidate)) return
@@ -66,7 +79,7 @@ export function VisitServicesField({
               value={candidate}
               onChange={setCandidate}
               seedOptions={seedOptions}
-              loadSuggestions={loadProductOptions}
+              loadSuggestions={loadServiceSuggestions}
               resolveLabel={resolveProductLabel}
               allowCustomValues={false}
               placeholder={t('patient.visits.services.search')}
