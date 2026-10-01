@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals'
 import { POLANA_CATALOG_FIXTURES } from '../catalog-fixtures'
 import {
+  POLANA_PAYMENT_TEMPLATE_FIELDS,
   seedPolanaPaymentLinkTemplates,
   type PaymentLinkBootstrapDependencies,
   type PaymentTemplateInput,
@@ -75,6 +76,16 @@ function createHarness(initialTemplates: PaymentTemplateRecord[] = []) {
 }
 
 describe('Polana payment-link template bootstrap', () => {
+  it('defines fixture metadata as hidden indexed fields suitable for templates and created links', () => {
+    expect(POLANA_PAYMENT_TEMPLATE_FIELDS.map((field) => field.key)).toEqual([
+      'polana_payment_fixture_key',
+      'catalog_product_id',
+      'catalog_product_sku',
+    ])
+    expect(POLANA_PAYMENT_TEMPLATE_FIELDS.every((field) => field.formEditable === false)).toBe(true)
+    expect(POLANA_PAYMENT_TEMPLATE_FIELDS.every((field) => field.indexed && field.filterable)).toBe(true)
+  })
+
   it('creates eight branded fixed-price service templates and one valid shared draft', async () => {
     const harness = createHarness()
 

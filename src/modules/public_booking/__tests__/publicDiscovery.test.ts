@@ -172,7 +172,12 @@ describe('public booking discovery', () => {
     })
 
     expect(result.slots).toHaveLength(6)
-    expect(result.slots.some((slot) => slot.startsAt === '2026-10-02T09:00:00.000Z')).toBe(false)
+    expect(result.slots[0]).toMatchObject({
+      startsAt: '2026-10-02T10:00:00.000+02:00',
+      endsAt: '2026-10-02T11:00:00.000+02:00',
+      timeZone: 'Europe/Warsaw',
+    })
+    expect(result.slots.some((slot) => Date.parse(slot.startsAt) === Date.parse('2026-10-02T09:00:00.000Z'))).toBe(false)
     expect(JSON.stringify(result)).not.toContain(roomId)
   })
 

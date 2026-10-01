@@ -20,6 +20,7 @@ import {
 } from './payment-link-fixtures'
 
 const CHECKOUT_TEMPLATE_ENTITY_ID = 'checkout:checkout_link_template'
+const CHECKOUT_LINK_ENTITY_ID = 'checkout:checkout_link'
 const PAYMENT_FIELDSET = 'polana_payment_service'
 
 export const POLANA_PAYMENT_TEMPLATE_FIELDS = [
@@ -265,6 +266,13 @@ async function ensurePaymentTemplateFields(em: EntityManager, scope: BootstrapSc
   em.persist(config)
   await ensureCustomFieldDefinitions(em, [{
     entity: CHECKOUT_TEMPLATE_ENTITY_ID,
+    fields: POLANA_PAYMENT_TEMPLATE_FIELDS,
+    source: 'polana_bootstrap',
+  }, {
+    // The installed checkout command copies template custom fields onto each
+    // created link. Define the same hidden fixture fields on the target entity
+    // so a fresh installation can create a link without failing validation.
+    entity: CHECKOUT_LINK_ENTITY_ID,
     fields: POLANA_PAYMENT_TEMPLATE_FIELDS,
     source: 'polana_bootstrap',
   }], scope)

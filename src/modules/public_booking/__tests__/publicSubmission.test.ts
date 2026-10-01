@@ -7,6 +7,7 @@ import { enforcePublicBookingSubmitRateLimit } from '../lib/publicRateLimit'
 import {
   assertPublicBookingRequestSize,
   configuredPublicBookingOrigins,
+  normalizePublicBookingRequest,
   publicBookingPayloadHash,
   publicBookingSubmissionError,
   publicBookingUuidV5,
@@ -73,6 +74,7 @@ describe('public booking submission contracts', () => {
       patient: { ...valid.patient, address: { ...valid.patient.address, country: 'PL' } },
     })
     expect(publicBookingPayloadHash(first)).toBe(publicBookingPayloadHash(second))
+    expect(normalizePublicBookingRequest(first).startsAt).toBe('2026-10-03T10:00:00.000+02:00')
   })
 
   it('implements standard UUIDv5 with correct version and variant', () => {

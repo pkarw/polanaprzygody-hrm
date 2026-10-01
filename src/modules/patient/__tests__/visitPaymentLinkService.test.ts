@@ -130,7 +130,7 @@ describe('visit payment-link service', () => {
         }
       }
       return {
-        items: [{ id: 'price-1', product: 'product-1', unit_price_gross: '100.00', currency_code: 'PLN' }],
+        items: [{ id: 'price-1', product_id: 'product-1', unit_price_gross: '100.00', currency_code: 'PLN' }],
         page: 1,
         pageSize: 100,
         total: 101,
@@ -160,6 +160,12 @@ describe('visit payment-link service', () => {
       [{ productId: 'product-1', title: 'Terapia' }],
       scope,
     )).rejects.toMatchObject({ code: 'payment_price_query_truncated' })
+    expect(query).toHaveBeenNthCalledWith(2, 'catalog:catalog_product_price', expect.objectContaining({
+      fields: expect.arrayContaining(['product_id', 'variant_id', 'price_kind_id']),
+      filters: { product_id: { $eq: 'product-1' } },
+      tenantId: scope.tenantId,
+      organizationId: scope.organizationId,
+    }))
   })
 
   it('creates a validator-complete fixed link for one service without price_list fields', async () => {

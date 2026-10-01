@@ -1,5 +1,6 @@
 import type { EntityManager, FilterQuery } from '@mikro-orm/postgresql'
 import type { AwilixContainer } from 'awilix'
+import { formatInTimeZone } from 'date-fns-tz'
 import {
   CatalogProductCategoryAssignment,
   CatalogProductPrice,
@@ -21,6 +22,10 @@ export const PUBLIC_BOOKING_TIME_ZONE = 'Europe/Warsaw'
 export const PUBLIC_BOOKING_SLOT_MINUTES = 15
 export const PUBLIC_BOOKING_MIN_LEAD_MINUTES = 120
 export const PUBLIC_BOOKING_MAX_DAYS = 60
+
+export function publicBookingZonedInstant(value: Date): string {
+  return formatInTimeZone(value, PUBLIC_BOOKING_TIME_ZONE, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+}
 
 export type PublicBookingPrice = {
   currency: string
@@ -418,8 +423,11 @@ export async function findPublicBookingAvailability(input: {
       })
       if (freeResource) {
         slots.push({
-          startsAt: startsAt.toISOString(),
-          endsAt: endsAt.toISOString(),
+          // The patient write contract validates that the submitted wall clock and
+          // explicit offset belong to `timeZone`. Returning UTC `Z` here made every
+          // otherwise valid Warsaw slot fail that contract outside UTC+00:00.
+          startsAt: publicBookingZonedInstant(startsAt),
+          endsAt: publicBookingZonedInstant(endsAt),
           timeZone: PUBLIC_BOOKING_TIME_ZONE,
         })
       }

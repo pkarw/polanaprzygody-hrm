@@ -20,7 +20,7 @@ import {
 import { Patient, PatientContactLink, type PatientVisit } from '../../patient/data/entities'
 import { patientCreateSchema, patientVisitCreateSchema } from '../../patient/data/validators'
 import { resolvePublicBookingRequestContext, type PublicBookingAuth } from './publicAuth'
-import { resolvePublicBookingSlot } from './publicDiscovery'
+import { publicBookingZonedInstant, resolvePublicBookingSlot } from './publicDiscovery'
 import type { PublicBookingScope } from './commandSupport'
 
 const logger = createLogger('public_booking').child({ component: 'submission' })
@@ -38,9 +38,31 @@ const REQUIRED_SERVICE_FEATURES = [
   'catalog.products.view',
 ] as const
 
+type PublicBookingRbacService = {
+  userHasAllFeatures(
+    principalId: string,
+    required: string[],
+    scope: { tenantId: string | null; organizationId: string | null },
+  ): Promise<boolean>
+  getGrantedFeatures(
+    principalId: string,
+    scope: { tenantId: string | null; organizationId: string | null },
+  ): Promise<string[]>
+}
+
 type CustomerCreateResult = { entityId: string; personId: string }
 type CommandResult<TResult> = { result: TResult; logEntry: { undoToken?: string | null } | null }
 type GuardSuccess = { runAfterSuccess(): Promise<void> }
+
+class PublicBookingCompensationRequired extends Error {
+  constructor(
+    readonly cause: unknown,
+    readonly undoTokens: string[],
+    readonly createdIds: string[],
+  ) {
+    super('Public booking orchestration requires compensation')
+  }
+}
 
 export type PublicBookingSubmissionContext = {
   container: AwilixContainer
@@ -80,8 +102,10 @@ function canonicalize(value: unknown): unknown {
 export function normalizePublicBookingRequest(input: PublicBookingRequest): PublicBookingRequest {
   return {
     ...input,
-    startsAt: new Date(input.startsAt).toISOString(),
-    endsAt: new Date(input.endsAt).toISOString(),
+    // Canonicalize equivalent instants into the facility zone without erasing
+    // the explicit local offset required by the patient scheduling contract.
+    startsAt: publicBookingZonedInstant(new Date(input.startsAt)),
+    endsAt: publicBookingZonedInstant(new Date(input.endsAt)),
     requester: {
       ...input.requester,
       email: normalizedEmail(input.requester.email) ?? undefined,
@@ -395,10 +419,20 @@ export async function buildPublicBookingSubmissionContext(
   const queryEngine = container.resolve<QueryEngine>('queryEngine')
   const commandBus = container.resolve<CommandBus>('commandBus')
   const { auth, scope } = await resolvePublicBookingRequestContext(em, container)
-  const features = new Set(auth.features ?? [])
-  if (!REQUIRED_SERVICE_FEATURES.every((feature) => features.has(feature))) {
+  let rbac: PublicBookingRbacService
+  try {
+    rbac = container.resolve<PublicBookingRbacService>('rbacService')
+  } catch {
     throw new CrudHttpError(503, { error: 'Public booking is temporarily unavailable' })
   }
+  const rbacScope = { tenantId: scope.tenantId, organizationId: scope.organizationId }
+  if (!(await rbac.userHasAllFeatures(auth.sub, [...REQUIRED_SERVICE_FEATURES], rbacScope))) {
+    throw new CrudHttpError(503, { error: 'Public booking is temporarily unavailable' })
+  }
+  // API-key authentication intentionally returns identity and role names only.
+  // Resolve grants through the authoritative RBAC service and carry that checked
+  // projection into mutation guards; never infer privileges from role names.
+  auth.features = await rbac.getGrantedFeatures(auth.sub, rbacScope)
   return { container, em, queryEngine, commandBus, auth, scope, request }
 }
 
@@ -411,131 +445,139 @@ export async function submitPublicBookingRequest(
   const input = normalizePublicBookingRequest(publicBookingRequestSchema.parse(rawInput))
   const payloadHash = publicBookingPayloadHash(input)
   const lockEm = ctx.em.fork()
-  await lockEm.transactional(async (transactionalEm) => {
-    await acquireSubmissionLocks(transactionalEm, ctx.scope, idempotencyKey, input)
-    if (await findIntakeReplay(transactionalEm, ctx.scope, idempotencyKey, payloadHash)) return
+  try {
+    await lockEm.transactional(async (transactionalEm) => {
+      await acquireSubmissionLocks(transactionalEm, ctx.scope, idempotencyKey, input)
+      if (await findIntakeReplay(transactionalEm, ctx.scope, idempotencyKey, payloadHash)) return
 
-    const undoTokens: string[] = []
-    const createdIds: string[] = []
-    const afterSuccess: GuardSuccess[] = []
-    try {
-      const slot = await resolvePublicBookingSlot({
-        em: ctx.em.fork(),
-        container: ctx.container,
-        queryEngine: ctx.queryEngine,
-        scope: ctx.scope,
-        productId: input.productId,
-        teamMemberId: input.teamMemberId,
-        startsAt: new Date(input.startsAt),
-        endsAt: new Date(input.endsAt),
-        timeZone: input.timeZone,
-        now,
-      })
+      const undoTokens: string[] = []
+      const createdIds: string[] = []
+      const afterSuccess: GuardSuccess[] = []
+      try {
+        const slot = await resolvePublicBookingSlot({
+          em: ctx.em.fork(),
+          container: ctx.container,
+          queryEngine: ctx.queryEngine,
+          scope: ctx.scope,
+          productId: input.productId,
+          teamMemberId: input.teamMemberId,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          timeZone: input.timeZone,
+          now,
+        })
 
-      let customerEntityId = await matchCustomer(ctx.em.fork(), ctx.scope, input.requester)
-      if (!customerEntityId) {
-        const customerInput = {
-          tenantId: ctx.scope.tenantId,
-          organizationId: ctx.scope.organizationId,
-          firstName: input.requester.firstName,
-          lastName: input.requester.lastName,
-          displayName: `${input.requester.firstName} ${input.requester.lastName}`,
-          primaryEmail: input.requester.email,
-          primaryPhone: input.requester.phone,
-          source: 'public-booking',
+        let customerEntityId = await matchCustomer(ctx.em.fork(), ctx.scope, input.requester)
+        if (!customerEntityId) {
+          const customerInput = {
+            tenantId: ctx.scope.tenantId,
+            organizationId: ctx.scope.organizationId,
+            firstName: input.requester.firstName,
+            lastName: input.requester.lastName,
+            displayName: `${input.requester.firstName} ${input.requester.lastName}`,
+            primaryEmail: input.requester.email,
+            primaryPhone: input.requester.phone,
+            source: 'public-booking',
+          }
+          const guarded = await runGuard(ctx, 'customers.person', customerInput)
+          const commandInput = { ...guarded.payload, tenantId: ctx.scope.tenantId, organizationId: ctx.scope.organizationId }
+          const created = await executeAudited<CustomerCreateResult>(ctx, 'customers.people.create', commandInput)
+          customerEntityId = created.result.entityId
+          afterSuccess.push(guarded.success)
+          createdIds.push(customerEntityId)
+          if (created.logEntry?.undoToken) undoTokens.push(created.logEntry.undoToken)
         }
-        const guarded = await runGuard(ctx, 'customers.person', customerInput)
-        const commandInput = { ...guarded.payload, tenantId: ctx.scope.tenantId, organizationId: ctx.scope.organizationId }
-        const created = await executeAudited<CustomerCreateResult>(ctx, 'customers.people.create', commandInput)
-        customerEntityId = created.result.entityId
-        afterSuccess.push(guarded.success)
-        createdIds.push(customerEntityId)
-        if (created.logEntry?.undoToken) undoTokens.push(created.logEntry.undoToken)
-      }
 
-      let patientId = await matchPatient(ctx.em.fork(), ctx.scope, customerEntityId, input.patient)
-      if (!patientId) {
-        const patientInput = {
-          firstName: input.patient.firstName,
-          lastName: input.patient.lastName,
-          email: input.requester.email,
-          phone: input.requester.phone,
-          primaryAddress: {
-            addressLine1: input.patient.address.street,
-            city: input.patient.address.city,
-            postalCode: input.patient.address.postalCode,
-            country: input.patient.address.country,
+        let patientId = await matchPatient(ctx.em.fork(), ctx.scope, customerEntityId, input.patient)
+        if (!patientId) {
+          const patientInput = {
+            firstName: input.patient.firstName,
+            lastName: input.patient.lastName,
+            email: input.requester.email,
+            phone: input.requester.phone,
+            primaryAddress: {
+              addressLine1: input.patient.address.street,
+              city: input.patient.address.city,
+              postalCode: input.patient.address.postalCode,
+              country: input.patient.address.country,
+            },
+            contacts: [{
+              customerEntityId,
+              isContact: true,
+              isPayer: true,
+              isPrimaryContact: true,
+            }],
+            clientRequestId: publicBookingUuidV5(`${idempotencyKey}:patient.patients.create`),
+          }
+          const guarded = await runGuard(ctx, 'patient.patient', patientInput)
+          const commandInput = patientCreateSchema.parse(guarded.payload)
+          const created = await executeAudited<Patient>(ctx, 'patient.patients.create', commandInput)
+          patientId = created.result.id
+          afterSuccess.push(guarded.success)
+          createdIds.push(patientId)
+          if (created.logEntry?.undoToken) undoTokens.push(created.logEntry.undoToken)
+        }
+
+        const visitInput = {
+          patientId,
+          teamMemberId: input.teamMemberId,
+          resourceId: slot.resourceId,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          timeZone: input.timeZone,
+          serviceProductIds: [input.productId],
+          clientRequestId: publicBookingUuidV5(`${idempotencyKey}:patient.visits.create`),
+        }
+        const guardedVisit = await runGuard(ctx, 'patient.visit', visitInput)
+        const visit = await executeAudited<PatientVisit>(
+          ctx,
+          'patient.visits.create',
+          patientVisitCreateSchema.parse(guardedVisit.payload),
+        )
+        afterSuccess.push(guardedVisit.success)
+        createdIds.push(visit.result.id)
+        if (visit.logEntry?.undoToken) undoTokens.push(visit.logEntry.undoToken)
+
+        const submittedAt = now.toISOString()
+        const intakeInput = {
+          visitId: visit.result.id,
+          customerEntityId,
+          patientId,
+          productId: input.productId,
+          requesterNameSnapshot: `${input.requester.firstName} ${input.requester.lastName}`,
+          requesterEmailSnapshot: input.requester.email ?? null,
+          requesterPhoneSnapshot: input.requester.phone,
+          consentProof: {
+            terms: { url: TERMS_URL, acceptedAt: submittedAt },
+            privacyPolicy: { url: PRIVACY_URL, acceptedAt: submittedAt },
           },
-          contacts: [{
-            customerEntityId,
-            isContact: true,
-            isPayer: true,
-            isPrimaryContact: true,
-          }],
-          clientRequestId: publicBookingUuidV5(`${idempotencyKey}:patient.patients.create`),
+          clientIdempotencyKey: idempotencyKey,
+          requestPayloadHash: payloadHash,
         }
-        const guarded = await runGuard(ctx, 'patient.patient', patientInput)
-        const commandInput = patientCreateSchema.parse(guarded.payload)
-        const created = await executeAudited<Patient>(ctx, 'patient.patients.create', commandInput)
-        patientId = created.result.id
-        afterSuccess.push(guarded.success)
-        createdIds.push(patientId)
-        if (created.logEntry?.undoToken) undoTokens.push(created.logEntry.undoToken)
+        const guardedIntake = await runGuard(ctx, 'public_booking.booking_intake', intakeInput)
+        await executeAudited<BookingIntake>(
+          ctx,
+          'public_booking.intake.record',
+          bookingIntakeRecordSchema.parse(guardedIntake.payload),
+        )
+        afterSuccess.push(guardedIntake.success)
+        for (const guard of afterSuccess) await guard.runAfterSuccess()
+      } catch (error) {
+        // A raced intake is authoritative even if the command returned through an
+        // infrastructure error after its durable insert.
+        const replay = await findIntakeReplay(ctx.em.fork(), ctx.scope, idempotencyKey, payloadHash)
+        if (replay) return
+        // End the advisory-lock transaction before invoking command undo. The
+        // installed action-log service claims and finalizes undo through distinct
+        // entity-manager forks; doing that inside this transaction self-blocks.
+        throw new PublicBookingCompensationRequired(error, undoTokens, createdIds)
       }
-
-      const visitInput = {
-        patientId,
-        teamMemberId: input.teamMemberId,
-        resourceId: slot.resourceId,
-        startsAt: input.startsAt,
-        endsAt: input.endsAt,
-        timeZone: input.timeZone,
-        serviceProductIds: [input.productId],
-        clientRequestId: publicBookingUuidV5(`${idempotencyKey}:patient.visits.create`),
-      }
-      const guardedVisit = await runGuard(ctx, 'patient.visit', visitInput)
-      const visit = await executeAudited<PatientVisit>(
-        ctx,
-        'patient.visits.create',
-        patientVisitCreateSchema.parse(guardedVisit.payload),
-      )
-      afterSuccess.push(guardedVisit.success)
-      createdIds.push(visit.result.id)
-      if (visit.logEntry?.undoToken) undoTokens.push(visit.logEntry.undoToken)
-
-      const submittedAt = now.toISOString()
-      const intakeInput = {
-        visitId: visit.result.id,
-        customerEntityId,
-        patientId,
-        productId: input.productId,
-        requesterNameSnapshot: `${input.requester.firstName} ${input.requester.lastName}`,
-        requesterEmailSnapshot: input.requester.email ?? null,
-        requesterPhoneSnapshot: input.requester.phone,
-        consentProof: {
-          terms: { url: TERMS_URL, acceptedAt: submittedAt },
-          privacyPolicy: { url: PRIVACY_URL, acceptedAt: submittedAt },
-        },
-        clientIdempotencyKey: idempotencyKey,
-        requestPayloadHash: payloadHash,
-      }
-      const guardedIntake = await runGuard(ctx, 'public_booking.booking_intake', intakeInput)
-      await executeAudited<BookingIntake>(
-        ctx,
-        'public_booking.intake.record',
-        bookingIntakeRecordSchema.parse(guardedIntake.payload),
-      )
-      afterSuccess.push(guardedIntake.success)
-      for (const guard of afterSuccess) await guard.runAfterSuccess()
-    } catch (error) {
-      // A raced intake is authoritative even if the command returned through an
-      // infrastructure error after its durable insert.
-      const replay = await findIntakeReplay(ctx.em.fork(), ctx.scope, idempotencyKey, payloadHash)
-      if (replay) return
-      await compensate(ctx, undoTokens, createdIds)
-      throw error
-    }
-  })
+    })
+  } catch (error) {
+    if (!(error instanceof PublicBookingCompensationRequired)) throw error
+    await compensate(ctx, error.undoTokens, error.createdIds)
+    throw error.cause
+  }
 }
 
 export function publicBookingSubmissionError(error: unknown): { status: number; body: { error: string } } {

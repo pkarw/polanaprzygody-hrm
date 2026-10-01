@@ -498,11 +498,11 @@ export function createProductionDependencies(
         const result = await scopedQuery(
           CATALOG_PRICE_ENTITY_ID,
           [
-            'id', 'product', 'variant', 'offer', 'price_kind', 'currency_code', 'kind',
+            'id', 'product_id', 'variant_id', 'offer_id', 'price_kind_id', 'currency_code', 'kind',
             'min_quantity', 'max_quantity', 'unit_price_net', 'unit_price_gross', 'tax_rate', 'tax_amount',
             'channel_id', 'user_id', 'user_group_id', 'customer_id', 'customer_group_id', 'starts_at', 'ends_at',
           ],
-          { product: { $eq: service.productId } },
+          { product_id: { $eq: service.productId } },
           scope,
           100,
         )
