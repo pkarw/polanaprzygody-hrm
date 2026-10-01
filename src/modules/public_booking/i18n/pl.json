@@ -102,5 +102,16 @@
   "public_booking.thankYou.title": "Dziękujemy!",
   "public_booking.thankYou.description": "Twoje zgłoszenie dotarło do rejestracji. Po potwierdzeniu wizyty wyślemy wiadomość na podany adres e-mail, jeśli został podany.",
   "public_booking.thankYou.next": "Jeśli sprawa jest pilna lub chcesz coś zmienić, skontaktuj się z nami telefonicznie.",
-  "public_booking.thankYou.home": "Wróć na stronę główną"
+  "public_booking.thankYou.home": "Wróć na stronę główną",
+  "public_booking.email.subject": "Potwierdzenie wizyty — Polana Przygody",
+  "public_booking.email.preview": "Wizyta w Polanie Przygody została potwierdzona",
+  "public_booking.email.heading": "Wizyta potwierdzona",
+  "public_booking.email.greeting": "Dzień dobry",
+  "public_booking.email.body": "Rejestracja potwierdziła termin wizyty. Poniżej znajdziesz najważniejsze informacje.",
+  "public_booking.email.service": "Usługa",
+  "public_booking.email.date": "Data",
+  "public_booking.email.time": "Godzina",
+  "public_booking.email.room": "Gabinet",
+  "public_booking.email.address": "Adres",
+  "public_booking.email.footer": "W razie pytań skontaktuj się z rejestracją: +48 790 512 258."
 }

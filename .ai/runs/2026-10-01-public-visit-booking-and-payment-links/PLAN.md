@@ -23,8 +23,8 @@
 | 3 | 3.2 | Build the public shell, home page, and live pricing page | inline | done | 19613ce |
 | 3 | 3.3 | Build accessible therapist and slot selection | inline | done | 2c0890f |
 | 4 | 4.1 | Orchestrate hardened idempotent booking submission | inline | done | 91575bd |
-| 4 | 4.2 | Complete booking intake and thank-you UI states | inline | done | this commit |
-| 4 | 4.3 | Deliver booking confirmation emails after visit confirmation | inline | todo | — |
+| 4 | 4.2 | Complete booking intake and thank-you UI states | inline | done | 7e1af8a |
+| 4 | 4.3 | Deliver booking confirmation emails after visit confirmation | inline | done | this commit |
 | 4 | 4.4 | Show online-booking provenance on visit details | inline | todo | — |
 | 5 | 5.1 | Cover PBOOK API, scope, race, and retry integration paths | inline | todo | — |
 | 5 | 5.2 | Cover VPAY link, email, and settlement integration paths | inline | todo | — |

@@ -102,5 +102,16 @@
   "public_booking.thankYou.title": "Thank you!",
   "public_booking.thankYou.description": "Your request has reached reception. Once the visit is confirmed, we will send a message to the email address if one was provided.",
   "public_booking.thankYou.next": "If the matter is urgent or you need to change anything, call us.",
-  "public_booking.thankYou.home": "Return home"
+  "public_booking.thankYou.home": "Return home",
+  "public_booking.email.subject": "Visit confirmed — Polana Przygody",
+  "public_booking.email.preview": "Your visit at Polana Przygody has been confirmed",
+  "public_booking.email.heading": "Visit confirmed",
+  "public_booking.email.greeting": "Hello",
+  "public_booking.email.body": "Reception has confirmed the visit time. The key details are below.",
+  "public_booking.email.service": "Service",
+  "public_booking.email.date": "Date",
+  "public_booking.email.time": "Time",
+  "public_booking.email.room": "Room",
+  "public_booking.email.address": "Address",
+  "public_booking.email.footer": "If you have questions, call reception on +48 790 512 258."
 }
