@@ -16,8 +16,8 @@
 | 1 | 1.3 | Register visit payment fields and link creation service | group:A:capable | done | ff6c6f6 |
 | 1 | 1.4 | Extend visit confirmation and manual payment-link APIs | group:A:capable | done | a739c7a |
 | 1 | 1.5 | Add payment email, settlement lifecycle, and visit UI | group:A:capable | done | 1c8db09 |
-| 2 | 2.1 | Scaffold public booking and catalog booking fields | inline | done | this commit |
-| 2 | 2.2 | Persist encrypted booking intake and service credentials | inline | todo | — |
+| 2 | 2.1 | Scaffold public booking and catalog booking fields | inline | done | 497db67 |
+| 2 | 2.2 | Persist encrypted booking intake and service credentials | inline | done | this commit |
 | 2 | 2.3 | Provision the scoped booking service identity | inline | todo | — |
 | 3 | 3.1 | Expose scoped public services, therapists, and availability APIs | inline | todo | — |
 | 3 | 3.2 | Build the public shell, home page, and live pricing page | inline | todo | — |
