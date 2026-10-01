@@ -7,6 +7,10 @@ import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import {
   confirmed_at,
+  conflict_override_at,
+  conflict_override_by_user_id,
+  conflict_override_codes,
+  conflict_override_reason,
   description as descriptionField,
   ends_at,
   id as idField,
@@ -41,6 +45,7 @@ import {
   PATIENT_REFERENCE_SERVICE,
 } from '../../di'
 import type { PatientReferenceService } from '../../lib/patientReferenceService'
+import type { ResolvedReference } from '../../lib/patientReferenceService'
 import type { PatientVisitItem, PatientVisitServiceItem } from '../../types'
 import {
   createPatientCrudOpenApi,
@@ -72,6 +77,10 @@ const VISIT_PROTECTED_KEYS = [
   'statusChangedByUserId',
   'statusReason',
   'settlementReason',
+  'conflictOverrideReason',
+  'conflictOverrideAt',
+  'conflictOverrideByUserId',
+  'conflictOverrideCodes',
 ] as const
 
 type VisitRow = {
@@ -87,6 +96,10 @@ type VisitRow = {
   description?: string | null
   status: 'planned' | 'completed' | 'cancelled' | 'no_show'
   confirmed_at: Date | string | null
+  conflict_override_at: Date | string | null
+  conflict_override_by_user_id: string | null
+  conflict_override_codes: string[] | null
+  conflict_override_reason?: string | null
   is_settled: boolean
   settled_at: Date | string | null
   updated_at: Date | string
@@ -157,6 +170,10 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       ...(isVisitDetailQuery(query) ? [descriptionField] : []),
       statusField,
       confirmed_at,
+      conflict_override_at,
+      conflict_override_by_user_id,
+      conflict_override_codes,
+      ...(isVisitDetailQuery(query) ? [conflict_override_reason] : []),
       is_settled,
       settled_at,
       tenant_id,
@@ -203,6 +220,15 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         ...(item.description !== undefined ? { description: item.description ?? null } : {}),
         status: item.status,
         confirmedAt,
+        conflictOverrideAt: toIsoTimestamp(item.conflict_override_at),
+        conflictOverrideByUserId: item.conflict_override_by_user_id ?? null,
+        conflictOverrideByUserName: null,
+        conflictOverrideCodes: Array.isArray(item.conflict_override_codes)
+          ? item.conflict_override_codes.filter((code): code is string => typeof code === 'string')
+          : null,
+        ...(item.conflict_override_reason !== undefined
+          ? { conflictOverrideReason: item.conflict_override_reason ?? null }
+          : {}),
         isConfirmed: confirmedAt !== null,
         confirmationApplicable: item.status === 'planned',
         isSettled: Boolean(item.is_settled),
@@ -259,11 +285,18 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
         patientNameById.set(String(patient.id), name.length > 0 ? name : null)
       }
       const productIds = Array.from(new Set(services.map((service) => String(service.productId))))
-      const products = productIds.length > 0
-        ? await ctx.container
-            .resolve<PatientReferenceService>(PATIENT_REFERENCE_SERVICE)
-            .resolveProducts(productIds, { tenantId, organizationId })
-        : new Map()
+      const references = ctx.container.resolve<PatientReferenceService>(PATIENT_REFERENCE_SERVICE)
+      const overrideUserIds = Array.from(new Set(items
+        .map((item) => item.conflictOverrideByUserId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)))
+      const [products, overrideUsers]: [Map<string, { isAvailable: boolean }>, Map<string, ResolvedReference>] = await Promise.all([
+        productIds.length > 0
+          ? references.resolveProducts(productIds, { tenantId, organizationId })
+          : new Map(),
+        overrideUserIds.length > 0
+          ? references.resolveUsers(overrideUserIds, { tenantId, organizationId })
+          : new Map(),
+      ])
       const servicesByVisit = new Map<string, PatientVisitServiceItem[]>()
       for (const service of services) {
         const visitId = String(service.visitId)
@@ -281,6 +314,9 @@ export const { metadata, GET, POST, PUT, DELETE } = makeCrudRoute({
       for (const item of items) {
         item.patientName = patientNameById.get(item.patientId) ?? null
         item.services = servicesByVisit.get(item.id) ?? []
+        item.conflictOverrideByUserName = item.conflictOverrideByUserId
+          ? overrideUsers.get(item.conflictOverrideByUserId)?.displayName ?? null
+          : null
       }
     },
   },

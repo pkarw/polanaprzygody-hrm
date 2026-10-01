@@ -19,6 +19,8 @@ describe('patient visit UI contracts', () => {
     const sources = [
       read('components', 'VisitForm.tsx'),
       read('components', 'VisitLifecycleActions.tsx'),
+      read('components', 'VisitAvailabilityCheck.tsx'),
+      read('components', 'VisitsCalendar.tsx'),
       read('components', 'VisitsTable.tsx'),
       read('components', 'VisitServicesField.tsx'),
     ].join('\n')
@@ -30,6 +32,79 @@ describe('patient visit UI contracts', () => {
     }
     expect(Object.keys(en).filter((key) => key.startsWith('patient.visits.')).sort())
       .toEqual(Object.keys(pl).filter((key) => key.startsWith('patient.visits.')).sort())
+  })
+
+  it('reuses one debounced availability gate and renders the override audit without UUIDs', () => {
+    const availability = read('components', 'VisitAvailabilityCheck.tsx')
+    const form = read('components', 'VisitForm.tsx')
+    const access = read('components', 'usePatientVisitAccess.ts')
+    const route = read('api', 'visits', 'route.ts')
+    expect(availability).toContain("['patient.visits', 'availability-check', debouncedUrl]")
+    expect(availability).toContain('window.setTimeout(() => setDebouncedUrl(probeUrl), 300)')
+    expect(availability).toContain('acknowledgedSignatures: Array.from(new Set(')
+    expect(availability).toContain('event.metaKey || event.ctrlKey')
+    expect(form).toContain('<VisitAvailabilityCheck')
+    expect(form).toContain('<VisitConflictOverrideAudit visit={record} />')
+    expect(form).not.toContain('{visit.conflictOverrideByUserId}')
+    expect(access).toContain("'patient.visits.override_conflict'")
+    expect(route).toContain('references.resolveUsers(overrideUserIds')
+  })
+
+  it('reuses the VIS editor in a keyboard-accessible calendar dialog', () => {
+    const form = read('components', 'VisitForm.tsx')
+    expect(form).toContain('export function VisitCalendarDialog')
+    expect(form).toContain('<VisitCreateForm')
+    expect(form).toContain('<VisitDetailForm')
+    expect(form).toContain('embedded={embedded}')
+    expect(form).toContain('trackDirtyWhenEmbedded={embedded}')
+    expect(form).toContain("customFieldsManageMode={embedded ? 'page' : 'inline'}")
+    expect(form).toContain('form.requestSubmit()')
+    expect(form).toContain("event.target.closest('[data-dialog-content]')")
+    expect(form).toContain('data-visit-dialog-delete=""')
+    expect(form).toContain('buildOptimisticLockHeader(record.updatedAt)')
+    expect(form).toContain("variant: 'destructive'")
+    expect(form).toContain('event.metaKey || event.ctrlKey')
+    expect(form).toContain('startsAtLocal: startsAt ? toVisitLocalDateTime(startsAt, timeZone)')
+    expect(form).toContain('await onSaved?.()')
+  })
+
+  it('builds the calendar on the public schedule surface with timezone-safe URL state', () => {
+    const calendar = read('components', 'VisitsCalendar.tsx')
+    const table = read('components', 'VisitsTable.tsx')
+    const pageMeta = read('backend', 'patient', 'visits', 'calendar', 'page.meta.ts')
+    expect(calendar).toContain("from '@open-mercato/ui/backend/schedule'")
+    expect(calendar).toContain('toZonedTime(new Date(value), timeZone)')
+    expect(calendar).toContain('fromZonedTime(normalized.start, state.timeZone)')
+    expect(calendar).toContain("queryKey: ['patient.visits', 'calendar', queryString, scopeVersion]")
+    expect(calendar).toContain("next.set('from', serializedRange.from)")
+    expect(calendar).toContain("next.set('view', state.view)")
+    expect(calendar).toContain("next.set('timeZone', state.timeZone)")
+    expect(calendar).toContain('enabled: access.status === \'ready\' && access.canView && !rangeTooWide')
+    expect(calendar).toContain("linkLabel: t('patient.visits.actions.open')")
+    expect(calendar).toContain("onSlotClick={access.canManage ? openCreate : undefined}")
+    expect(calendar).toContain("state.view === 'month'")
+    expect(calendar).toContain("view: 'month'")
+    expect(calendar).toContain("t('patient.visits.calendar.showMonth')")
+    expect(calendar).toContain('data-visit-availability-lanes=""')
+    expect(calendar).toContain("dateStyle: 'medium'")
+    expect(calendar).toContain("timeStyle: 'short'")
+    expect(calendar).toContain('<time dateTime={window.from}>')
+    expect(calendar).toContain('laneWindowFormatter.formatRange(new Date(window.from), new Date(window.to))')
+    expect(calendar).toContain('return [...laneItems, ...visits]')
+    expect(calendar).toContain('kind: window.kind')
+    expect(calendar).toContain("metadata: { itemType: 'availability-band' }")
+    expect(calendar).toContain('function normalizeAvailabilityBands(root: HTMLElement)')
+    expect(calendar).toContain("element.setAttribute('aria-hidden', 'true')")
+    expect(calendar).toContain("element.classList.add('pointer-events-none')")
+    expect(calendar).toContain("attributeFilter: ['class', 'tabindex', 'aria-hidden']")
+    expect(calendar).toContain('ref={setScheduleRootRef}')
+    expect(calendar).toContain('visit.resourceName ?')
+    expect(calendar).toContain('<VisitCalendarDialog')
+    expect(table).toContain("t('patient.visits.actions.calendar')")
+    expect(table).toContain("t('patient.visits.actions.showInCalendar')")
+    expect(table).toContain('visitCalendarDayRange(visit.startsAt, visit.timeZone)')
+    expect(pageMeta).toContain("icon: 'calendar'")
+    expect(pageMeta).toContain('pagePriority: 10')
   })
 
   it('pins immutable patients, versioned mutations, snapshots, and owner suggestions', () => {

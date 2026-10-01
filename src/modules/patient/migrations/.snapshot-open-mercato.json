@@ -2677,6 +2677,74 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "conflict_override_at": {
+          "name": "conflict_override_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "conflict_override_by_user_id": {
+          "name": "conflict_override_by_user_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "conflict_override_codes": {
+          "name": "conflict_override_codes",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "json"
+        },
+        "conflict_override_reason": {
+          "name": "conflict_override_reason",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "create_request_payload": {
           "name": "create_request_payload",
           "type": "text",
@@ -3122,6 +3190,15 @@
       },
       "indexes": [
         {
+          "columnNames": [],
+          "composite": false,
+          "constraint": false,
+          "keyName": "patient_visits_member_busy_idx",
+          "primary": false,
+          "unique": false,
+          "expression": "create index \"patient_visits_member_busy_idx\" on \"patient_visits\" (\"tenant_id\", \"organization_id\", \"team_member_id\", \"starts_at\", \"ends_at\") where \"deleted_at\" is null and \"status\" <> 'cancelled'"
+        },
+        {
           "columnNames": [
             "id"
           ],
@@ -3130,6 +3207,15 @@
           "keyName": "patient_visits_pkey",
           "primary": true,
           "unique": true
+        },
+        {
+          "columnNames": [],
+          "composite": false,
+          "constraint": false,
+          "keyName": "patient_visits_resource_busy_idx",
+          "primary": false,
+          "unique": false,
+          "expression": "create index \"patient_visits_resource_busy_idx\" on \"patient_visits\" (\"tenant_id\", \"organization_id\", \"resource_id\", \"starts_at\", \"ends_at\") where \"deleted_at\" is null and \"status\" <> 'cancelled' and \"resource_id\" is not null"
         },
         {
           "columnNames": [
@@ -3224,6 +3310,11 @@
           "name": "patient_visits_confirmation_pair_chk",
           "expression": "(\"confirmed_at\" is null) = (\"confirmed_by_user_id\" is null)",
           "definition": "check ((\"confirmed_at\" is null) = (\"confirmed_by_user_id\" is null))"
+        },
+        {
+          "name": "patient_visits_conflict_override_fields_chk",
+          "expression": "(\"conflict_override_reason\" is null and \"conflict_override_at\" is null and \"conflict_override_by_user_id\" is null and \"conflict_override_codes\" is null) or (\"conflict_override_reason\" is not null and \"conflict_override_at\" is not null and \"conflict_override_by_user_id\" is not null and jsonb_typeof(\"conflict_override_codes\") = 'array' and jsonb_array_length(\"conflict_override_codes\") > 0)",
+          "definition": "check ((\"conflict_override_reason\" is null and \"conflict_override_at\" is null and \"conflict_override_by_user_id\" is null and \"conflict_override_codes\" is null) or (\"conflict_override_reason\" is not null and \"conflict_override_at\" is not null and \"conflict_override_by_user_id\" is not null and jsonb_typeof(\"conflict_override_codes\") = 'array' and jsonb_array_length(\"conflict_override_codes\") > 0))"
         },
         {
           "name": "patient_visits_end_after_start_chk",

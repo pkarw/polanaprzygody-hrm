@@ -59,6 +59,13 @@ const events = [
   { id: 'patient.visit.created', label: 'Patient Visit Created', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
   { id: 'patient.visit.updated', label: 'Patient Visit Updated', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
   { id: 'patient.visit.deleted', label: 'Patient Visit Deleted', entity: 'visit', category: 'crud', payloadSchema: visitPayloadSchema },
+  {
+    id: 'patient.visit.conflict_overridden',
+    label: 'Patient Visit Conflict Overridden',
+    entity: 'visit',
+    category: 'lifecycle',
+    payloadSchema: { fields: [...visitPayloadFields, { path: 'codes', type: 'object' }] },
+  },
   { id: 'patient.visit.confirmed', label: 'Patient Visit Confirmed', entity: 'visit', category: 'lifecycle', payloadSchema: visitPayloadSchema },
   { id: 'patient.visit.unconfirmed', label: 'Patient Visit Unconfirmed', entity: 'visit', category: 'lifecycle', payloadSchema: visitPayloadSchema },
   {

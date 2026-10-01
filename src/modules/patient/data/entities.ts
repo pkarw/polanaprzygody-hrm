@@ -799,6 +799,16 @@ export class PatientAttachmentLink {
 @Index({ name: 'patient_visits_scope_status_start_idx', properties: ['tenantId', 'organizationId', 'status', 'startsAt'] })
 @Index({ name: 'patient_visits_scope_settled_start_idx', properties: ['tenantId', 'organizationId', 'isSettled', 'startsAt'] })
 @Index({
+  name: 'patient_visits_member_busy_idx',
+  expression:
+    `create index "patient_visits_member_busy_idx" on "patient_visits" ("tenant_id", "organization_id", "team_member_id", "starts_at", "ends_at") where "deleted_at" is null and "status" <> 'cancelled'`,
+})
+@Index({
+  name: 'patient_visits_resource_busy_idx',
+  expression:
+    `create index "patient_visits_resource_busy_idx" on "patient_visits" ("tenant_id", "organization_id", "resource_id", "starts_at", "ends_at") where "deleted_at" is null and "status" <> 'cancelled' and "resource_id" is not null`,
+})
+@Index({
   name: 'patient_visits_scope_request_uq',
   expression:
     `create unique index "patient_visits_scope_request_uq" on "patient_visits" ("tenant_id", "organization_id", "client_request_id")`,
@@ -820,6 +830,11 @@ export class PatientAttachmentLink {
   expression:
     `("is_settled" and "settled_at" is not null and "settled_by_user_id" is not null) or (not "is_settled" and "settled_at" is null and "settled_by_user_id" is null)`,
 })
+@Check({
+  name: 'patient_visits_conflict_override_fields_chk',
+  expression:
+    `("conflict_override_reason" is null and "conflict_override_at" is null and "conflict_override_by_user_id" is null and "conflict_override_codes" is null) or ("conflict_override_reason" is not null and "conflict_override_at" is not null and "conflict_override_by_user_id" is not null and jsonb_typeof("conflict_override_codes") = 'array' and jsonb_array_length("conflict_override_codes") > 0)`,
+})
 export class PatientVisit {
   [OptionalProps]?:
     | 'status'
@@ -830,6 +845,10 @@ export class PatientVisit {
     | 'settledByUserId'
     | 'statusReason'
     | 'settlementReason'
+    | 'conflictOverrideReason'
+    | 'conflictOverrideAt'
+    | 'conflictOverrideByUserId'
+    | 'conflictOverrideCodes'
     | 'createdAt'
     | 'updatedAt'
     | 'deletedAt'
@@ -905,6 +924,19 @@ export class PatientVisit {
   /** Encrypted reason for the most recent settlement change. */
   @Property({ name: 'settlement_reason', type: 'text', nullable: true })
   settlementReason?: string | null
+
+  /** Encrypted operator rationale for the most recent explicit warning override. */
+  @Property({ name: 'conflict_override_reason', type: 'text', nullable: true })
+  conflictOverrideReason?: string | null
+
+  @Property({ name: 'conflict_override_at', type: Date, nullable: true })
+  conflictOverrideAt?: Date | null
+
+  @Property({ name: 'conflict_override_by_user_id', type: 'uuid', nullable: true })
+  conflictOverrideByUserId?: string | null
+
+  @Property({ name: 'conflict_override_codes', type: 'json', nullable: true })
+  conflictOverrideCodes?: string[] | null
 
   @Property({ name: 'client_request_id', type: 'uuid' })
   clientRequestId!: string

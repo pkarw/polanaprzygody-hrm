@@ -405,6 +405,7 @@ export function VisitLifecycleActions({ visit, access, onSaved }: VisitLifecycle
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault()
+              event.stopPropagation()
               void submitDialog()
             }
           }}

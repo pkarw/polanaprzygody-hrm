@@ -459,6 +459,56 @@ const serviceProductIdsSchema = z
   .array(z.string().uuid())
   .max(100)
 
+export const patientVisitConflictOverrideSchema = z.object({
+  acknowledgedSignatures: z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(100),
+  reason: z.string().trim().min(1).max(2_000),
+}).strict()
+
+export const patientVisitAvailabilityCheckQuerySchema = z.object({
+  teamMemberId: z.string().uuid(),
+  startsAt: patientVisitInstantSchema,
+  endsAt: patientVisitInstantSchema.optional(),
+  resourceId: z.string().uuid().optional(),
+  excludeVisitId: z.string().uuid().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.endsAt && Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endsAt'],
+      message: 'The visit end must be later than its start',
+    })
+  }
+})
+
+const PATIENT_VISIT_CALENDAR_MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1_000
+
+export const patientVisitCalendarQuerySchema = z.object({
+  from: patientVisitInstantSchema,
+  to: patientVisitInstantSchema,
+  teamMemberId: z.string().uuid().optional(),
+  resourceId: z.string().uuid().optional(),
+  patientId: z.string().uuid().optional(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']).optional(),
+}).strict().superRefine((value, ctx) => {
+  const from = Date.parse(value.from)
+  const to = Date.parse(value.to)
+  if (to <= from) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range end must be later than its start',
+    })
+    return
+  }
+  if (to - from > PATIENT_VISIT_CALENDAR_MAX_RANGE_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'The calendar range cannot exceed 62 days',
+    })
+  }
+})
+
 export const patientVisitCreateSchema = z
   .object({
     ...visitScheduleFields,
@@ -468,6 +518,7 @@ export const patientVisitCreateSchema = z
     description: clearableText(20_000).optional(),
     serviceProductIds: serviceProductIdsSchema.optional().default([]),
     clientRequestId: z.string().uuid(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
   })
   .strict()
 
@@ -482,6 +533,7 @@ export const patientVisitUpdateSchema = z
     timeZone: patientVisitTimeZoneSchema.optional(),
     description: clearableText(20_000).optional(),
     serviceProductIds: serviceProductIdsSchema.optional(),
+    conflictOverride: patientVisitConflictOverrideSchema.optional(),
   })
   .strict()
 

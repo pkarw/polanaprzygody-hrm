@@ -5,6 +5,7 @@ import {
   createPagedListResponseSchema as createSharedPagedListResponseSchema,
   type CrudOpenApiOptions,
 } from '@open-mercato/shared/lib/openapi/crud'
+import { VISIT_CONFLICT_CODES } from '../lib/visitConflicts'
 
 export const patientTag = 'Patients'
 
@@ -15,6 +16,76 @@ export const patientErrorSchema = z
   .passthrough()
 
 export const patientOkSchema = z.object({ ok: z.literal(true) })
+
+export const patientVisitConflictSchema = z.object({
+  code: z.enum(VISIT_CONFLICT_CODES),
+  severity: z.enum(['blocking', 'warning', 'info']),
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+  from: z.string(),
+  to: z.string().nullable(),
+  reasonLabel: z.string().optional(),
+  conflictingVisitId: z.string().uuid().optional(),
+  signature: z.string().regex(/^[a-f0-9]{64}$/),
+})
+
+export const patientVisitAvailabilityCheckResponseSchema = z.object({
+  conflicts: z.array(patientVisitConflictSchema),
+  worstSeverity: z.enum(['blocking', 'warning', 'info']).nullable(),
+  checkedAt: z.string(),
+})
+
+export const patientVisitCalendarItemSchema = z.object({
+  id: z.string().uuid(),
+  patientId: z.string().uuid(),
+  patientName: z.string().nullable(),
+  teamMemberId: z.string().uuid(),
+  teamMemberName: z.string(),
+  resourceId: z.string().uuid().nullable(),
+  resourceName: z.string().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string().nullable(),
+  timeZone: z.string(),
+  status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
+  confirmedAt: z.string().nullable(),
+  isSettled: z.boolean(),
+  conflictOverrideAt: z.string().nullable(),
+  conflictOverrideCodes: z.array(z.enum(VISIT_CONFLICT_CODES)).nullable(),
+  updatedAt: z.string(),
+})
+
+export const patientVisitAvailabilityLaneWindowSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['availability', 'exception']),
+  from: z.string(),
+  to: z.string(),
+  reasonLabel: z.string().optional(),
+})
+
+export const patientVisitAvailabilityLaneSchema = z.object({
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+  hasSchedule: z.boolean(),
+  isActive: z.boolean().optional(),
+  unknown: z.boolean(),
+  windows: z.array(patientVisitAvailabilityLaneWindowSchema),
+})
+
+export const patientVisitCalendarDegradationSchema = z.object({
+  code: z.literal('availability_unknown'),
+  subjectType: z.enum(['member', 'resource']),
+  subjectId: z.string().uuid(),
+  subjectName: z.string(),
+})
+
+export const patientVisitCalendarResponseSchema = z.object({
+  items: z.array(patientVisitCalendarItemSchema),
+  lanes: z.array(patientVisitAvailabilityLaneSchema),
+  degraded: z.array(patientVisitCalendarDegradationSchema),
+  range: z.object({ from: z.string(), to: z.string() }),
+})
 
 export const patientCreatedSchema = z.object({
   id: z.string().uuid(),
@@ -190,6 +261,10 @@ export const patientVisitListItemSchema = z.object({
   timeZone: z.string(),
   status: z.enum(['planned', 'completed', 'cancelled', 'no_show']),
   confirmedAt: z.string().nullable(),
+  conflictOverrideAt: z.string().nullable().optional(),
+  conflictOverrideByUserId: z.string().uuid().nullable().optional(),
+  conflictOverrideByUserName: z.string().nullable().optional(),
+  conflictOverrideCodes: z.array(z.string()).nullable().optional(),
   isConfirmed: z.boolean(),
   confirmationApplicable: z.boolean(),
   isSettled: z.boolean(),
@@ -198,10 +273,13 @@ export const patientVisitListItemSchema = z.object({
   updatedAt: z.string(),
   /** Present only for an explicit `?id=` detail lookup. */
   description: z.string().nullable().optional(),
+  /** Present only for an explicit `?id=` detail lookup. */
+  conflictOverrideReason: z.string().nullable().optional(),
 })
 
 export const patientVisitDetailSchema = patientVisitListItemSchema.safeExtend({
   description: z.string().nullable(),
+  conflictOverrideReason: z.string().nullable(),
 })
 
 export const patientVisitCreatedSchema = z.object({

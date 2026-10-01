@@ -1,3 +1,7 @@
+import { addDays } from 'date-fns/addDays'
+import { startOfDay } from 'date-fns/startOfDay'
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
+
 export type VisitInstantChoice = { instant: string; offset: string }
 
 const LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
@@ -71,4 +75,49 @@ export function instantOffsetInTimeZone(instant: string, timeZone: string): stri
 
 export function defaultVisitTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+}
+
+export function visitCalendarDayRange(
+  instant: string,
+  timeZone: string,
+): { from: string; to: string } | null {
+  const value = new Date(instant)
+  if (!Number.isFinite(value.getTime())) return null
+  try {
+    const localStart = startOfDay(toZonedTime(value, timeZone))
+    return {
+      from: fromZonedTime(localStart, timeZone).toISOString(),
+      to: fromZonedTime(addDays(localStart, 1), timeZone).toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+export type VisitScheduleFormValue = {
+  startsAtLocal: string
+  endsAtLocal?: string | null
+  timeZone: string
+  startOffset?: string | null
+  endOffset?: string | null
+}
+
+export function buildVisitSchedule(
+  value: VisitScheduleFormValue,
+  labels: { gap: string; fold: string; offset: string; endAfterStart: string },
+): { startsAt: string; endsAt: string | null } {
+  const resolve = (local: string, offset?: string | null) => {
+    const choices = visitInstantChoices(local, value.timeZone)
+    if (choices.length === 0) throw new Error(labels.gap)
+    if (choices.length > 1 && !offset) throw new Error(labels.fold)
+    const selected = resolveVisitInstant(local, value.timeZone, offset)
+    if (!selected) throw new Error(labels.offset)
+    return selected.instant
+  }
+  const startsAt = resolve(value.startsAtLocal, value.startOffset)
+  const endsAt = value.endsAtLocal ? resolve(value.endsAtLocal, value.endOffset) : null
+  if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw new Error(labels.endAfterStart)
+  }
+  return { startsAt, endsAt }
 }

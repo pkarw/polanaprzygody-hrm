@@ -70,6 +70,12 @@ export const features = [
     module: 'patient',
     dependsOn: ['patient.visits.manage'],
   },
+  {
+    id: 'patient.visits.override_conflict',
+    title: 'Override patient visit availability warnings',
+    module: 'patient',
+    dependsOn: ['patient.visits.manage'],
+  },
 ]
 
 export default features

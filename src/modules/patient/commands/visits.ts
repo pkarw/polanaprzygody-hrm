@@ -4,7 +4,7 @@ import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core'
 import type { CommandHandler, CommandRuntimeContext } from '@open-mercato/shared/lib/commands'
 import { registerCommand } from '@open-mercato/shared/lib/commands'
 import { runCrudCommandWrite } from '@open-mercato/shared/lib/commands/runCrudCommandWrite'
-import { conflict, CrudHttpError, forbidden } from '@open-mercato/shared/lib/crud/errors'
+import { conflict, CrudHttpError, forbidden, isCrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudEmitContext, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { findOneWithDecryption, findWithDecryption } from '@open-mercato/shared/lib/encryption/find'
 import { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'
@@ -25,6 +25,11 @@ import type {
   ResolvedProductReference,
   ResolvedReference,
 } from '../lib/patientReferenceService'
+import type {
+  PatientAvailabilityService,
+  PlannerAvailabilityService,
+} from '../lib/patientAvailabilityService'
+import { evaluateVisitConflicts, type VisitConflict, type VisitConflictDraft } from '../lib/visitConflicts'
 import {
   assertExpectedVersion,
   assertPatientAcceptsNewEntries,
@@ -78,6 +83,10 @@ type VisitAuditSnapshot = {
   settledAt: string | null
   settledByUserId: string | null
   settlementReason: string | null
+  conflictOverrideReason: string | null
+  conflictOverrideAt: string | null
+  conflictOverrideByUserId: string | null
+  conflictOverrideCodes: string[] | null
   confirmedAt: string | null
   confirmedByUserId: string | null
   services: VisitServiceSnapshot[]
@@ -107,6 +116,25 @@ function referenceService(ctx: CommandRuntimeContext): PatientReferenceService {
       error: 'The reference service required for patient visits is unavailable',
       code: 'visit_reference_service_unavailable',
     })
+  }
+}
+
+function availabilityService(ctx: CommandRuntimeContext): PatientAvailabilityService {
+  try {
+    return ctx.container.resolve('patientAvailabilityService') as PatientAvailabilityService
+  } catch {
+    throw new CrudHttpError(503, {
+      error: 'The availability service required for patient visits is unavailable',
+      code: 'visit_availability_service_unavailable',
+    })
+  }
+}
+
+function optionalPlannerAvailabilityService(ctx: CommandRuntimeContext): PlannerAvailabilityService | null {
+  try {
+    return ctx.container.resolve('plannerAvailabilityService') as PlannerAvailabilityService
+  } catch {
+    return null
   }
 }
 
@@ -232,6 +260,10 @@ async function serializeVisit(
     settledAt: visit.settledAt?.toISOString() ?? null,
     settledByUserId: visit.settledByUserId ?? null,
     settlementReason: visit.settlementReason ?? null,
+    conflictOverrideReason: visit.conflictOverrideReason ?? null,
+    conflictOverrideAt: visit.conflictOverrideAt?.toISOString() ?? null,
+    conflictOverrideByUserId: visit.conflictOverrideByUserId ?? null,
+    conflictOverrideCodes: visit.conflictOverrideCodes ? [...visit.conflictOverrideCodes] : null,
     confirmedAt: visit.confirmedAt?.toISOString() ?? null,
     confirmedByUserId: visit.confirmedByUserId ?? null,
     services: services.map((service) => ({
@@ -346,7 +378,13 @@ async function resolveCreateReferences(
 
   let resource: ResolvedReference | null = null
   if (input.resourceId) {
-    resource = await references.requireActiveResource(input.resourceId, scope)
+    resource = (await references.resolveResources([input.resourceId], scope)).get(input.resourceId) ?? null
+    if (!resource) {
+      throw new CrudHttpError(422, {
+        error: 'A selected visit reference is unavailable',
+        code: 'visit_reference_unavailable',
+      })
+    }
   }
 
   let products: ResolvedProductReference[] = []
@@ -354,6 +392,93 @@ async function resolveCreateReferences(
     products = await references.requireActiveProducts(input.serviceProductIds, scope)
   }
   return { teamMember, resource, products }
+}
+
+export async function acquireVisitSubjectLocks(
+  em: EntityManager,
+  scope: PatientScope,
+  subjects: Array<{ type: 'member' | 'resource'; id: string | null | undefined }>,
+): Promise<void> {
+  const keys = Array.from(new Set(subjects
+    .filter((subject): subject is { type: 'member' | 'resource'; id: string } => Boolean(subject.id))
+    .map((subject) => `patient:visit-slot:${scope.tenantId}:${scope.organizationId}:${subject.type}:${subject.id}`)))
+    .sort()
+  try {
+    for (const key of keys) {
+      await em.getConnection().execute(
+        'select pg_advisory_xact_lock(hashtextextended(?::text, 0))',
+        [key],
+      )
+    }
+  } catch (error) {
+    if (isLockWaitTimeout(error)) {
+      throw new CrudHttpError(409, {
+        error: 'This visit schedule is being changed right now; try again in a moment',
+        code: 'visit_schedule_locked',
+      })
+    }
+    throw error
+  }
+}
+
+async function evaluateCommandConflicts(input: {
+  ctx: CommandRuntimeContext
+  em: EntityManager
+  scope: PatientScope
+  draft: VisitConflictDraft
+  excludeVisitId?: string
+}): Promise<VisitConflict[]> {
+  const service = availabilityService(input.ctx)
+  const [subjects, overlappingVisits] = await Promise.all([
+    service.getSubjectAvailability({
+      scope: input.scope,
+      range: {
+        start: input.draft.startsAt,
+        end: input.draft.endsAt ?? new Date(input.draft.startsAt.getTime() + 60_000),
+      },
+      teamMember: { id: input.draft.teamMemberId, name: input.draft.teamMemberName },
+      ...(input.draft.resourceId ? {
+        resource: { id: input.draft.resourceId, name: input.draft.resourceName ?? '' },
+      } : {}),
+      plannerAvailabilityService: optionalPlannerAvailabilityService(input.ctx),
+    }),
+    service.findOverlappingVisits({
+      scope: input.scope,
+      draft: input.draft,
+      excludeVisitId: input.excludeVisitId,
+      em: input.em,
+    }),
+  ])
+  return evaluateVisitConflicts({ draft: input.draft, subjects, overlappingVisits })
+}
+
+export async function assertConflictDecision(
+  ctx: CommandRuntimeContext,
+  scope: PatientScope,
+  conflicts: VisitConflict[],
+  override: { acknowledgedSignatures: string[]; reason: string } | undefined,
+): Promise<{ codes: string[]; reason: string } | null> {
+  const blocking = conflicts.filter((item) => item.severity === 'blocking')
+  if (blocking.length > 0) {
+    throw new CrudHttpError(422, { error: 'visit_conflict_blocking', conflicts })
+  }
+  const warnings = conflicts.filter((item) => item.severity === 'warning')
+  const expected = Array.from(new Set(warnings.map((item) => item.signature))).sort()
+  const acknowledged = Array.from(new Set(override?.acknowledgedSignatures ?? [])).sort()
+  if (expected.length === 0) {
+    if (acknowledged.length > 0) {
+      throw new CrudHttpError(422, { error: 'visit_conflict_unacknowledged', conflicts })
+    }
+    return null
+  }
+  if (!override || expected.length !== acknowledged.length || expected.some((value, index) => value !== acknowledged[index])) {
+    throw new CrudHttpError(422, { error: 'visit_conflict_unacknowledged', conflicts })
+  }
+  await requireReferenceFeature(ctx, scope, 'patient.visits.override_conflict')
+  return {
+    codes: Array.from(new Set(warnings.map((item) => item.code)).values()).sort(),
+    reason: override.reason,
+  }
 }
 
 async function requireCreateReferenceFeatures(
@@ -436,6 +561,7 @@ async function encryptVisitSnapshot(
       description: snapshot.description,
       statusReason: snapshot.statusReason,
       settlementReason: snapshot.settlementReason,
+      conflictOverrideReason: snapshot.conflictOverrideReason,
     },
     scope,
     encryption,
@@ -465,6 +591,10 @@ function restoreVisitHeader(
   visit.settledAt = snapshot.settledAt ? new Date(snapshot.settledAt) : null
   visit.settledByUserId = snapshot.settledByUserId
   visit.settlementReason = (encrypted.settlementReason as string | null) ?? null
+  visit.conflictOverrideReason = (encrypted.conflictOverrideReason as string | null) ?? null
+  visit.conflictOverrideAt = snapshot.conflictOverrideAt ? new Date(snapshot.conflictOverrideAt) : null
+  visit.conflictOverrideByUserId = snapshot.conflictOverrideByUserId
+  visit.conflictOverrideCodes = snapshot.conflictOverrideCodes ? [...snapshot.conflictOverrideCodes] : null
   visit.confirmedAt = snapshot.confirmedAt ? new Date(snapshot.confirmedAt) : null
   visit.confirmedByUserId = snapshot.confirmedByUserId
   visit.deletedAt = null
@@ -585,6 +715,12 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
       timeZone: parsed.timeZone,
       description: parsed.description ?? null,
       serviceProductIds: parsed.serviceProductIds,
+      conflictOverride: parsed.conflictOverride
+        ? {
+            acknowledgedSignatures: [...parsed.conflictOverride.acknowledgedSignatures].sort(),
+            reason: parsed.conflictOverride.reason,
+          }
+        : null,
     })
     // A retry is still a current request. Re-check host visibility before returning the
     // historical result, but do not require the historical references to remain active.
@@ -602,6 +738,7 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         description: parsed.description ?? null,
         statusReason: null,
         settlementReason: null,
+        conflictOverrideReason: parsed.conflictOverride?.reason ?? null,
         createRequestPayload: digest,
       },
       scope,
@@ -612,6 +749,7 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     let patient!: Patient
     let visit!: PatientVisit
     let now!: Date
+    const conflictDecision = { current: null as { codes: string[]; reason: string } | null }
     try {
       await runCrudCommandWrite<PatientVisit>({
         ctx,
@@ -625,6 +763,24 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
           async ({ em: phaseEm }) => {
             patient = await lockPatient(phaseEm, parsed.patientId, scope)
             assertPatientAcceptsNewEntries(patient)
+            await acquireVisitSubjectLocks(phaseEm, scope, [
+              { type: 'member', id: parsed.teamMemberId },
+              { type: 'resource', id: parsed.resourceId },
+            ])
+            const conflicts = await evaluateCommandConflicts({
+              ctx,
+              em: phaseEm,
+              scope,
+              draft: {
+                teamMemberId: parsed.teamMemberId,
+                teamMemberName: resolved.teamMember.displayName,
+                resourceId: parsed.resourceId ?? null,
+                resourceName: resolved.resource?.displayName ?? null,
+                startsAt,
+                endsAt,
+              },
+            })
+            conflictDecision.current = await assertConflictDecision(ctx, scope, conflicts, parsed.conflictOverride)
             now = nextUpdatedAt(patient.updatedAt)
           },
           ({ em: phaseEm }) => {
@@ -651,6 +807,10 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
               settledAt: null,
               settledByUserId: null,
               settlementReason: null,
+              conflictOverrideReason: conflictDecision.current ? visitColumns.conflictOverrideReason : null,
+              conflictOverrideAt: conflictDecision.current ? now : null,
+              conflictOverrideByUserId: conflictDecision.current ? actorUserId : null,
+              conflictOverrideCodes: conflictDecision.current?.codes ?? null,
               clientRequestId: parsed.clientRequestId,
               createRequestPayload: visitColumns.createRequestPayload,
               createdAt: now,
@@ -692,7 +852,18 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         }),
       })
     } catch (error) {
-      if (error instanceof UniqueConstraintViolationException) {
+      // Availability enforcement can observe the winner before this retry reaches the
+      // unique index: both requests miss the optimistic replay read, the first commits,
+      // and the second then sees that same visit as an overlap after the patient lock.
+      // In either race shape, an identical committed request is the authoritative result.
+      // Keep unrelated validation, infrastructure and side-effect failures visible;
+      // only the two errors emitted by availability conflict evaluation are eligible.
+      const mayBeConcurrentReplay = error instanceof UniqueConstraintViolationException || (
+        isCrudHttpError(error) &&
+        error.status === 422 &&
+        (error.body.error === 'visit_conflict_blocking' || error.body.error === 'visit_conflict_unacknowledged')
+      )
+      if (mayBeConcurrentReplay) {
         const raced = await resolveIdempotentVisit(
           (ctx.container.resolve('em') as EntityManager).fork(),
           parsed.clientRequestId,
@@ -702,6 +873,16 @@ const createVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         if (raced) return raced
       }
       throw error
+    }
+    if (conflictDecision.current) {
+      await emitPatientEvent('patient.visit.conflict_overridden', {
+        id: visitId,
+        patientId: parsed.patientId,
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        codes: conflictDecision.current.codes,
+        updatedAt: now.toISOString(),
+      })
     }
     return await loadVisitDecrypted(em, visitId, scope)
   },
@@ -802,7 +983,13 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     if (parsed.resourceId !== undefined && parsed.resourceId !== (current.resourceId ?? null)) {
       if (parsed.resourceId) {
         await requireReferenceFeature(ctx, scope, 'resources.view')
-        resource = await references.requireActiveResource(parsed.resourceId, scope)
+        resource = (await references.resolveResources([parsed.resourceId], scope)).get(parsed.resourceId) ?? undefined
+        if (!resource) {
+          throw new CrudHttpError(422, {
+            error: 'A selected visit reference is unavailable',
+            code: 'visit_reference_unavailable',
+          })
+        }
       } else {
         resource = null
       }
@@ -821,6 +1008,7 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     if (teamMember) visitSensitive.teamMemberNameSnapshot = teamMember.displayName
     if (resource !== undefined) visitSensitive.resourceNameSnapshot = resource?.displayName ?? null
     if (parsed.description !== undefined) visitSensitive.description = parsed.description
+    if (parsed.conflictOverride) visitSensitive.conflictOverrideReason = parsed.conflictOverride.reason
     const visitColumns = await encryptSensitiveFields(VISIT_ENTITY_ID, visitSensitive, scope, encryption)
     const addedServiceColumns = await encryptServiceSnapshots(addedProducts, scope, encryption)
 
@@ -828,6 +1016,7 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
     let visit!: PatientVisit
     let updatedAt!: Date
     let resetConfirmation = false
+    const conflictDecision = { current: null as { codes: string[]; reason: string } | null }
     await runCrudCommandWrite<PatientVisit>({
       ctx,
       em,
@@ -857,6 +1046,31 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
                 : null,
             timeZone,
           )
+          const teamMemberId = parsed.teamMemberId ?? String(visit.teamMemberId)
+          const resourceId = parsed.resourceId !== undefined ? parsed.resourceId : (visit.resourceId ?? null)
+          await acquireVisitSubjectLocks(phaseEm, scope, [
+            { type: 'member', id: String(visit.teamMemberId) },
+            { type: 'resource', id: visit.resourceId },
+            { type: 'member', id: teamMemberId },
+            { type: 'resource', id: resourceId },
+          ])
+          const conflicts = await evaluateCommandConflicts({
+            ctx,
+            em: phaseEm,
+            scope,
+            excludeVisitId: parsed.id,
+            draft: {
+              teamMemberId,
+              teamMemberName: teamMember?.displayName ?? String(visit.teamMemberNameSnapshot),
+              resourceId: resourceId ?? null,
+              resourceName: resource === undefined
+                ? (visit.resourceNameSnapshot ?? null)
+                : (resource?.displayName ?? null),
+              startsAt,
+              endsAt,
+            },
+          })
+          conflictDecision.current = await assertConflictDecision(ctx, scope, conflicts, parsed.conflictOverride)
           updatedAt = nextUpdatedAt(visit.updatedAt)
         },
         ({ em: phaseEm }) => {
@@ -875,6 +1089,12 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
           if (parsed.endsAt !== undefined) visit.endsAt = parsed.endsAt ? new Date(parsed.endsAt) : null
           if (parsed.timeZone !== undefined) visit.timeZone = parsed.timeZone
           if (parsed.description !== undefined) visit.description = (visitColumns.description as string | null) ?? null
+          visit.conflictOverrideReason = conflictDecision.current
+            ? String(visitColumns.conflictOverrideReason)
+            : null
+          visit.conflictOverrideAt = conflictDecision.current ? updatedAt : null
+          visit.conflictOverrideByUserId = conflictDecision.current ? actorUserId : null
+          visit.conflictOverrideCodes = conflictDecision.current?.codes ?? null
           if (scheduleChanged && visit.confirmedAt) {
             visit.confirmedAt = null
             visit.confirmedByUserId = null
@@ -952,6 +1172,16 @@ const updateVisitCommand: CommandHandler<Record<string, unknown>, PatientVisit> 
         patientId: String(visit.patientId),
         tenantId: scope.tenantId,
         organizationId: scope.organizationId,
+        updatedAt: updatedAt.toISOString(),
+      })
+    }
+    if (conflictDecision.current) {
+      await emitPatientEvent('patient.visit.conflict_overridden', {
+        id: parsed.id,
+        patientId: String(visit.patientId),
+        tenantId: scope.tenantId,
+        organizationId: scope.organizationId,
+        codes: conflictDecision.current.codes,
         updatedAt: updatedAt.toISOString(),
       })
     }

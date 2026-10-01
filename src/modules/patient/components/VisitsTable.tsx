@@ -21,6 +21,7 @@ import { useOrganizationScopeVersion } from '@open-mercato/shared/lib/frontend/u
 import { useLocale, useT } from '@open-mercato/shared/lib/i18n/context'
 import extensionPoints from '../extension-points'
 import type { PatientPagedResponse, PatientVisitItem } from '../types'
+import { visitCalendarDayRange } from '../lib/visitDateTime'
 import {
   loadPatientOptions,
   loadResourceOptions,
@@ -49,6 +50,21 @@ function localDayBoundary(value: string, nextDay = false): string | null {
   if (!match) return null
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + (nextDay ? 1 : 0))
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function visitCalendarHref(visit?: PatientVisitItem): string {
+  const params = new URLSearchParams({ view: 'day' })
+  if (visit) {
+    const range = visitCalendarDayRange(visit.startsAt, visit.timeZone)
+    if (range) {
+      params.set('from', range.from)
+      params.set('to', range.to)
+    }
+    params.set('patientId', visit.patientId)
+    params.set('teamMemberId', visit.teamMemberId)
+    params.set('timeZone', visit.timeZone)
+  }
+  return `${LIST_HREF}/calendar?${params.toString()}`
 }
 
 function visitColumns(t: Translate, locale: string | undefined, hidePatient: boolean): ColumnDef<PatientVisitItem>[] {
@@ -199,9 +215,23 @@ export function VisitsTable({
       <DataTable<PatientVisitItem>
         title={embedded ? undefined : t('patient.visits.title')}
         titleHeadingLevel={embedded ? 2 : 1}
-        actions={!readOnly && access.canManage ? (
+        actions={embedded ? (!readOnly && access.canManage ? (
           <Button asChild><Link href={createHref}>{t('patient.visits.actions.schedule')}</Link></Button>
-        ) : undefined}
+        ) : undefined) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-md border p-0.5" role="group" aria-label={t('patient.visits.calendar.viewSwitcher')}>
+              <Button size="sm" variant="secondary" aria-current="page" disabled>
+                {t('patient.visits.calendar.listView')}
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link href={visitCalendarHref()}>{t('patient.visits.actions.calendar')}</Link>
+              </Button>
+            </div>
+            {!readOnly && access.canManage ? (
+              <Button asChild><Link href={createHref}>{t('patient.visits.actions.schedule')}</Link></Button>
+            ) : null}
+          </div>
+        )}
         columns={columns}
         data={query.data?.items ?? []}
         entityId="patient:patient_visit"
@@ -248,6 +278,11 @@ export function VisitsTable({
         rowActions={(row) => (
           <RowActions items={[
             { id: 'patient.visits.open', label: t('patient.visits.actions.open'), href: `${LIST_HREF}/${row.id}` },
+            ...(!embedded ? [{
+              id: 'patient.visits.show-in-calendar',
+              label: t('patient.visits.actions.showInCalendar'),
+              href: visitCalendarHref(row),
+            }] : []),
             ...(!readOnly && access.canManage && row.status === 'planned' && !row.isSettled ? [{
               id: 'patient.visits.delete',
               label: t('patient.visits.actions.delete'),

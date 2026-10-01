@@ -9,6 +9,7 @@ export type PatientVisitAccess = {
   canManage: boolean
   canCorrect: boolean
   canSettle: boolean
+  canOverrideConflict?: boolean
 }
 
 type FeatureCheckResponse = { granted?: string[] }
@@ -21,6 +22,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
     canManage: false,
     canCorrect: false,
     canSettle: false,
+    canOverrideConflict: false,
   })
 
   React.useEffect(() => {
@@ -31,6 +33,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
       canManage: false,
       canCorrect: false,
       canSettle: false,
+      canOverrideConflict: false,
     })
     void (async () => {
       try {
@@ -43,6 +46,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
               'patient.visits.manage',
               'patient.visits.correct',
               'patient.visits.settle',
+              'patient.visits.override_conflict',
             ],
           }),
         })
@@ -54,6 +58,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
             canManage: false,
             canCorrect: false,
             canSettle: false,
+            canOverrideConflict: false,
           })
           return
         }
@@ -64,6 +69,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
           canManage: granted.has('patient.visits.manage'),
           canCorrect: granted.has('patient.visits.correct'),
           canSettle: granted.has('patient.visits.settle'),
+          canOverrideConflict: granted.has('patient.visits.override_conflict'),
         })
       } catch {
         if (!cancelled) {
@@ -73,6 +79,7 @@ export function usePatientVisitAccess(): PatientVisitAccess {
             canManage: false,
             canCorrect: false,
             canSettle: false,
+            canOverrideConflict: false,
           })
         }
       }

@@ -38,6 +38,49 @@ describe('visit command invariants', () => {
     })
   })
 
+  it('serializes shared therapist and room slots before recalculating conflicts', () => {
+    expect(visitsSource).toContain('pg_advisory_xact_lock(hashtextextended(?::text, 0))')
+    expect(visitsSource).toContain('visit_schedule_locked')
+    const createStart = visitsSource.indexOf('const createVisitCommand')
+    const updateStart = visitsSource.indexOf('const updateVisitCommand')
+    const deleteStart = visitsSource.indexOf('const deleteVisitCommand')
+    for (const body of [
+      visitsSource.slice(createStart, updateStart),
+      visitsSource.slice(updateStart, deleteStart),
+    ]) {
+      const patientLock = body.indexOf('lockPatient(phaseEm')
+      const advisoryLock = body.indexOf('acquireVisitSubjectLocks(phaseEm')
+      const evaluation = body.indexOf('evaluateCommandConflicts({')
+      expect(advisoryLock).toBeGreaterThan(patientLock)
+      expect(evaluation).toBeGreaterThan(advisoryLock)
+    }
+  })
+
+  it('requires an exact warning decision and emits only identifier-safe override events', () => {
+    expect(visitsSource).toContain("error: 'visit_conflict_blocking'")
+    expect(visitsSource).toContain("error: 'visit_conflict_unacknowledged'")
+    expect(visitsSource).toContain("requireReferenceFeature(ctx, scope, 'patient.visits.override_conflict')")
+    expect(visitsSource).toContain("emitPatientEvent('patient.visit.conflict_overridden'")
+    const eventBodies = visitsSource.match(/emitPatientEvent\('patient\.visit\.conflict_overridden',[\s\S]*?\n\s*}\)/g) ?? []
+    expect(eventBodies).toHaveLength(2)
+    for (const body of eventBodies) {
+      expect(body).toContain('codes: conflictDecision.current.codes')
+      expect(body).not.toContain('reason:')
+      expect(body).not.toContain('teamMemberName')
+    }
+  })
+
+  it('binds conflict acknowledgements into create idempotency and audit undo', () => {
+    const createStart = visitsSource.indexOf('const createVisitCommand')
+    const updateStart = visitsSource.indexOf('const updateVisitCommand')
+    const createBody = visitsSource.slice(createStart, updateStart)
+    expect(createBody).toContain('acknowledgedSignatures: [...parsed.conflictOverride.acknowledgedSignatures].sort()')
+    expect(createBody.indexOf('conflictOverride: parsed.conflictOverride'))
+      .toBeLessThan(createBody.indexOf('resolveIdempotentVisit'))
+    expect(visitsSource).toContain('snapshot.conflictOverrideReason')
+    expect(visitsSource).toContain('visit.conflictOverrideCodes = snapshot.conflictOverrideCodes')
+  })
+
   it('keeps omitted services unchanged, soft-deletes removals, and creates additions', () => {
     expect(visitsSource).toContain('if (parsed.serviceProductIds === undefined) return')
     expect(visitsSource).toContain('deletedAt: updatedAt')
