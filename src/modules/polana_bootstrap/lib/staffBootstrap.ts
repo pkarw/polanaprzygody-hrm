@@ -156,8 +156,12 @@ export async function seedPolanaTherapists(
   em: EntityManager,
   customFieldWriter: CustomFieldWriter,
   scope: PolanaBootstrapScope,
+  availabilityRuleSetId: string,
 ): Promise<void> {
   assertScope(scope)
+  if (!availabilityRuleSetId) {
+    throw new Error('Polana therapist bootstrap requires availabilityRuleSetId.')
+  }
   await removeLegacyStaffExamples(em, scope)
   await ensureProfileFields(em, scope)
 
@@ -237,7 +241,7 @@ export async function seedPolanaTherapists(
         userId: null,
         roleIds,
         tags: [...fixture.specializations],
-        availabilityRuleSetId: null,
+        availabilityRuleSetId,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -247,6 +251,7 @@ export async function seedPolanaTherapists(
       member.description = fixture.shortDescription
       member.roleIds = roleIds
       member.tags = [...fixture.specializations]
+      member.availabilityRuleSetId = availabilityRuleSetId
       member.isActive = true
       member.deletedAt = null
       member.updatedAt = now
