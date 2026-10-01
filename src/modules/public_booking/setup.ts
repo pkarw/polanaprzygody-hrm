@@ -6,9 +6,10 @@ import {
   PUBLIC_BOOKING_PRODUCT_FIELDS,
   PUBLIC_BOOKING_PRODUCT_FIELDSET,
 } from './lib/catalogBookingFields'
+import { provisionPublicBookingServiceIdentity } from './lib/serviceCredential'
 
 export const setup: ModuleSetupConfig = {
-  async seedDefaults({ em, tenantId, organizationId }) {
+  async seedDefaults({ em, tenantId, organizationId, container }) {
     if (!tenantId || !organizationId) {
       throw new Error('Public booking field setup requires tenantId and organizationId')
     }
@@ -51,6 +52,7 @@ export const setup: ModuleSetupConfig = {
       source: 'public_booking',
     }], scope)
     await em.flush()
+    await provisionPublicBookingServiceIdentity({ em, container, scope })
   },
 }
 

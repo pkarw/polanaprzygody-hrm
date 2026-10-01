@@ -46,7 +46,9 @@ export function requirePatientScope(ctx: CommandRuntimeContext): PatientScope {
  * clinical history under someone else's name.
  */
 export function requireActorUserId(ctx: CommandRuntimeContext): string {
-  const actor = ctx.runAs?.actorUserId ?? ctx.auth?.sub ?? null
+  // API-key subjects are `api_key:<id>` and cannot be stored in UUID audit columns.
+  // The supported auth resolver supplies the real creator/service user as `userId`.
+  const actor = ctx.runAs?.actorUserId ?? ctx.auth?.userId ?? ctx.auth?.sub ?? null
   if (!actor) throw new CrudHttpError(401, { error: 'Authentication is required' })
   return actor
 }

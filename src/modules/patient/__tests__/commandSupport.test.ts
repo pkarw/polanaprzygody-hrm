@@ -88,6 +88,19 @@ describe('requireActorUserId', () => {
     ).toBe('agent-1')
   })
 
+  it('uses the real service user for an API-key subject', () => {
+    expect(
+      requireActorUserId(ctxWith({
+        auth: {
+          sub: 'api_key:33333333-3333-4333-8333-333333333333',
+          userId: '44444444-4444-4444-8444-444444444444',
+          tenantId: 't',
+          orgId: 'o',
+        },
+      })),
+    ).toBe('44444444-4444-4444-8444-444444444444')
+  })
+
   it('refuses when there is no actor at all', () => {
     expect(statusOf(() => requireActorUserId(ctxWith({ auth: null })))).toBe(401)
   })
