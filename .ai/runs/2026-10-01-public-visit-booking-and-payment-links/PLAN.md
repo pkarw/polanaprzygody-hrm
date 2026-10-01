@@ -11,7 +11,7 @@
 
 | Phase | Step | Title | Exec | Status | Commit |
 |-------|------|-------|------|--------|--------|
-| 1 | 1.1 | Finalize both specifications and installation defaults | dispatch:capable | todo | — |
+| 1 | 1.1 | Finalize both specifications and installation defaults | dispatch:capable | done | this commit |
 | 1 | 1.2 | Seed branded checkout templates for Polana services | dispatch:standard | todo | — |
 | 1 | 1.3 | Register visit payment fields and link creation service | group:A:capable | todo | — |
 | 1 | 1.4 | Extend visit confirmation and manual payment-link APIs | group:A:capable | todo | — |
