@@ -20,8 +20,8 @@
 | 2 | 2.2 | Persist encrypted booking intake and service credentials | inline | done | fc77ff6 |
 | 2 | 2.3 | Provision the scoped booking service identity | inline | done | 4f770fd |
 | 3 | 3.1 | Expose scoped public services, therapists, and availability APIs | inline | done | ca990de |
-| 3 | 3.2 | Build the public shell, home page, and live pricing page | inline | done | this commit |
-| 3 | 3.3 | Build accessible therapist and slot selection | inline | todo | — |
+| 3 | 3.2 | Build the public shell, home page, and live pricing page | inline | done | 19613ce |
+| 3 | 3.3 | Build accessible therapist and slot selection | inline | done | this commit |
 | 4 | 4.1 | Orchestrate hardened idempotent booking submission | inline | todo | — |
 | 4 | 4.2 | Complete booking intake and thank-you UI states | inline | todo | — |
 | 4 | 4.3 | Deliver booking confirmation emails after visit confirmation | inline | todo | — |
